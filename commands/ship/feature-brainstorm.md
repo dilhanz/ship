@@ -5,6 +5,6 @@ allowed-tools: Read, Write, WebSearch, WebFetch, Glob
 
 Use the `ship-feature-brainstormer` agent to handle this request.
 
-Follow the agent instructions at `~/.claude/agents/ship-feature-brainstormer.md`.
+Follow the agent instructions at `.claude/agents/ship-feature-brainstormer.md`.
 
 $ARGUMENTS
