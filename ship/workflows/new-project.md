@@ -15,7 +15,26 @@ Capture what we're building (vision, constraints, requirements) and produce a va
 
 ## Steps
 
-### Step 1 — Create .planning directory
+### Step 1 — Detect project mode
+
+Before asking the user anything, determine whether this is a **greenfield** (new) or **brownfield** (existing) project.
+
+Run the following checks:
+
+1. Use Glob to look for common code file patterns: `**/*.ts`, `**/*.js`, `**/*.py`, `**/*.go`, `**/*.rb`, `**/*.rs`, `src/**/*`, `app/**/*`, `lib/**/*`
+2. Check if a `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `Gemfile`, or similar project manifest exists
+3. Check if `.planning/PROJECT.md` and `.planning/REQUIREMENTS.md` already exist
+
+**Decision:**
+- If source files or a project manifest exist → **brownfield mode**
+- If `.planning/` files already exist → ask the user if they want to start fresh or continue from existing files
+- If the directory is empty or only has config/dotfiles → **greenfield mode**
+
+Announce the mode to the user before asking questions:
+- Greenfield: "Starting a new project setup."
+- Brownfield: "I can see an existing codebase. I'll ask a few extra questions to map what's already built."
+
+### Step 2 — Create .planning directory
 
 Check if `.planning/` exists in the current working directory. If not, create it:
 
@@ -23,23 +42,21 @@ Check if `.planning/` exists in the current working directory. If not, create it
 mkdir -p .planning
 ```
 
-### Step 2 — Check for existing project files
-
-Use Glob to check if `.planning/PROJECT.md` and `.planning/REQUIREMENTS.md` already exist.
-
-- If they exist: read them. Ask the user if they want to start fresh or continue from existing files.
-- If they don't exist: proceed to gather information.
-
 ### Step 3 — Gather project information
 
-Ask the user for the following (you can ask in one message — list all questions clearly):
+**For both modes**, ask (you can ask in one message — list all questions clearly):
 
 1. **Project name and one-sentence description** — What are you building?
 2. **Who is it for and what problem does it solve?** — Context for prioritization.
-3. **Tech stack** — Languages, frameworks, runtime, database.
+3. **Tech stack** — Languages, frameworks, runtime, database. *(For brownfield: confirm what you detected, don't ask from scratch.)*
 4. **Any hard constraints** — Things we must use, must avoid, or must not break.
 5. **Features list** — What should the finished project do? (Can be rough — you'll clean it up.)
 6. **Out of scope** — What are we explicitly NOT building?
+
+**Brownfield only — add these questions:**
+
+7. **What's already built?** — Which features are complete, partially done, or not started?
+8. **What's broken or known debt?** — Anything the plan should avoid touching or must work around?
 
 Wait for the user to respond before proceeding.
 
@@ -109,4 +126,4 @@ Ask if the roadmap looks right or if they want to adjust phases before starting.
 
 **If the tech stack is unclear:** Ask before proceeding — the planner needs to know the stack to research libraries and write correct file paths.
 
-**If the project directory already has code:** Note this. Ask what phase of development they're in (greenfield, mid-project, brownfield). The planner will need to check existing structure before creating tasks.
+**If the project directory already has code:** This is handled automatically by Step 1. The brownfield questions in Step 3 capture what's already built so the planner can check existing structure before creating tasks.

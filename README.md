@@ -17,16 +17,22 @@ Copies all framework files into `~/.claude/`. No dependencies, no build step —
 In any project directory:
 
 ```
-/ship:brainstorm        Explore a rough feature idea before planning
-/ship:new-project       Start here — capture requirements, create roadmap
-/ship:plan-phase 1      Plan phase 1 — tasks, file paths, verify commands
-/ship:execute-phase 1   Implement phase 1 — verify + atomic commits
-/ship:verify-phase 1    Check phase 1 against success criteria
+/ship:new-project           Start here — auto-detects new vs existing codebase
+/ship:plan-phase 1          Plan phase 1 — tasks, file paths, verify commands
+/ship:execute-phase         Implement current phase — verify + atomic commits
+/ship:verify-phase          Check current phase against success criteria
 ```
 
-Use `/ship:brainstorm` when you have a vague feature idea and want to think it through before committing to a plan. It reads your project context, asks focused questions, and writes a `BRAINSTORM.md` ready to hand off to the planner.
-
 Repeat plan → execute → verify for each phase.
+
+For adding a feature to an existing project:
+
+```
+/ship:feature-brainstorm    Explore and sharpen a feature idea
+/ship:plan-phase N          Plan the new phase
+/ship:execute-phase         Implement it
+/ship:verify-phase          Verify it
+```
 
 ## Utility Commands
 
@@ -41,9 +47,9 @@ Repeat plan → execute → verify for each phase.
 
 ## What Ship Does
 
-**Brainstorm:** Reads existing project context, asks one question at a time to sharpen a rough idea, optionally researches relevant patterns or libraries, then writes a structured `BRAINSTORM.md` capturing the problem, minimum scope, and open questions.
+**Feature brainstorm:** For mid-project feature additions. Reads existing project context, asks one question at a time to sharpen a rough idea, optionally researches relevant patterns or libraries, then writes a structured `BRAINSTORM.md` capturing the problem, minimum scope, and open questions.
 
-**New project:** Asks what you're building, captures requirements as FEAT-XX IDs, creates a phased roadmap with observable success criteria.
+**New project:** Auto-detects whether the directory is greenfield or has an existing codebase. Asks the right questions for each case, captures requirements as FEAT-XX IDs, and creates a phased roadmap with observable success criteria.
 
 **Plan phase:** Reads the roadmap, does up to 3 web fetches if research is needed, writes a concrete task list with specific file paths and runnable verify commands. Self-checks: every Must Deliver has a task.
 
