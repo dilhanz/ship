@@ -28,6 +28,12 @@ node .claude/ship/uninstall.js
 ## Usage
 
 ```
+/ship:auto                  Full auto mode — requirements → roadmap → plan → execute → verify, hands-free
+```
+
+Or step through each phase manually:
+
+```
 /ship:new-project           Start here — auto-detects new vs existing codebase
 /ship:plan-phase 1          Plan phase 1 — tasks, file paths, verify commands
 /ship:execute-phase         Implement current phase — verify + atomic commits
@@ -59,6 +65,8 @@ For adding a feature to an existing project:
 
 ## What Ship Does
 
+**Auto mode:** End-to-end automation. Captures requirements interactively (same flow as new-project), confirms the roadmap with you once, then plans → executes → verifies every phase automatically without further prompts. Stops and writes `.planning/AUTO-STOP.md` if a hard blocker or verification failure occurs, with exact steps to fix and resume.
+
 **Feature brainstorm:** For mid-project feature additions. Reads existing project context, asks one question at a time to sharpen a rough idea, optionally researches relevant patterns or libraries, then writes a structured `BRAINSTORM.md` capturing the problem, minimum scope, and open questions.
 
 **New project:** Auto-detects whether the directory is greenfield or has an existing codebase. Asks the right questions for each case, captures requirements as FEAT-XX IDs, and creates a phased roadmap with observable success criteria.
@@ -82,6 +90,7 @@ Ship stores all planning context in `.planning/` at your project root:
 ├── 01-PLAN.md        Phase 1 plan
 ├── 01-SUMMARY.md     Phase 1 execution record
 ├── 01-VERIFY.md      Phase 1 verification report
+├── AUTO-STOP.md      Written by auto mode if a blocker or verify failure occurs
 └── ...
 ```
 
