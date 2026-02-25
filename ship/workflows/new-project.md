@@ -21,13 +21,15 @@ Before asking the user anything, determine whether this is a **greenfield** (new
 
 Run the following checks:
 
-1. Use Glob to look for common code file patterns: `**/*.ts`, `**/*.js`, `**/*.py`, `**/*.go`, `**/*.rb`, `**/*.rs`, `src/**/*`, `app/**/*`, `lib/**/*`
-2. Check if a `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `Gemfile`, or similar project manifest exists
+1. Use Glob to look for common code file patterns: `**/*.ts`, `**/*.js`, `**/*.py`, `**/*.go`, `**/*.rb`, `**/*.rs`, `**/*.java`, `**/*.kt`, `**/*.swift`, `**/*.dart`, `**/*.cs`, `**/*.php`, `**/*.ex`, `**/*.exs`, `**/*.c`, `**/*.cpp`, `**/*.h`, `src/**/*`, `app/**/*`, `lib/**/*`
+2. Check if any of these project manifest files exist: `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `Gemfile`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `*.csproj`, `*.sln`, `composer.json`, `pubspec.yaml`, `mix.exs`, `Package.swift`, `CMakeLists.txt`, `Makefile`, `requirements.txt`, `setup.py`, `build.zig`
 3. Check if `.planning/PROJECT.md` and `.planning/REQUIREMENTS.md` already exist
+4. Count the number of non-hidden files and directories in the project root (exclude entries starting with `.`)
 
 **Decision:**
 - If source files or a project manifest exist → **brownfield mode**
 - If `.planning/` files already exist → ask the user if they want to start fresh or continue from existing files
+- If the directory contains more than 5 non-hidden files/directories but no recognized source or manifest files → likely brownfield; prompt the user to confirm: "I see [N] files/directories here but didn't detect a known project type. Is this an existing project?"
 - If the directory is empty or only has config/dotfiles → **greenfield mode**
 
 Announce the mode to the user before asking questions:

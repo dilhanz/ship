@@ -63,10 +63,13 @@ Gaps:
 - [Gap 1]: [description]
 - [Gap 2]: [description]
 
+Fix tasks have been written to NN-VERIFY.md. The executor will run ONLY these
+targeted fixes instead of re-executing the full plan.
+
 Options:
-1. Fix the gaps now and re-verify: /ship:verify-phase N (after fixing)
-2. Accept partial and continue: /ship:plan-phase [N+1] (not recommended)
-3. Re-execute to fix: /ship:execute-phase N
+1. Run fix tasks: /ship:execute-phase N (executes only the fix tasks from VERIFY.md)
+2. Fix manually and re-verify: /ship:verify-phase N
+3. Accept partial and continue: /ship:plan-phase [N+1] (not recommended)
 ```
 
 **If FAIL:**
@@ -78,10 +81,11 @@ Options:
 Gaps:
 [List all gaps]
 
-The phase needs to be re-executed. Re-plan first if the gaps suggest the plan was insufficient.
+Fix tasks have been written to NN-VERIFY.md.
+
 Options:
-1. Replan and re-execute: /ship:plan-phase N → /ship:execute-phase N
-2. Just re-execute with same plan: /ship:execute-phase N
+1. Run fix tasks: /ship:execute-phase N (executes only the fix tasks from VERIFY.md)
+2. Replan and re-execute: /ship:plan-phase N → /ship:execute-phase N (if gaps suggest plan was insufficient)
 ```
 
 ### Step 4 — Final project check (last phase only)
