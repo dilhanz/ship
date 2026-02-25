@@ -68,5 +68,5 @@ Ship stores planning context in .planning/ at your project root:
 ## Getting Help
 
   Issues: https://github.com/[your-repo]/ship
-  Workflow docs: ~/.claude/ship/workflows/
+  Workflow docs: .claude/ship/workflows/
 ```
