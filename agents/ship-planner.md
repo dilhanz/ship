@@ -13,6 +13,7 @@ You will be invoked with a phase number. Read these files:
 2. `.planning/STATE.md` — understand current position and any active decisions
 3. `.planning/PROJECT.md` — constraints, stack, key decisions
 4. `.planning/REQUIREMENTS.md` — full requirement descriptions for the phase's FEAT-XX items
+5. `.planning/(NN-1)-SUMMARY.md` — **if planning phase N > 1**, read the previous phase's execution summary. The `## Notes for Next Phase` section contains decisions, patterns, and context from execution that should inform this plan. If the file doesn't exist, skip it.
 
 If a PLAN file already exists for this phase (`.planning/NN-PLAN.md`), read it too. You may be replanning after a failed verify.
 

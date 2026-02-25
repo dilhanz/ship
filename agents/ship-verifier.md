@@ -124,6 +124,19 @@ Write `.planning/NN-VERIFY.md`:
 
 - [Gap]: [Recommended fix]
 
+## Fix Tasks
+
+[If PARTIAL or FAIL, write specific remediation tasks in the same XML format as PLAN.md. The executor will run ONLY these tasks instead of the full plan when re-executing.]
+
+<task>
+  <name>Fix: [concise description of what needs to be fixed]</name>
+  <files>[exact file paths that need changes]</files>
+  <action>[Specific instructions for what to fix, referencing the gap above]</action>
+  <verify>[Runnable command that proves this gap is resolved]</verify>
+</task>
+
+[If PASS, omit this section entirely.]
+
 ## Recommendation
 
 **Proceed to Phase N+1** | **Re-execute Phase N** | **Needs human review first**

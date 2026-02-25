@@ -58,11 +58,12 @@ Ship stores planning context in .planning/ at your project root:
   Must Deliver       Plain English outcomes in PLAN.md.
                      Every Must Deliver has at least one task.
 
-## Token Budget (approximate)
+## Context Usage
 
-  /ship:new-project    ~30K tokens
-  Per phase (P+E+V)    ~195K tokens
-  5-phase project      ~1M tokens total
+  Token usage varies widely by phase complexity — simple phases use
+  far less context than phases with large file counts or test suites.
+  The context monitor will warn you when usage is high so you can
+  wrap up the current phase before hitting limits.
 
 ## Getting Help
 
