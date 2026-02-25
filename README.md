@@ -2,17 +2,17 @@
 
 A lightweight structured development framework for Claude Code.
 
-**Ship** preserves the core value of structured planning — questions → roadmap → plan → execute (atomic commits) → verify (goal-backward) — without the research apparatus, plan-checker loops, or CLI binary dependencies.
+**Ship** is a standalone structured development framework built around a simple flow: questions → roadmap → plan → execute (atomic commits) → verify (goal-backward).
 
-## Key Numbers
+## First Release Snapshot
 
-| | Ship | GSD |
-|-|------|-----|
-| Files | 29 | 130+ |
-| Per-phase tokens | ~195K | ~600K |
-| 5-phase project | ~1M | ~3.6M |
-| Commands | 10 | 31 |
-| Agents | 4 | 11 |
+| Metric | Value |
+|--------|-------|
+| Files | 29 |
+| Per-phase tokens | ~195K |
+| 5-phase project | ~1M |
+| Commands | 10 |
+| Agents | 4 |
 
 ## Install
 
@@ -76,19 +76,45 @@ Ship stores all planning context in `.planning/` at your project root:
 
 **Goal-backward verification.** Success criteria are written before code. The verifier checks reality against goals — not whether tasks were executed.
 
+**Mandatory verification.** A phase is NOT complete until the verifier says PASS. Only the ship-verifier can set status to "complete". Planning the next phase is blocked until verification passes.
+
+**State guards.** Every agent validates STATE.md before proceeding. Wrong state = blocked with a clear message about what to run instead. No silent skipping.
+
+**Progress logging.** Agents write real-time progress entries to STATE.md as tasks complete. If a session is interrupted, the log survives.
+
 **Atomic commits.** One commit per task. Specific files staged. Verify command must pass before committing.
 
 **Deviation rules.** 4 rules for when reality diverges from plan: fix-and-continue for small changes, stop-and-report for architectural conflicts.
 
 **No config.** Ship always uses the same flow. No preferences file, no feature flags.
 
-## What Ship Drops (vs GSD)
+## MCP Server (Optional)
 
-- Plan-checker agent (8-dimension loop)
-- Parallel research agents
-- `gsd-tools.cjs` CLI binary
-- Scientific debugger
-- `discuss-phase` step
-- Wave-based parallel execution
-- YAML frontmatter for must-haves
-- `config.json` workflow preferences
+Ship includes an optional MCP server for mechanical workflow enforcement. It exposes 4 tools:
+
+| Tool | Purpose |
+|------|---------|
+| `ship_check_state` | Read state + validate if an operation is allowed |
+| `ship_log_progress` | Append timestamped entry to Progress Log |
+| `ship_get_status` | Full project status with roadmap progress |
+| `ship_validate_transition` | Check if a state transition is valid |
+
+The installer registers it automatically. To register manually:
+
+```json
+// ~/.claude/settings.json
+{
+  "mcpServers": {
+    "ship": {
+      "command": "node",
+      "args": ["~/.claude/ship/ship-mcp.js"]
+    }
+  }
+}
+```
+
+The MCP server enforces the state machine:
+- `planning → executing → verifying → complete`
+- Only the verifier can set "complete"
+- Only the executor can set "verifying"
+- Planning phase N requires phase N-1 to be verified
