@@ -1,0 +1,11 @@
+{
+  "name": "ship",
+  "version": "1.0.0",
+  "description": "A lightweight structured development framework for Claude Code",
+  "bin": "./install.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["claude-code", "ai", "development", "framework"],
+  "license": "MIT"
+}

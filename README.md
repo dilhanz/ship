@@ -8,10 +8,22 @@ A lightweight structured development framework for Claude Code.
 
 ```bash
 cd your-project
-git clone --depth 1 https://github.com/dilhancarsales/ship /tmp/ship && node /tmp/ship/install.js && rm -rf /tmp/ship
+npx github:dilhancarsales/ship
 ```
 
-Copies all framework files into `.claude/` in your current project directory. No dependencies, no build step — just Node.js and git.
+Copies all framework files into `.claude/` in your current project directory. No dependencies, no build step — just Node.js 18+.
+
+**Update** — run the same command again from your project:
+
+```bash
+npx github:dilhancarsales/ship
+```
+
+**Uninstall** — removes all Ship files while preserving `.planning/` data:
+
+```bash
+node .claude/ship/uninstall.js
+```
 
 ## Usage
 
@@ -89,3 +101,14 @@ Ship stores all planning context in `.planning/` at your project root:
 
 **No config.** Ship always uses the same flow. No preferences file, no feature flags.
 
+## Hooks
+
+The installer automatically registers 3 hooks in `.claude/settings.json`:
+
+| Hook | Trigger | Purpose |
+|------|---------|---------|
+| `ship-statusline` | statusLine | Shows model, current task, directory, and context usage in the Claude Code status bar |
+| `ship-check-update` | SessionStart | Checks for Ship updates once per session in the background |
+| `ship-context-monitor` | PostToolUse | Injects warnings into the agent's context when usage exceeds 35% (warning) or 25% (critical) remaining |
+
+The context monitor is especially useful for long execution phases — it tells the agent to save state before the context window fills up, preventing lost progress.
