@@ -13,7 +13,8 @@ Plan → Execute → Verify. One phase at a time.
 
 ## Core Loop
 
-  /ship:new-project           Start here. Auto-detects new vs existing codebase.
+  /ship:auto                  Capture requirements, then auto-run all phases end-to-end.
+  /ship:new-project           Start here manually. Auto-detects new vs existing codebase.
   /ship:feature-brainstorm    Explore a feature idea before planning (existing projects).
   /ship:plan-phase [N]        Plan phase N — tasks, file paths, verify commands.
   /ship:execute-phase         Execute current phase — implement, verify, commit atomically.
