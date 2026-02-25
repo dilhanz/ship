@@ -125,6 +125,14 @@ function install() {
     allCopied.push(...copied);
   }
 
+  // Also install the uninstall script alongside the Ship data
+  const uninstallSrc = path.join(SHIP_ROOT, 'uninstall.js');
+  const uninstallDest = path.join(CLAUDE_DIR, 'ship', 'uninstall.js');
+  if (fs.existsSync(uninstallSrc)) {
+    fs.copyFileSync(uninstallSrc, uninstallDest);
+    allCopied.push(path.relative(process.cwd(), uninstallDest));
+  }
+
   console.log('Files installed:');
   for (const f of allCopied) {
     console.log(`  ${f}`);
