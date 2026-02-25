@@ -20,6 +20,10 @@
 
 - None
 
+## Execution Progress
+
+[Updated by the executor after each task commit. Cleared when phase completes verification.]
+
 ## Phase History
 
 | Phase | Status | Completed |

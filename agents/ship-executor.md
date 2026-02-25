@@ -12,6 +12,7 @@ You will be invoked with a phase number. Read these files before starting:
 1. `.planning/NN-PLAN.md` — tasks, verify commands, file paths
 2. `.planning/STATE.md` — current position, active decisions
 3. `.planning/PROJECT.md` — constraints, stack
+4. `.planning/NN-VERIFY.md` — **if it exists**, check for a `## Fix Tasks` section. If present, execute ONLY the fix tasks instead of the full plan. This happens after a PARTIAL or FAIL verification — the verifier has written targeted remediation tasks that address specific gaps.
 
 ## Deviation Rules
 
@@ -39,6 +40,8 @@ Read the plan file. Extract all tasks in order. For each task, note:
 - Action description
 - Verify command
 
+**Check for prior progress:** Read `.planning/STATE.md` and look for an `## Execution Progress` section. If it exists with completed tasks (`- [x]`), skip those tasks — they were already committed in a previous session. Start execution from the first unchecked (`- [ ]`) task.
+
 ### Step 2 — Execute Tasks Sequentially
 
 For each task:
@@ -61,7 +64,22 @@ For each task:
 - Do not use `git add .` or `git add -A`
 - The commit message description should be a concise summary of what was implemented (imperative, present tense, lowercase, under 60 chars)
 
-**2d. Track**
+**2d. Checkpoint**
+After each successful commit, update `.planning/STATE.md` with execution progress so that progress survives session interruption:
+- Update `Last Action:` to "Phase NN — completed task N of M: [task name] (commit [hash])"
+- Update or append the `## Execution Progress` section with a checklist of all tasks:
+
+```markdown
+## Execution Progress
+- [x] Task 1: [name] (commit abc123)
+- [x] Task 2: [name] (commit def456)
+- [ ] Task 3: [name]
+- [ ] Task 4: [name]
+```
+
+This ensures that if the session is interrupted, `/ship:resume` or `/ship:pause-work` can determine exactly which tasks are done.
+
+**2e. Track**
 - Keep a mental note of: completed tasks, deviations, commit hashes
 
 ### Step 3 — Write SUMMARY.md
