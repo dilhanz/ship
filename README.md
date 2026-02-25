@@ -4,16 +4,6 @@ A lightweight structured development framework for Claude Code.
 
 **Ship** is a standalone structured development framework built around a simple flow: questions → roadmap → plan → execute (atomic commits) → verify (goal-backward).
 
-## First Release Snapshot
-
-| Metric | Value |
-|--------|-------|
-| Files | 29 |
-| Per-phase tokens | ~195K |
-| 5-phase project | ~1M |
-| Commands | 10 |
-| Agents | 4 |
-
 ## Install
 
 ```bash
