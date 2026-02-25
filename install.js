@@ -28,6 +28,11 @@ const COPIES = [
     src: path.join(SHIP_ROOT, 'ship'),
     dest: path.join(CLAUDE_DIR, 'ship'),
   },
+  // Hooks → ~/.claude/hooks/
+  {
+    src: path.join(SHIP_ROOT, 'hooks'),
+    dest: path.join(CLAUDE_DIR, 'hooks'),
+  },
 ];
 
 function ensureDir(dirPath) {
@@ -57,6 +62,56 @@ function copyDir(src, dest) {
   return copied;
 }
 
+function registerSettings() {
+  const settingsPath = path.join(CLAUDE_DIR, 'settings.json');
+  let settings = {};
+
+  if (fs.existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    } catch (e) {
+      // Corrupt or empty settings — start fresh
+    }
+  }
+
+  const hooksDir = path.join(CLAUDE_DIR, 'hooks');
+  const checkUpdateCmd = `node ${hooksDir}/ship-check-update.js`;
+  const contextMonitorCmd = `node ${hooksDir}/ship-context-monitor.js`;
+  const statuslineCmd = `node ${hooksDir}/ship-statusline.js`;
+
+  if (!settings.hooks) settings.hooks = {};
+
+  // SessionStart: ship-check-update
+  if (!settings.hooks.SessionStart) settings.hooks.SessionStart = [];
+  const hasCheckUpdate = settings.hooks.SessionStart.some(group =>
+    group.hooks?.some(h => h.command?.includes('ship-check-update'))
+  );
+  if (!hasCheckUpdate) {
+    settings.hooks.SessionStart.push({
+      hooks: [{ type: 'command', command: checkUpdateCmd }]
+    });
+  }
+
+  // PostToolUse: ship-context-monitor
+  if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
+  const hasContextMonitor = settings.hooks.PostToolUse.some(group =>
+    group.hooks?.some(h => h.command?.includes('ship-context-monitor'))
+  );
+  if (!hasContextMonitor) {
+    settings.hooks.PostToolUse.push({
+      hooks: [{ type: 'command', command: contextMonitorCmd }]
+    });
+  }
+
+  // statusLine: only set if not already configured
+  if (!settings.statusLine) {
+    settings.statusLine = { type: 'command', command: statuslineCmd };
+  }
+
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+  return settingsPath.replace(os.homedir(), '~');
+}
+
 function install() {
   console.log('Installing Ship...\n');
 
@@ -75,6 +130,9 @@ function install() {
   for (const f of allCopied) {
     console.log(`  ${f}`);
   }
+
+  const settingsPath = registerSettings();
+  console.log(`  ${settingsPath} (hooks + statusLine registered)`);
 
   console.log(`\nShip installed — ${allCopied.length} files copied to ~/.claude/`);
   console.log('\nGet started:');
