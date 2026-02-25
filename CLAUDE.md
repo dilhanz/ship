@@ -28,7 +28,7 @@ hooks/                 3 Node.js hooks (stdin->stdout, zero dependencies)
 
 ship/templates/*.md    7 planning file templates (PROJECT, REQUIREMENTS, ROADMAP, STATE, PLAN, SUMMARY, VERIFY)
 ship/references/*.md   Git commit conventions and deviation rules
-install.js             Copies everything to ~/.claude/ and registers hooks in settings.json
+install.js             Copies everything to .claude/ in the current project and registers hooks in .claude/settings.json
 ```
 
 ## Key Concepts
@@ -51,11 +51,11 @@ Hooks are stdin->stdout Node.js scripts. They receive JSON on stdin and (optiona
 
 ### Installation
 
-`install.js` copies the full directory tree to `~/.claude/` and registers hooks in `~/.claude/settings.json`. It is idempotent — running it again updates files without duplicating hook registrations.
+`install.js` copies the full directory tree to `.claude/` in the current working directory and registers hooks in `.claude/settings.json`. It is idempotent — running it again updates files without duplicating hook registrations.
 
 ### Commands
 
-Commands live in `commands/ship/`. Each file is a Markdown document with frontmatter (`description`, `allowed-tools`). The body tells Claude what to do, usually delegating to a workflow file at `~/.claude/ship/workflows/`. `$ARGUMENTS` is replaced with user-provided arguments.
+Commands live in `commands/ship/`. Each file is a Markdown document with frontmatter (`description`, `allowed-tools`). The body tells Claude what to do, usually delegating to a workflow file at `.claude/ship/workflows/`. `$ARGUMENTS` is replaced with user-provided arguments.
 
 ### Agents
 

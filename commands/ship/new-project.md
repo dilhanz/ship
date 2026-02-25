@@ -3,6 +3,6 @@ description: Start a new Ship project. Captures requirements and creates a roadm
 allowed-tools: Read, Write, Edit, Bash, Glob, WebFetch
 ---
 
-Follow the new-project workflow at `~/.claude/ship/workflows/new-project.md`.
+Follow the new-project workflow at `.claude/ship/workflows/new-project.md`.
 
 $ARGUMENTS

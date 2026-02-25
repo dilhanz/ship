@@ -3,7 +3,7 @@ description: Plan phase N. Reads the roadmap and writes a concrete task list wit
 allowed-tools: Read, Write, Edit, Bash, Glob, WebFetch
 ---
 
-Follow the plan-phase workflow at `~/.claude/ship/workflows/plan-phase.md`.
+Follow the plan-phase workflow at `.claude/ship/workflows/plan-phase.md`.
 
 The phase number to plan is: $ARGUMENTS
 

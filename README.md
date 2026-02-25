@@ -7,14 +7,13 @@ A lightweight structured development framework for Claude Code.
 ## Install
 
 ```bash
+cd your-project
 git clone --depth 1 https://github.com/dilhancarsales/ship /tmp/ship && node /tmp/ship/install.js && rm -rf /tmp/ship
 ```
 
-Copies all framework files into `~/.claude/`. No dependencies, no build step — just Node.js and git.
+Copies all framework files into `.claude/` in your current project directory. No dependencies, no build step — just Node.js and git.
 
 ## Usage
-
-In any project directory:
 
 ```
 /ship:new-project           Start here — auto-detects new vs existing codebase
