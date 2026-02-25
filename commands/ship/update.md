@@ -3,16 +3,10 @@ description: Update Ship to the latest version from the repository.
 allowed-tools: Bash
 ---
 
-Run the Ship installer to update all files to the latest version:
+Clone the latest Ship and re-install into the current project:
 
 ```bash
-node /c/src/ship/install.js
-```
-
-If the install script is not found at that path, try to find it:
-
-```bash
-find ~ -name "install.js" -path "*/ship/*" 2>/dev/null | head -5
+rm -rf /tmp/ship && git clone --depth 1 https://github.com/dilhancarsales/ship /tmp/ship && node /tmp/ship/install.js && rm -rf /tmp/ship
 ```
 
 After running, output:
