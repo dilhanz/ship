@@ -17,10 +17,10 @@ A lightweight structured development framework for Claude Code.
 ## Install
 
 ```bash
-node /c/src/ship/install.js
+git clone --depth 1 https://github.com/dilhancarsales/ship /tmp/ship && node /tmp/ship/install.js && rm -rf /tmp/ship
 ```
 
-Copies all framework files into `~/.claude/`. No dependencies, no build step.
+Copies all framework files into `~/.claude/`. No dependencies, no build step — just Node.js and git.
 
 ## Usage
 
