@@ -34,9 +34,11 @@ Invoke the `ship-executor` agent with the phase number.
 > "Invoking ship-executor for Phase N — [Phase Name]"
 
 The executor will:
-- Execute tasks sequentially
+- Check STATE.md for prior `## Execution Progress` and skip already-completed tasks
+- Execute remaining tasks sequentially
 - Run verify commands after each task
 - Commit after each verified task
+- Update STATE.md `## Execution Progress` after each commit (mid-phase checkpointing)
 - Apply deviation rules when needed
 - Write `.planning/NN-SUMMARY.md`
 - Update STATE.md

@@ -44,6 +44,7 @@ Invoke the `ship-planner` agent with the phase number.
 
 The planner will:
 - Read ROADMAP.md, STATE.md, PROJECT.md, REQUIREMENTS.md
+- Read the previous phase's SUMMARY.md (if planning phase N > 1) for execution context and decisions
 - Do up to 3 WebFetch calls if research is needed
 - Write `.planning/NN-PLAN.md`
 - Update STATE.md status to "executing"

@@ -39,6 +39,7 @@ For adding a feature to an existing project:
 ```
 /ship:status            Current phase and next action
 /ship:resume            Pick up where you left off
+/ship:pause-work        Save state and pause for safe resumption
 /ship:add-phase         Add a new phase mid-project
 /ship:complete          Mark project done, generate summary
 /ship:update            Update Ship to latest version
@@ -89,33 +90,3 @@ Ship stores all planning context in `.planning/` at your project root:
 
 **No config.** Ship always uses the same flow. No preferences file, no feature flags.
 
-## MCP Server (Optional)
-
-Ship includes an optional MCP server for mechanical workflow enforcement. It exposes 4 tools:
-
-| Tool | Purpose |
-|------|---------|
-| `ship_check_state` | Read state + validate if an operation is allowed |
-| `ship_log_progress` | Append timestamped entry to Progress Log |
-| `ship_get_status` | Full project status with roadmap progress |
-| `ship_validate_transition` | Check if a state transition is valid |
-
-The installer registers it automatically. To register manually:
-
-```json
-// ~/.claude/settings.json
-{
-  "mcpServers": {
-    "ship": {
-      "command": "node",
-      "args": ["~/.claude/ship/ship-mcp.js"]
-    }
-  }
-}
-```
-
-The MCP server enforces the state machine:
-- `planning → executing → verifying → complete`
-- Only the verifier can set "complete"
-- Only the executor can set "verifying"
-- Planning phase N requires phase N-1 to be verified
