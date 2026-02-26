@@ -15,7 +15,7 @@ Plan → Execute → Verify. One phase at a time.
 
   /ship:auto                  Capture requirements, then auto-run all phases end-to-end.
   /ship:new-project           Start here manually. Auto-detects new vs existing codebase.
-  /ship:feature-brainstorm    Explore a feature idea before planning (existing projects).
+  /ship:feature-brainstorm [--deep] "idea"   Explore a feature idea. --deep runs parallel research first.
   /ship:plan-phase [N]        Plan phase N — tasks, file paths, verify commands.
   /ship:execute-phase         Execute current phase — implement, verify, commit atomically.
   /ship:verify-phase          Verify current phase against roadmap success criteria.
