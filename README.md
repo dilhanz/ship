@@ -71,7 +71,7 @@ For adding a feature to an existing project:
 
 **New project:** Auto-detects whether the directory is greenfield or has an existing codebase. Asks the right questions for each case, captures requirements as FEAT-XX IDs, and creates a phased roadmap with observable success criteria.
 
-**Plan phase:** Reads the roadmap, does up to 3 web fetches if research is needed, writes a concrete task list with specific file paths and runnable verify commands. Self-checks: every Must Deliver has a task.
+**Plan phase:** Reads the roadmap, does up to 3 web fetches if research is needed, writes a concrete task list with specific file paths and runnable verify commands. Then runs a plan quality gate (ship-plan-checker) before presenting the plan — verifying requirement coverage, task completeness, verify command quality, and scope. If issues are found you can revise or proceed anyway.
 
 **Execute phase:** Implements tasks sequentially, runs the verify command after each task, commits atomically (`feat(NN): task-name`) with specific files staged. Applies 4 deviation rules when reality diverges from plan.
 
