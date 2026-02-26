@@ -49,6 +49,29 @@ The planner will:
 - Write `.planning/NN-PLAN.md`
 - Update STATE.md status to "executing"
 
+### Step 3.5 — Verify plan quality
+
+Invoke the `ship-plan-checker` agent with the phase number.
+
+**If PLAN VERIFIED** → proceed to Step 4 normally.
+
+**If PLAN HAS ISSUES:**
+
+Present the issues to the user exactly as the checker reported them, then ask:
+
+> "The plan has quality issues (see above). What would you like to do?
+> (1) Revise the plan to fix them
+> (2) Proceed anyway"
+
+- If **revise**: invoke `ship-planner` again, passing the checker's issue list as additional context so it knows what to fix. After the revised plan is written, run `ship-plan-checker` once more.
+  - If the revised plan is **PLAN VERIFIED** → proceed to Step 4.
+  - If the revised plan still has blockers → present the remaining issues to the user and ask: "The revised plan still has blockers. Proceed anyway, or stop here to fix manually?"
+    - If proceed → continue to Step 4 with a note that issues were acknowledged.
+    - If stop → tell the user to edit `.planning/NN-PLAN.md` manually and re-run `/ship:plan-phase N`.
+- If **proceed anyway**: continue to Step 4 with a note that issues were acknowledged.
+
+> Note: Only one revision attempt is made automatically. Do not loop the planner/checker more than once.
+
 ### Step 4 — Review with user
 
 After the planner returns `## PLAN READY`, read the plan file and present a summary:

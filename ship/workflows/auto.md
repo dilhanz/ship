@@ -142,7 +142,15 @@ Check if `.planning/NN-PLAN.md` already exists (where NN is the zero-padded phas
 
 Invoke the `ship-planner` agent with the phase number.
 
-After the planner returns `## PLAN READY`, proceed immediately to Step C2. Do not show the plan to the user or wait for confirmation.
+After the planner returns `## PLAN READY`, invoke the `ship-plan-checker` agent with the phase number.
+
+- If **PLAN VERIFIED** → proceed immediately to Step C2.
+- If **PLAN HAS ISSUES** with warnings only → briefly output the warnings and proceed to Step C2. Warnings do not block auto mode.
+- If **PLAN HAS ISSUES** with blockers → invoke `ship-planner` once more, passing the checker's blocker list as context to fix. Then run `ship-plan-checker` again.
+  - If the revised plan is **PLAN VERIFIED** or has warnings only → proceed to Step C2.
+  - If the revised plan still has blockers → go to **Phase D** with stop reason `PLAN_QUALITY`.
+
+Do not show the plan to the user or wait for confirmation.
 
 ### Step C2 — Execute
 
@@ -193,7 +201,7 @@ Write `.planning/AUTO-STOP.md` with the following structure:
 
 ## Stop Reason
 
-[CHECKPOINT | VERIFY_FAILURE]
+[CHECKPOINT | VERIFY_FAILURE | PLAN_QUALITY]
 
 ## Phase
 
@@ -203,6 +211,7 @@ Phase [N]: [Phase Name]
 
 [For CHECKPOINT: copy the full conflict description and recommendation from the executor's checkpoint output]
 [For VERIFY_FAILURE: copy the gap list and details from NN-VERIFY.md]
+[For PLAN_QUALITY: list the blocker findings from the plan checker's two attempts]
 
 ## Phases Completed Before Stop
 
@@ -234,7 +243,7 @@ Output a concise stop report to the user:
 ```
 ## Auto-Stop — Phase [N]: [Phase Name]
 
-Reason: [CHECKPOINT | VERIFY_FAILURE]
+Reason: [CHECKPOINT | VERIFY_FAILURE | PLAN_QUALITY]
 Phases completed: [list or "none"]
 
 [1-2 sentence summary of what blocked progress]
