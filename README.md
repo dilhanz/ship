@@ -22,7 +22,7 @@ npx github:dilhanz/ship
 **Uninstall** — removes all Ship files while preserving `.planning/` data:
 
 ```bash
-node .claude/ship/uninstall.js
+npx github:dilhanz/ship --uninstall
 ```
 
 ## Usage
