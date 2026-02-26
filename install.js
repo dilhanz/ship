@@ -11,6 +11,57 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync, execFileSync } = require('child_process');
+
+// Returns the best node executable to embed in hook commands.
+// Priority: bare 'node' if it's in the Unix PATH (cleanest), otherwise
+// process.execPath with WSL path conversion.
+//
+// IMPORTANT: check for Windows execPath FIRST. If we're running Windows node
+// inside WSL, spawnSync('node') would resolve against Windows PATH (where node
+// IS found), producing a bare 'node' that Claude Code (in WSL) can't execute.
+function findNodeBin() {
+  // If process.execPath looks like a Windows path, we're running Windows node
+  // inside WSL. Return the /mnt/... path so WSL's bash can execute it.
+  if (isWindowsNodeInWSL()) {
+    return toUnixPath(process.execPath);
+  }
+
+  // On Mac/Linux (or WSL with native node): prefer bare 'node' if it's in PATH.
+  const result = spawnSync('node', ['--version'], { encoding: 'utf8', timeout: 3000 });
+  if (result.status === 0 && !result.error) {
+    return 'node';
+  }
+
+  // Fallback: use current executable as-is.
+  return process.execPath;
+}
+
+// Converts a Windows path to a Unix/WSL path.
+function toUnixPath(p) {
+  if (!/^[A-Za-z]:\\/.test(p)) return p;
+  try {
+    return execFileSync('wslpath', ['-u', p], { encoding: 'utf8' }).trim();
+  } catch (e) {
+    return p.replace(/^([A-Za-z]):\\/, (_, d) => `/mnt/${d.toLowerCase()}/`).replace(/\\/g, '/');
+  }
+}
+
+// Converts a Unix/WSL path to a Windows path (for passing to Windows node.exe).
+function toWindowsPath(p) {
+  if (/^[A-Za-z]:\\/.test(p)) return p;
+  try {
+    return execFileSync('wslpath', ['-w', p], { encoding: 'utf8' }).trim();
+  } catch (e) {
+    // Manual conversion: /mnt/c/foo → C:\foo
+    return p.replace(/^\/mnt\/([a-z])\//, (_, d) => `${d.toUpperCase()}:\\`).replace(/\//g, '\\');
+  }
+}
+
+// Returns true if we're running as a Windows node.exe inside WSL.
+function isWindowsNodeInWSL() {
+  return /^[A-Za-z]:\\/.test(process.execPath);
+}
 
 const SHIP_ROOT = path.resolve(__dirname);
 const CLAUDE_DIR = path.join(process.cwd(), '.claude');
@@ -93,39 +144,50 @@ function registerSettings() {
     }
   }
 
-  const hooksDir = path.join(CLAUDE_DIR, 'hooks');
-  const checkUpdateCmd = `node ${hooksDir}/ship-check-update.js`;
-  const contextMonitorCmd = `node ${hooksDir}/ship-context-monitor.js`;
-  const statuslineCmd = `node ${hooksDir}/ship-statusline.js`;
+  const nodeBin = findNodeBin();
+  const hooksDirRaw = path.join(CLAUDE_DIR, 'hooks');
+
+  // When running Windows node in WSL: node binary needs a /mnt/ Unix path so
+  // WSL bash can invoke it, but script arguments must be Windows paths (C:\...)
+  // because Windows node interprets /mnt/... as C:\mnt\... and fails.
+  // On all other platforms, use Unix paths throughout.
+  let hooksDir, scriptQuote;
+  if (isWindowsNodeInWSL()) {
+    hooksDir = toWindowsPath(hooksDirRaw);
+    scriptQuote = '"';
+  } else {
+    hooksDir = toUnixPath(hooksDirRaw);
+    scriptQuote = nodeBin === 'node' ? '' : '"';
+  }
+
+  const nodePart = nodeBin === 'node' ? 'node' : `"${nodeBin}"`;
+  const sep = isWindowsNodeInWSL() ? '\\' : '/';
+  const checkUpdateCmd = `${nodePart} ${scriptQuote}${hooksDir}${sep}ship-check-update.js${scriptQuote}`;
+  const contextMonitorCmd = `${nodePart} ${scriptQuote}${hooksDir}${sep}ship-context-monitor.js${scriptQuote}`;
+  const statuslineCmd = `${nodePart} ${scriptQuote}${hooksDir}${sep}ship-statusline.js${scriptQuote}`;
 
   if (!settings.hooks) settings.hooks = {};
 
-  // SessionStart: ship-check-update
+  // SessionStart: ship-check-update — always update to keep node path current
   if (!settings.hooks.SessionStart) settings.hooks.SessionStart = [];
-  const hasCheckUpdate = settings.hooks.SessionStart.some(group =>
-    group.hooks?.some(h => h.command?.includes('ship-check-update'))
+  settings.hooks.SessionStart = settings.hooks.SessionStart.filter(group =>
+    !group.hooks?.some(h => h.command?.includes('ship-check-update'))
   );
-  if (!hasCheckUpdate) {
-    settings.hooks.SessionStart.push({
-      hooks: [{ type: 'command', command: checkUpdateCmd }]
-    });
-  }
+  settings.hooks.SessionStart.push({
+    hooks: [{ type: 'command', command: checkUpdateCmd }]
+  });
 
-  // PostToolUse: ship-context-monitor
+  // PostToolUse: ship-context-monitor — always update to keep node path current
   if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
-  const hasContextMonitor = settings.hooks.PostToolUse.some(group =>
-    group.hooks?.some(h => h.command?.includes('ship-context-monitor'))
+  settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter(group =>
+    !group.hooks?.some(h => h.command?.includes('ship-context-monitor'))
   );
-  if (!hasContextMonitor) {
-    settings.hooks.PostToolUse.push({
-      hooks: [{ type: 'command', command: contextMonitorCmd }]
-    });
-  }
+  settings.hooks.PostToolUse.push({
+    hooks: [{ type: 'command', command: contextMonitorCmd }]
+  });
 
-  // statusLine: only set if not already configured
-  if (!settings.statusLine) {
-    settings.statusLine = { type: 'command', command: statuslineCmd };
-  }
+  // statusLine: always update to keep node path current
+  settings.statusLine = { type: 'command', command: statuslineCmd };
 
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
   return settingsPath.replace(process.cwd(), '.');
