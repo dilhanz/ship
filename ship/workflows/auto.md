@@ -90,7 +90,7 @@ Wait for confirmation or corrections. Update REQUIREMENTS.md if needed.
 
 ### Step A5 — Invoke ship-roadmapper
 
-Once requirements are confirmed, invoke the `ship-roadmapper` agent:
+Once requirements are confirmed, invoke the `ship-roadmapper` agent with `model: "opus"`:
 
 > "Requirements confirmed. Invoking ship-roadmapper to create the project roadmap."
 
@@ -140,13 +140,13 @@ Announce: "**[Phase CURRENT_PHASE / TOTAL_PHASES] Planning...**"
 
 Check if `.planning/NN-PLAN.md` already exists (where NN is the zero-padded phase number). If it exists, discard it — always replan from scratch in auto mode.
 
-Invoke the `ship-planner` agent with the phase number.
+Invoke the `ship-planner` agent with the phase number, using `model: "opus"`.
 
-After the planner returns `## PLAN READY`, invoke the `ship-plan-checker` agent with the phase number.
+After the planner returns `## PLAN READY`, invoke the `ship-plan-checker` agent with the phase number, using `model: "opus"`.
 
 - If **PLAN VERIFIED** → proceed immediately to Step C2.
 - If **PLAN HAS ISSUES** with warnings only → briefly output the warnings and proceed to Step C2. Warnings do not block auto mode.
-- If **PLAN HAS ISSUES** with blockers → invoke `ship-planner` once more, passing the checker's blocker list as context to fix. Then run `ship-plan-checker` again.
+- If **PLAN HAS ISSUES** with blockers → invoke `ship-planner` once more (with `model: "opus"`), passing the checker's blocker list as context to fix. Then run `ship-plan-checker` (with `model: "opus"`) again.
   - If the revised plan is **PLAN VERIFIED** or has warnings only → proceed to Step C2.
   - If the revised plan still has blockers → go to **Phase D** with stop reason `PLAN_QUALITY`.
 
@@ -162,7 +162,7 @@ Validate that git is initialized in the project root (`git status`). If not, sil
 git init && git commit --allow-empty -m "chore: initial commit"
 ```
 
-Invoke the `ship-executor` agent with the phase number.
+Invoke the `ship-executor` agent with the phase number, using `model: "sonnet"`.
 
 - If executor returns `## PHASE COMPLETE` → proceed immediately to Step C3.
 - If executor returns `## CHECKPOINT REACHED` → go to **Phase D** with stop reason `CHECKPOINT`.
@@ -171,7 +171,7 @@ Invoke the `ship-executor` agent with the phase number.
 
 Announce: "**[Phase CURRENT_PHASE / TOTAL_PHASES] Verifying...**"
 
-Invoke the `ship-verifier` agent with the phase number.
+Invoke the `ship-verifier` agent with the phase number, using `model: "sonnet"`.
 
 After the verifier returns `## VERIFICATION COMPLETE`, read `.planning/NN-VERIFY.md`:
 

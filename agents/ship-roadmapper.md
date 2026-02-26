@@ -1,5 +1,6 @@
 ---
 name: ship-roadmapper
+model: opus
 description: Creates the project roadmap by grouping requirements into phases with observable success criteria. Use after new-project setup when PROJECT.md and REQUIREMENTS.md exist.
 tools: Read, Write, Edit, Glob
 ---
