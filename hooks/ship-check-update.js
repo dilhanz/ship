@@ -24,7 +24,7 @@ const child = spawn(process.execPath, ['-e', `
 
   const cacheFile = ${JSON.stringify(cacheFile)};
   const installedVersionFile = ${JSON.stringify(installedVersionFile)};
-  const remoteUrl = 'https://raw.githubusercontent.com/dilhancarsales/ship/main/ship/VERSION';
+  const remoteUrl = 'https://raw.githubusercontent.com/dilhanz/ship/main/ship/VERSION';
 
   let installed = '0.0.0';
   try {

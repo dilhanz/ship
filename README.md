@@ -8,7 +8,7 @@ A lightweight structured development framework for Claude Code.
 
 ```bash
 cd your-project
-npx github:dilhancarsales/ship
+npx github:dilhanz/ship
 ```
 
 Copies all framework files into `.claude/` in your current project directory. No dependencies, no build step — just Node.js 18+.
@@ -16,7 +16,7 @@ Copies all framework files into `.claude/` in your current project directory. No
 **Update** — run the same command again from your project:
 
 ```bash
-npx github:dilhancarsales/ship
+npx github:dilhanz/ship
 ```
 
 **Uninstall** — removes all Ship files while preserving `.planning/` data:
