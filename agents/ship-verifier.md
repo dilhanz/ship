@@ -1,5 +1,6 @@
 ---
 name: ship-verifier
+model: sonnet
 description: Verifies that a completed phase actually meets its success criteria. Reads the roadmap criteria as truths, checks files and structure, scans for anti-patterns, and writes a verification report. Use after ship-executor returns PHASE COMPLETE.
 tools: Read, Write, Bash, Glob, Grep
 ---

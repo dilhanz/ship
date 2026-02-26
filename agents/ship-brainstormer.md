@@ -1,5 +1,6 @@
 ---
 name: ship-feature-brainstormer
+model: opus
 description: Explores and sharpens a rough feature idea through conversation. Reads the existing project context, asks clarifying questions, researches if needed, and produces a captured idea document ready to hand off to plan-phase. Use when you have a feature idea but aren't ready to plan yet.
 tools: Read, Write, WebSearch, WebFetch, Glob
 ---
