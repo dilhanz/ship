@@ -29,7 +29,7 @@ If PLAN file doesn't exist, tell the user to run `/ship:plan-phase N` first.
 
 ### Step 2 — Invoke ship-executor
 
-Invoke the `ship-executor` agent with the phase number.
+Invoke the `ship-executor` agent with the phase number, using `model: "sonnet"`.
 
 > "Invoking ship-executor for Phase N — [Phase Name]"
 
