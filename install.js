@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Ship installer — copies framework files to ~/.claude/
+ * Ship installer — copies framework files to .claude/ in the current project
  * Zero dependencies. Node.js built-ins only.
  *
  * Usage:
@@ -11,28 +11,27 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 const SHIP_ROOT = path.resolve(__dirname);
-const CLAUDE_DIR = path.join(os.homedir(), '.claude');
+const CLAUDE_DIR = path.join(process.cwd(), '.claude');
 
 const COPIES = [
-  // Commands → ~/.claude/commands/ship/
+  // Commands → .claude/commands/ship/
   {
     src: path.join(SHIP_ROOT, 'commands', 'ship'),
     dest: path.join(CLAUDE_DIR, 'commands', 'ship'),
   },
-  // Agents → ~/.claude/agents/
+  // Agents → .claude/agents/
   {
     src: path.join(SHIP_ROOT, 'agents'),
     dest: path.join(CLAUDE_DIR, 'agents'),
   },
-  // Ship data → ~/.claude/ship/
+  // Ship data → .claude/ship/
   {
     src: path.join(SHIP_ROOT, 'ship'),
     dest: path.join(CLAUDE_DIR, 'ship'),
   },
-  // Hooks → ~/.claude/hooks/
+  // Hooks → .claude/hooks/
   {
     src: path.join(SHIP_ROOT, 'hooks'),
     dest: path.join(CLAUDE_DIR, 'hooks'),
@@ -75,7 +74,7 @@ function copyDir(src, dest) {
       copied.push(...subCopied);
     } else if (entry.isFile()) {
       fs.copyFileSync(srcPath, destPath);
-      copied.push(destPath.replace(os.homedir(), '~'));
+      copied.push(destPath.replace(process.cwd(), '.'));
     }
   }
 
@@ -129,7 +128,7 @@ function registerSettings() {
   }
 
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  return settingsPath.replace(os.homedir(), '~');
+  return settingsPath.replace(process.cwd(), '.');
 }
 
 function deregisterSettings() {
@@ -169,13 +168,13 @@ function deregisterSettings() {
   }
 
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  return settingsPath.replace(os.homedir(), '~');
+  return settingsPath.replace(process.cwd(), '.');
 }
 
 function removeFile(filePath) {
   if (fs.existsSync(filePath)) {
     fs.rmSync(filePath, { recursive: true, force: true });
-    return filePath.replace(os.homedir(), '~');
+    return filePath.replace(process.cwd(), '.');
   }
   return null;
 }
@@ -202,9 +201,8 @@ function install() {
   const settingsPath = registerSettings();
   console.log(`  ${settingsPath} (hooks + statusLine registered)`);
 
-  console.log(`\nShip installed — ${allCopied.length} files copied to ~/.claude/`);
+  console.log(`\nShip installed — ${allCopied.length} files copied to .claude/`);
   console.log('\nGet started:');
-  console.log('  cd your-project');
   console.log('  /ship:new-project');
 }
 
