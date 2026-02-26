@@ -18,10 +18,13 @@ Before asking anything, read the existing project files so you understand what's
 2. `.planning/REQUIREMENTS.md` — existing features (FEAT-XX)
 3. `.planning/STATE.md` — where the project currently is
 4. `.planning/ROADMAP.md` — what phases are planned or completed
+5. `.planning/DEEP-RESEARCH.md` — deep research brief (only exists if `--deep` was used)
 
-If these files don't exist, ask the user to describe the project briefly before continuing.
+If the project files (1-4) don't exist, ask the user to describe the project briefly before continuing.
 
 Use this context to ask smarter questions — don't ask about things you can already read.
+
+If `DEEP-RESEARCH.md` exists, incorporate its findings throughout the conversation. Reference specific research insights when relevant to the discussion.
 
 ### Phase 2 — Understand the Feature Idea
 
@@ -44,6 +47,12 @@ Ask 1-2 follow-up questions to dig into the parts that are vague or assumed. Sta
 Avoid questions that are premature ("How would we implement this?") or already answered by the project files.
 
 ### Phase 3 — Research (if needed)
+
+**If `.planning/DEEP-RESEARCH.md` exists:** Skip broad research — the deep research phase already covered market, competitive, and technical landscape. Only do targeted follow-up searches (1-2 max) to fill specific gaps identified during the conversation. Reference deep research findings naturally:
+- "The deep research found [X] — does that match what you had in mind?"
+- "Based on the competitive analysis, [competitor] does this by [approach]. Worth considering?"
+
+**If `.planning/DEEP-RESEARCH.md` does NOT exist:** Do light research as before.
 
 If the feature involves something you're uncertain about — a new integration, an unfamiliar pattern, or a relevant third-party capability — do 2-3 targeted searches.
 
@@ -116,7 +125,8 @@ Write a `BRAINSTORM.md` file in the current directory:
 
 ## Research Notes
 
-[Relevant findings — useful patterns, libraries, trade-offs. Or "No research needed."]
+[Relevant findings — useful patterns, libraries, trade-offs. Or "No research needed."
+If deep research was performed, summarize key insights and reference .planning/DEEP-RESEARCH.md for full details.]
 ```
 
 ### Phase 6 — Review and Hand Off
