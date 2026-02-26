@@ -3,14 +3,12 @@ description: Uninstall Ship from the current project, removing all framework fil
 allowed-tools: Bash
 ---
 
-Run the Ship uninstall script:
+Run the Ship uninstall command:
 
 ```bash
-node .claude/ship/uninstall.js
+npx github:dilhanz/ship --uninstall
 ```
 
-After the script completes, report what was removed. Confirm that `.planning/` data has been preserved and that the user can reinstall Ship at any time by running `node install.js` from the Ship repository.
-
-If the script is not found (Ship may be partially installed), inform the user they can clone the Ship repository and run `node uninstall.js` from there instead.
+After the script completes, report what was removed. Confirm that `.planning/` data has been preserved and that the user can reinstall Ship at any time by running `npx github:dilhanz/ship`.
 
 $ARGUMENTS
