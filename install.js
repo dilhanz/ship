@@ -5,8 +5,8 @@
  * Zero dependencies. Node.js built-ins only.
  *
  * Usage:
- *   npx github:dilhancarsales/ship             Install or update
- *   npx github:dilhancarsales/ship --uninstall  Remove Ship
+ *   npx github:dilhanz/ship             Install or update
+ *   npx github:dilhanz/ship --uninstall  Remove Ship
  */
 
 const fs = require('fs');

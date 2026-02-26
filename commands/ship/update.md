@@ -12,7 +12,7 @@ cat .claude/ship/VERSION 2>/dev/null || echo "(unknown)"
 
 2. Re-install from GitHub:
 ```bash
-npx github:dilhancarsales/ship
+npx github:dilhanz/ship
 ```
 
 3. Read the new version:
