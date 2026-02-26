@@ -41,6 +41,7 @@ const COPIES = [
 
 // Ship-owned agent files (for clean uninstall)
 const AGENT_FILES = [
+  'ship-brainstormer.md',
   'ship-executor.md',
   'ship-planner.md',
   'ship-roadmapper.md',
