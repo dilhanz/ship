@@ -38,7 +38,7 @@ Use Glob to check if `.planning/NN-PLAN.md` already exists.
 
 ### Step 3 — Invoke ship-planner
 
-Invoke the `ship-planner` agent with the phase number.
+Invoke the `ship-planner` agent with the phase number, using `model: "opus"`.
 
 > "Invoking ship-planner for Phase N — [Phase Name]"
 
@@ -51,7 +51,7 @@ The planner will:
 
 ### Step 3.5 — Verify plan quality
 
-Invoke the `ship-plan-checker` agent with the phase number.
+Invoke the `ship-plan-checker` agent with the phase number, using `model: "opus"`.
 
 **If PLAN VERIFIED** → proceed to Step 4 normally.
 
@@ -63,7 +63,7 @@ Present the issues to the user exactly as the checker reported them, then ask:
 > (1) Revise the plan to fix them
 > (2) Proceed anyway"
 
-- If **revise**: invoke `ship-planner` again, passing the checker's issue list as additional context so it knows what to fix. After the revised plan is written, run `ship-plan-checker` once more.
+- If **revise**: invoke `ship-planner` again (with `model: "opus"`), passing the checker's issue list as additional context so it knows what to fix. After the revised plan is written, run `ship-plan-checker` (with `model: "opus"`) once more.
   - If the revised plan is **PLAN VERIFIED** → proceed to Step 4.
   - If the revised plan still has blockers → present the remaining issues to the user and ask: "The revised plan still has blockers. Proceed anyway, or stop here to fix manually?"
     - If proceed → continue to Step 4 with a note that issues were acknowledged.

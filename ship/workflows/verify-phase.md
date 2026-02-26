@@ -27,7 +27,7 @@ Check:
 
 ### Step 2 — Invoke ship-verifier
 
-Invoke the `ship-verifier` agent with the phase number.
+Invoke the `ship-verifier` agent with the phase number, using `model: "sonnet"`.
 
 > "Invoking ship-verifier for Phase N — [Phase Name]"
 

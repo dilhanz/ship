@@ -1,5 +1,6 @@
 ---
 name: ship-executor
+model: sonnet
 description: Executes the implementation plan for a specific phase. Reads the phase PLAN.md, implements each task sequentially, commits after each verified task, and writes a SUMMARY.md. Use when STATE.md shows status "executing".
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---

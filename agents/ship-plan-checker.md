@@ -1,5 +1,6 @@
 ---
 name: ship-plan-checker
+model: opus
 description: Verifies a phase plan meets quality standards before execution begins. Checks requirement coverage, task completeness, verify command quality, ordering, and scope.
 tools: Read, Glob
 ---

@@ -74,7 +74,7 @@ Prompt the agent to research:
 
 The agent should perform 3-5 WebSearch queries and use WebFetch to read the most relevant results. It should return structured findings with source URLs.
 
-**Important:** All three agents must be launched in a single message (parallel execution). Use `subagent_type: "general-purpose"` for each.
+**Important:** All three agents must be launched in a single message (parallel execution). Use `subagent_type: "general-purpose"` and `model: "sonnet"` for each.
 
 ### Step 5 — Synthesize into DEEP-RESEARCH.md
 

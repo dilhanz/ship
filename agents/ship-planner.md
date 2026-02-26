@@ -1,5 +1,6 @@
 ---
 name: ship-planner
+model: opus
 description: Creates the implementation plan for a specific phase. Reads the roadmap and current state, does targeted research if needed, and writes a concrete task list. Use when STATE.md shows status "planning" for a phase.
 tools: Read, Write, Edit, Glob, WebFetch
 ---
