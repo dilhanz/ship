@@ -92,7 +92,7 @@ Wait for confirmation or corrections. Update REQUIREMENTS.md if needed.
 
 ### Step 6 — Invoke ship-roadmapper
 
-Once requirements are confirmed, invoke the `ship-roadmapper` agent:
+Once requirements are confirmed, invoke the `ship-roadmapper` agent with `model: "opus"`:
 
 > "Requirements are confirmed. Invoking ship-roadmapper to create the project roadmap."
 

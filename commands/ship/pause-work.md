@@ -21,7 +21,7 @@ Nothing to pause.
 
 3. Read the current phase's plan file (`.planning/NN-PLAN.md`, where NN is the current phase number, zero-padded) to get the full task list.
 
-4. Check recent git log for commits matching the pattern `feat(NN):` to determine which tasks have been committed. Use Glob to find any existing `NN-SUMMARY.md` as well.
+4. Read STATE.md's `## Execution Progress` section as the primary source of truth for task completion status. Use git log only to validate if Execution Progress is missing or empty. Use Glob to find any existing `NN-SUMMARY.md` as well.
 
 5. Write or update `.planning/NN-SUMMARY.md` with a partial-progress summary in this format:
 
