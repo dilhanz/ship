@@ -23,7 +23,11 @@ Read `.planning/ROADMAP.md` and `.planning/STATE.md`.
 Check:
 - Does phase N exist in the roadmap?
 - Is there a prior phase that hasn't been verified yet? (Check STATE.md Phase History)
-  - If yes, warn the user: "Phase [N-1] has not been verified yet. Continue anyway? (/ship:verify-phase [N-1] is recommended first)"
+  - If the prior phase shows no verification record at all, warn: "Phase [N-1] has not been verified yet. Run `/ship:verify-phase [N-1]` before planning Phase N."
+  - If a `.planning/(N-1)-VERIFY.md` exists, read it and check the outcome:
+    - **PASS**: proceed normally.
+    - **PARTIAL**: warn: "Phase [N-1] verification was PARTIAL — some criteria were not met. Proceeding to Phase N may carry forward gaps. Continue anyway? (`/ship:verify-phase [N-1]` to re-verify, or proceed)"
+    - **FAIL**: block: "Phase [N-1] verification FAILED. You must resolve Phase [N-1] before planning Phase N. Run `/ship:execute-phase [N-1]` to run fix tasks, or `/ship:verify-phase [N-1]` to re-verify." Stop. Do not proceed.
 
 If the phase doesn't exist in the roadmap, tell the user and stop. Suggest `/ship:add-phase` to add new phases.
 
