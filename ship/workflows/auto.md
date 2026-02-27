@@ -169,10 +169,20 @@ Do not show the plan to the user or wait for confirmation.
 
 Announce: "**[Phase CURRENT_PHASE / TOTAL_PHASES] Executing...**"
 
-Validate that git is initialized in the project root (`git status`). If not, silently initialize it:
+Validate that git is initialized in the project root by running `git status`.
+
+If git is not initialized, attempt to initialize it:
 
 ```bash
 git init && git commit --allow-empty -m "chore: initial commit"
+```
+
+**Check the exit code.** If `git init` or the initial commit fails (non-zero exit code), do NOT proceed. Go to **Phase D** with stop reason `GIT_INIT_FAILURE` and include the error output in the details. Output:
+
+```
+Error: Git initialization failed in the project root.
+[error output from git]
+Please initialize git manually and re-run /ship:auto.
 ```
 
 Invoke the `ship-executor` agent with the phase number, using `model: "sonnet"`.
@@ -214,7 +224,7 @@ Write `.planning/AUTO-STOP.md` with the following structure:
 
 ## Stop Reason
 
-[CHECKPOINT | VERIFY_FAILURE | PLAN_QUALITY]
+[CHECKPOINT | VERIFY_FAILURE | PLAN_QUALITY | GIT_INIT_FAILURE]
 
 ## Phase
 
@@ -256,7 +266,7 @@ Output a concise stop report to the user:
 ```
 ## Auto-Stop — Phase [N]: [Phase Name]
 
-Reason: [CHECKPOINT | VERIFY_FAILURE | PLAN_QUALITY]
+Reason: [CHECKPOINT | VERIFY_FAILURE | PLAN_QUALITY | GIT_INIT_FAILURE]
 Phases completed: [list or "none"]
 
 [1-2 sentence summary of what blocked progress]
