@@ -30,6 +30,12 @@ Extract from ROADMAP.md:
 
 Read the full requirement descriptions from REQUIREMENTS.md for each FEAT-XX.
 
+**Incorporate prior phase notes:** If planning phase N > 1, read `.planning/(NN-1)-SUMMARY.md` (where NN-1 is the zero-padded previous phase number, e.g., `00-SUMMARY.md` for phase 1, `01-SUMMARY.md` for phase 2). Look specifically for the `## Notes for Next Phase` section. This section contains decisions, patterns, and context from execution that MUST inform the current plan. For each note:
+- If it names a pattern or convention established in the prior phase, follow it in this phase's tasks (e.g., "used kebab-case for file names" means this plan should too).
+- If it flags a technical decision, record it in `## Decisions` with source attribution: "Carried from Phase N-1 notes: [decision]".
+- If it warns about a problem or debt, check whether any task in this phase is affected and add a Risk Note if so.
+- If the SUMMARY file does not exist or has no Notes section, proceed normally — this is expected for phase 1.
+
 ### Step 2 — Research (if needed)
 
 If the phase involves technology you are uncertain about, make up to 3 WebFetch calls to gather current best practices, API signatures, or configuration patterns.
