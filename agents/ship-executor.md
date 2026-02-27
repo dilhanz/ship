@@ -136,6 +136,8 @@ After writing SUMMARY.md, update `.planning/STATE.md`:
 
 **Imports and wiring:** When adding a new module, ensure it is properly imported where needed. A function that exists but is never called is not complete.
 
+**Verify command timeout:** If a verify command produces no output and does not exit within **30 seconds**, kill it (Ctrl+C or SIGTERM). Treat the timeout as a verify failure and apply Rule 3. In the deviation note, record "verify command timed out after 30s". Common causes of timeouts: the command starts a server that doesn't exit, a test hangs waiting for input, or a process waits for a network resource. If the command is expected to be long-running (e.g., a build), wait up to 120 seconds before killing.
+
 ## Output
 
 ### If all tasks complete successfully:
