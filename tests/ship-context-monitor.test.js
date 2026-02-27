@@ -78,9 +78,31 @@ function cleanup(sessionId) {
 // Use a unique session prefix for tests to avoid collisions
 const SESSION = `test-ctx-monitor-${process.pid}`;
 
+// Lock file path (may exist from another session -- save/restore around tests)
+const LOCK_PATH = path.join(os.tmpdir(), 'claude-ship-session.lock');
+
 describe('ship-context-monitor hook', () => {
-  beforeEach(() => cleanup(SESSION));
-  afterEach(() => cleanup(SESSION));
+  let savedLock = null;
+
+  beforeEach(() => {
+    // Save any existing lock file so our tests don't interfere with real sessions
+    try { savedLock = fs.readFileSync(LOCK_PATH, 'utf8'); } catch { savedLock = null; }
+    // Remove lock so existing tests run in a clean state (no concurrent session)
+    try { fs.unlinkSync(LOCK_PATH); } catch {}
+    cleanup(SESSION);
+  });
+
+  afterEach(() => {
+    // Restore original lock file
+    if (savedLock !== null) {
+      fs.writeFileSync(LOCK_PATH, savedLock);
+    } else {
+      try { fs.unlinkSync(LOCK_PATH); } catch {}
+    }
+    // Clean up lock-warned file for our test session
+    try { fs.unlinkSync(path.join(os.tmpdir(), `claude-ctx-${SESSION}-lock-warned.json`)); } catch {}
+    cleanup(SESSION);
+  });
 
   // ───── Threshold tests ─────
 
