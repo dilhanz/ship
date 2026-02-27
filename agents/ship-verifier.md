@@ -131,10 +131,13 @@ Write `.planning/NN-VERIFY.md`:
 
 <task>
   <name>Fix: [concise description of what needs to be fixed]</name>
+  <mode>create | modify</mode>
   <files>[exact file paths that need changes]</files>
   <action>[Specific instructions for what to fix, referencing the gap above]</action>
   <verify>[Runnable command that proves this gap is resolved]</verify>
 </task>
+
+Note: `<mode>` should reflect the file state after the initial plan execution — use `modify` for files that now exist from prior tasks, `create` only for net-new files.
 
 [If PASS, omit this section entirely.]
 
