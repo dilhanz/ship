@@ -92,10 +92,7 @@ const COPIES = [
 // Ship-owned agent files (for clean uninstall)
 const AGENT_FILES = [
   'ship-brainstormer.md',
-  'ship-executor.md',
-  'ship-plan-checker.md',
   'ship-planner.md',
-  'ship-roadmapper.md',
   'ship-verifier.md',
 ];
 
@@ -266,7 +263,7 @@ function install() {
 
   console.log(`\nShip installed — ${allCopied.length} files copied to .claude/`);
   console.log('\nGet started:');
-  console.log('  /ship:new-project');
+  console.log('  /ship:start "your feature idea"');
 }
 
 function uninstall() {

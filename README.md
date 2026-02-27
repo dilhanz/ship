@@ -1,8 +1,8 @@
 # Ship
 
-A lightweight structured development framework for Claude Code.
+A feature-centric development framework for Claude Code.
 
-**Ship** is a standalone structured development framework built around a simple flow: questions → roadmap → plan → execute (atomic commits) → verify (goal-backward).
+**Ship** guides every piece of work — feature or fix — through a structured flow: brainstorm → plan → build → verify. Each feature gets its own directory with full context.
 
 ## Install
 
@@ -28,87 +28,68 @@ npx github:dilhanz/ship --uninstall
 ## Usage
 
 ```
-/ship:auto                  Full auto mode — requirements → roadmap → plan → execute → verify, hands-free
+/ship:start "your idea"     Brainstorm → CONTEXT.md
+/ship:plan                  Plan tasks → PLAN.md
+/ship:build                 Implement with atomic commits
+/ship:verify                Check against acceptance criteria → VERIFY.md
 ```
 
-Or step through each phase manually:
+Or let Ship run everything automatically:
 
 ```
-/ship:new-project           Start here — auto-detects new vs existing codebase
-/ship:plan-phase 1          Plan phase 1 — tasks, file paths, verify commands
-/ship:execute-phase         Implement current phase — verify + atomic commits
-/ship:verify-phase          Check current phase against success criteria
-```
-
-Repeat plan → execute → verify for each phase.
-
-For adding a feature to an existing project:
-
-```
-/ship:feature-brainstorm    Explore and sharpen a feature idea
-/ship:plan-phase N          Plan the new phase
-/ship:execute-phase         Implement it
-/ship:verify-phase          Verify it
+/ship:start "your idea"     Brainstorm first (interactive)
+/ship:go                    Then auto-run: plan → build → verify
 ```
 
 ## Utility Commands
 
 ```
-/ship:status            Current phase and next action
+/ship:status            Show all features and their status
 /ship:resume            Pick up where you left off
-/ship:pause-work        Save state and pause for safe resumption
-/ship:add-phase         Add a new phase mid-project
-/ship:complete          Mark project done, generate summary
 /ship:update            Update Ship to latest version
+/ship:uninstall         Remove Ship from this project
 /ship:help              Full command reference
 ```
 
 ## What Ship Does
 
-**Auto mode:** End-to-end automation. Captures requirements interactively (same flow as new-project), confirms the roadmap with you once, then plans → executes → verifies every phase automatically without further prompts. Stops and writes `.planning/AUTO-STOP.md` if a hard blocker or verification failure occurs, with exact steps to fix and resume.
+**Start / Brainstorm:** Asks 5-10+ questions to deeply understand what you want to build. Reads your codebase directly to ask smarter questions. Captures everything in a `CONTEXT.md` with problem statement, decisions, acceptance criteria, and scope boundaries.
 
-**Feature brainstorm:** For mid-project feature additions. Reads existing project context, asks one question at a time to sharpen a rough idea, optionally researches relevant patterns or libraries, then writes a structured `BRAINSTORM.md` capturing the problem, minimum scope, and open questions.
+**Plan:** Reads CONTEXT.md, explores the codebase, and writes a concrete task list with specific file paths and runnable verify commands. Self-validates plan quality (acceptance coverage, task completeness, verify command quality, scope).
 
-**New project:** Auto-detects whether the directory is greenfield or has an existing codebase. Asks the right questions for each case, captures requirements as FEAT-XX IDs, and creates a phased roadmap with observable success criteria.
+**Build:** Implements tasks sequentially, runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Applies 3 deviation rules when reality diverges from plan.
 
-**Plan phase:** Reads the roadmap, does up to 3 web fetches if research is needed, writes a concrete task list with specific file paths and runnable verify commands. Then runs a plan quality gate (ship-plan-checker) before presenting the plan — verifying requirement coverage, task completeness, verify command quality, and scope. If issues are found you can revise or proceed anyway.
+**Verify:** Reads acceptance criteria from CONTEXT.md as truths, checks backwards into the code (file exists → has substance → is wired up). Scans for TODOs and stubs. If gaps exist, writes fix tasks back to PLAN.md.
 
-**Execute phase:** Implements tasks sequentially, runs the verify command after each task, commits atomically (`feat(NN): task-name`) with specific files staged. Applies 4 deviation rules when reality diverges from plan.
+## Feature Directory
 
-**Verify phase:** Reads success criteria from the roadmap as truths, checks backwards into the code (file exists → has substance → is wired up). Scans for TODOs and stubs. Writes a pass/fail report.
-
-## Planning Files
-
-Ship stores all planning context in `.planning/` at your project root:
+Each feature gets its own directory under `.planning/features/`:
 
 ```
-.planning/
-├── PROJECT.md        Vision, stack, constraints, decisions
-├── REQUIREMENTS.md   FEAT-XX items with priorities
-├── ROADMAP.md        Phases with goals and success criteria
-├── STATE.md          Current position (always under 40 lines)
-├── 01-PLAN.md        Phase 1 plan
-├── 01-SUMMARY.md     Phase 1 execution record
-├── 01-VERIFY.md      Phase 1 verification report
-├── AUTO-STOP.md      Written by auto mode if a blocker or verify failure occurs
+.planning/features/
+├── user-auth/
+│   ├── CONTEXT.md    Problem, decisions, acceptance criteria, scope
+│   ├── PLAN.md       Tasks with inline status tracking
+│   └── VERIFY.md     Verification report
+├── fix-login-bug/
+│   ├── CONTEXT.md
+│   └── ...
 └── ...
 ```
 
+Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `building` → `built` → `done`
+
 ## Core Principles
 
-**Goal-backward verification.** Success criteria are written before code. The verifier checks reality against goals — not whether tasks were executed.
+**Intensive brainstorming.** The brainstormer asks 5-10+ questions before writing anything. It reads your codebase to avoid asking about things it can already see.
 
-**Mandatory verification.** A phase is NOT complete until the verifier says PASS. Only the ship-verifier can set status to "complete". Planning the next phase is blocked until verification passes.
-
-**State guards.** Every agent validates STATE.md before proceeding. Wrong state = blocked with a clear message about what to run instead. No silent skipping.
-
-**Progress logging.** Agents write real-time progress entries to STATE.md as tasks complete. If a session is interrupted, the log survives.
+**Goal-backward verification.** Acceptance criteria are written before code. The verifier checks reality against what the user asked for — not whether tasks were executed.
 
 **Atomic commits.** One commit per task. Specific files staged. Verify command must pass before committing.
 
-**Deviation rules.** 4 rules for when reality diverges from plan: fix-and-continue for small changes, stop-and-report for architectural conflicts.
+**Deviation rules.** 3 rules for when reality diverges from plan: fix and continue for small issues, fix with limits for verify failures (max 3 attempts), stop and report for architectural conflicts.
 
-**No config.** Ship always uses the same flow. No preferences file, no feature flags.
+**No ceremony.** No phases, no milestones, no FEAT-XX IDs. Just features with context, plans, and verification.
 
 ## Hooks
 
@@ -118,6 +99,6 @@ The installer automatically registers 3 hooks in `.claude/settings.json`:
 |------|---------|---------|
 | `ship-statusline` | statusLine | Shows model, current task, directory, and context usage in the Claude Code status bar |
 | `ship-check-update` | SessionStart | Checks for Ship updates once per session in the background |
-| `ship-context-monitor` | PostToolUse | Injects warnings into the agent's context when usage exceeds 35% (warning) or 25% (critical) remaining |
+| `ship-context-monitor` | PostToolUse | Injects warnings into the agent's context when usage exceeds thresholds |
 
-The context monitor is especially useful for long execution phases — it tells the agent to save state before the context window fills up, preventing lost progress.
+The context monitor warns the agent to save state before the context window fills up, preventing lost progress.

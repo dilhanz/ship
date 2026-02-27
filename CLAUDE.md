@@ -1,22 +1,46 @@
 # Ship
 
-Ship is a lightweight structured development framework for Claude Code. It provides slash commands, agents, and workflows that guide projects through a plan-execute-verify loop.
+Ship is a feature-centric development framework for Claude Code. Every piece of work (feature or fix) gets its own directory under `.planning/features/{name}/`. The user drives requirements through intensive brainstorming, then Claude plans, builds, and verifies.
 
 ## Architecture
 
 Three-layer design, all Markdown with YAML frontmatter:
 
 ```
-commands/ship/*.md   11 slash commands (thin entry points, invoked as /ship:command-name)
-ship/workflows/*.md   4 orchestration workflows (multi-step processes)
-agents/*.md           5 specialized agents (planner, executor, verifier, roadmapper, brainstormer)
+commands/ship/*.md   10 slash commands (thin entry points, invoked as /ship:command-name)
+ship/workflows/*.md   2 orchestration workflows (build, go)
+agents/*.md           3 specialized agents (brainstormer, planner, verifier)
 ```
 
 **Commands** define `description` and `allowed-tools` in frontmatter, then delegate to a workflow or agent.
 
-**Workflows** define multi-step processes: `new-project`, `plan-phase`, `execute-phase`, `verify-phase`.
+**Workflows** define multi-step processes: `build` (execute tasks), `go` (auto-run remaining steps).
 
-**Agents** define `name`, `description`, and `tools` in frontmatter. Each agent has a single responsibility (e.g., ship-planner reads the roadmap and writes a concrete task plan).
+**Agents** define `name`, `description`, and `tools` in frontmatter. Each agent has a single responsibility:
+- `ship-brainstormer` — intensive questioning → CONTEXT.md
+- `ship-planner` — codebase exploration → PLAN.md
+- `ship-verifier` — acceptance criteria checking → VERIFY.md
+
+## Flow
+
+```
+/ship:start "idea" → brainstorm (5-10+ questions) → CONTEXT.md
+/ship:plan         → explore code, design tasks    → PLAN.md
+/ship:build        → implement, verify, commit     → tasks marked done
+/ship:verify       → check acceptance criteria      → VERIFY.md
+/ship:go           → auto-run remaining steps
+```
+
+## Feature Directory Structure
+
+```
+.planning/features/{feature-name}/
+  CONTEXT.md    — brainstorm output (problem, decisions, acceptance criteria, scope)
+  PLAN.md       — implementation plan with tasks (status tracked inline)
+  VERIFY.md     — verification report
+```
+
+Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `building` → `built` → `done`
 
 ## Supporting Files
 
@@ -26,24 +50,24 @@ hooks/                 3 Node.js hooks (stdin->stdout, zero dependencies)
   ship-context-monitor.js PostToolUse event — injects warnings when context is high
   ship-check-update.js   SessionStart event — checks GitHub for newer version
 
-ship/templates/*.md    7 planning file templates (PROJECT, REQUIREMENTS, ROADMAP, STATE, PLAN, SUMMARY, VERIFY)
+ship/templates/*.md    3 planning file templates (CONTEXT, PLAN, VERIFY)
 ship/references/*.md   Git commit conventions and deviation rules
-install.js             Copies everything to .claude/ in the current project and registers hooks in .claude/settings.json
+install.js             Copies everything to .claude/ in the current project and registers hooks
 ```
 
 ## Key Concepts
 
-- **State machine:** planning -> executing -> verifying -> complete (tracked in `.planning/STATE.md`)
-- **Planning directory:** `.planning/` at the project root holds all state files (PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, NN-PLAN.md, NN-SUMMARY.md, NN-VERIFY.md)
-- **Atomic commits:** One commit per task, specific files staged (never `git add .`)
-- **Deviation rules:** 4 escalation levels when reality diverges from the plan (see `ship/references/deviation-rules.md`)
-- **Context bridge:** The statusline hook writes context metrics to `/tmp/claude-ctx-{session}.json`, which the context-monitor hook reads to inject agent-facing warnings
+- **Feature-centric:** Each feature/fix gets its own directory — no phases, no milestones, no FEAT-XX IDs
+- **Intensive brainstorming:** The brainstormer asks 5-10+ questions before writing CONTEXT.md
+- **Atomic commits:** One commit per task, specific files staged (never `git add .`), format: `feat(feature-name): description`
+- **Deviation rules:** 3 escalation levels when reality diverges from the plan (see `ship/references/deviation-rules.md`)
+- **Context bridge:** The statusline hook writes context metrics to `/tmp/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
 
 ## Development Guidelines
 
 ### No Dependencies
 
-Ship uses zero npm packages. All hooks are pure Node.js built-ins (`fs`, `path`, `os`, `https`, `child_process`). There is no `package.json`. Keep it that way.
+Ship uses zero npm packages. All hooks are pure Node.js built-ins (`fs`, `path`, `os`, `https`, `child_process`). Keep it that way.
 
 ### Hooks
 
@@ -55,11 +79,11 @@ Hooks are stdin->stdout Node.js scripts. They receive JSON on stdin and (optiona
 
 ### Commands
 
-Commands live in `commands/ship/`. Each file is a Markdown document with frontmatter (`description`, `allowed-tools`). The body tells Claude what to do, usually delegating to a workflow file at `.claude/ship/workflows/`. `$ARGUMENTS` is replaced with user-provided arguments.
+Commands live in `commands/ship/`. Each file is a Markdown document with frontmatter (`description`, `allowed-tools`). The body tells Claude what to do, usually delegating to a workflow or agent. `$ARGUMENTS` is replaced with user-provided arguments.
 
 ### Agents
 
-Agents live in `agents/`. Frontmatter: `name`, `description`, `tools`. The body contains detailed instructions for the agent's role. Agents are invoked by workflows, not directly by users.
+Agents live in `agents/`. Frontmatter: `name`, `description`, `tools`. The body contains detailed instructions for the agent's role. Agents are invoked by commands, not directly by users.
 
 ### Templates
 
@@ -72,12 +96,12 @@ Use `node --test` (Node.js built-in test runner). Test files go in the `tests/` 
 ### Commit Conventions
 
 ```
-<type>(<phase>): <description>
+<type>(<feature-name>): <description>
 ```
 
-Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. Phase is a two-digit number (e.g., `01`). Description is imperative, lowercase, no period, under 60 chars. For changes to Ship itself (not a user project), omit the phase number:
+Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`. Feature name is the kebab-case slug from the feature directory. Description is imperative, lowercase, no period, under 60 chars. For changes to Ship itself (not a user project), omit the feature name:
 
 ```
-feat: add ship-brainstormer agent for feature idea exploration
-refactor: streamline command flow and add brownfield detection
+feat: rewrite to feature-centric architecture
+refactor: simplify deviation rules to 3 levels
 ```
