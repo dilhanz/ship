@@ -6,6 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+function writeFileAtomic(filePath, data) {
+  const tmpPath = filePath + '.tmp.' + process.pid;
+  fs.writeFileSync(tmpPath, data);
+  fs.renameSync(tmpPath, filePath);
+}
+
 // Read JSON from stdin
 let input = '';
 process.stdin.setEncoding('utf8');
@@ -38,7 +44,7 @@ process.stdin.on('end', () => {
             used_pct: used,
             timestamp: Math.floor(Date.now() / 1000)
           });
-          fs.writeFileSync(bridgePath, bridgeData);
+          writeFileAtomic(bridgePath, bridgeData);
         } catch (e) {
           // Silent fail -- bridge is best-effort, don't break statusline
         }
