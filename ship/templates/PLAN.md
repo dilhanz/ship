@@ -1,36 +1,33 @@
 ---
-phase: NN
-goal: "[Phase goal from ROADMAP.md]"
-requirements: [FEAT-XX, FEAT-YY]
+feature: "{feature-name}"
+goal: "[Goal from CONTEXT.md]"
 ---
 
 ## Research Notes
 
-[Findings from any web research, or "Domain familiar — no research needed"]
+[Findings from codebase exploration or web research, or "Domain familiar — no research needed"]
 
 ## Decisions
 
-- [Decision made for this phase and rationale]
+- [Decision made during planning and rationale]
 
 ## Must Deliver
 
-- [Observable outcome 1 — maps to a success criterion]
-- [Observable outcome 2 — maps to a success criterion]
-- [Observable outcome 3 — maps to a success criterion]
+- [Observable outcome 1 — maps to an acceptance criterion]
+- [Observable outcome 2]
+- [Observable outcome 3]
 
 ---
 
-<task>
+<task id="1" status="pending">
   <name>Task name (imperative verb)</name>
-  <mode>create | modify</mode>
   <files>path/to/file.ts, path/to/other.ts</files>
   <action>Specific description of what to implement. Include function signatures, field names, or schema details where relevant.</action>
-  <verify>Command that proves this task is complete. Must be runnable. Example: npm test -- --grep "auth" or curl -X POST http://localhost:3000/api/auth/register</verify>
+  <verify>Command that proves this task is complete. Must be runnable.</verify>
 </task>
 
-<task>
+<task id="2" status="pending">
   <name>Task name</name>
-  <mode>create | modify</mode>
   <files>path/to/file.ts</files>
   <action>...</action>
   <verify>...</verify>
@@ -38,4 +35,4 @@ requirements: [FEAT-XX, FEAT-YY]
 
 ## Risk Notes
 
-- [Task N — what could go wrong and what to do about it. Optional section — include when tasks involve external deps, migrations, or complex integrations.]
+- [Task N — what could go wrong and what to do about it. Optional section.]

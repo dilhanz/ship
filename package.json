@@ -1,7 +1,7 @@
 {
   "name": "ship",
-  "version": "1.0.2",
-  "description": "A lightweight structured development framework for Claude Code",
+  "version": "2.0.0",
+  "description": "A feature-centric development framework for Claude Code",
   "bin": "./install.js",
   "engines": {
     "node": ">=18"

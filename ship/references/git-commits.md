@@ -7,23 +7,22 @@ Ship uses atomic commits — one commit per completed task.
 ## Format
 
 ```
-<type>(<phase>): <description>
+<type>(<feature-name>): <description>
 ```
 
 - `<type>` — one of: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
-- `<phase>` — two-digit phase number: `01`, `02`, etc.
+- `<feature-name>` — the feature slug from `.planning/features/{name}/`
 - `<description>` — imperative, present tense, lowercase, no period, under 60 chars
 
 ## Examples
 
 ```
-feat(01): add user model with prisma schema
-feat(01): implement bcrypt password hashing
-feat(02): create JWT auth middleware
-fix(02): handle expired token edge case
-test(03): add unit tests for auth service
-refactor(03): extract email validation helper
-chore(01): install bcrypt and jsonwebtoken
+feat(user-auth): add user model with prisma schema
+feat(user-auth): implement bcrypt password hashing
+fix(user-auth): handle expired token edge case
+test(user-auth): add unit tests for auth service
+refactor(user-auth): extract email validation helper
+chore(user-auth): install bcrypt and jsonwebtoken
 ```
 
 ## Rules
@@ -37,5 +36,5 @@ chore(01): install bcrypt and jsonwebtoken
 
 ```bash
 git add <file1> <file2> ...
-git commit -m "feat(NN): description of what was done"
+git commit -m "feat(feature-name): description of what was done"
 ```
