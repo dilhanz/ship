@@ -25,8 +25,8 @@ If a file path, function name, or minor detail is wrong: make the correct change
 **Rule 2 — Missing Dependency: Install and Continue**
 If a required package is not installed: install it with the project's package manager, note it, continue.
 
-**Rule 3 — Task Fails Verification: Fix Before Proceeding**
-If a task's verify command fails: debug and fix before moving to the next task. Do not skip. Do not mark complete until verify passes.
+**Rule 3 — Task Fails Verification: Fix Before Proceeding (3-attempt limit)**
+If a task's verify command fails: debug and fix, then re-verify. You have a maximum of **3 attempts** to fix a failing verify command. Track your attempt count explicitly (attempt 1 of 3, attempt 2 of 3, attempt 3 of 3). If the verify command still fails after the third attempt, **escalate to Rule 4** — stop execution, write progress to SUMMARY.md, update STATE.md with `Checkpoint: Rule 3 exhausted after 3 attempts on task [task name] — [description of failure]`, and return `## CHECKPOINT REACHED`. Do not attempt a fourth fix. Do not skip the task.
 
 **Rule 4 — Architecture Conflict: Stop and Report**
 If the plan requires a fundamental change that affects multiple phases (database switch, auth strategy change, data model restructure): STOP. Write what's done to SUMMARY.md. Update STATE.md: set `Status:` to `executing`, add `Checkpoint: [conflict description]` field below Status. Return `## CHECKPOINT REACHED` with explanation and recommendation. Do not improvise architectural changes.
@@ -56,8 +56,10 @@ For each task:
 **2b. Verify**
 - Run the verify command from the task
 - If it passes: proceed to commit
-- If it fails: apply Rule 3 — debug and fix, then re-verify
-- If fixing reveals an architectural conflict: apply Rule 4
+- If it fails: apply Rule 3 — debug and fix, then re-verify (max 3 attempts total)
+- Track attempts explicitly: "Verify attempt 1 of 3", "Verify attempt 2 of 3", "Verify attempt 3 of 3"
+- After 3 failed attempts: escalate to Rule 4 (CHECKPOINT) — do NOT attempt a 4th fix
+- If fixing reveals an architectural conflict: apply Rule 4 immediately
 
 **2c. Commit**
 - Stage only the specific files listed in the task (plus any deviation files)
