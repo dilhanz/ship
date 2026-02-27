@@ -61,13 +61,15 @@ For each Must Deliver item:
 
 For every `<task>` block in the plan:
 
-Check that all four fields are present and non-empty:
+Check that all five fields are present and non-empty:
 - `<name>` — descriptive name
+- `<mode>` — must be `create` or `modify`
 - `<files>` — at least one file path or glob
 - `<action>` — what to implement
 - `<verify>` — how to confirm it worked
 
 **Blocker** if: any field is missing or empty.
+**Blocker** if: Task missing `<mode>` field.
 **Blocker** if: `<action>` is a vague one-liner with no specifics — no function names, no field names, no concrete behavior described. Examples of vague actions: "Implement the feature", "Add the handler", "Create the component". An action must name at least one specific thing (function, schema field, API path, component prop, etc.).
 
 ---

@@ -93,6 +93,7 @@ const COPIES = [
 const AGENT_FILES = [
   'ship-brainstormer.md',
   'ship-executor.md',
+  'ship-plan-checker.md',
   'ship-planner.md',
   'ship-roadmapper.md',
   'ship-verifier.md',

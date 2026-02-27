@@ -1,6 +1,6 @@
 # State
 
-**Current Phase:** [N — Phase Name] | **Status:** [planning / executing / verifying / complete]
+**Current Phase:** [N — Phase Name] | **Status:** [planning / executing / verifying / paused / complete]
 
 **Last Action:** [Brief description of last completed action]
 
