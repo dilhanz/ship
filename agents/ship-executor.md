@@ -41,7 +41,15 @@ Read the plan file. Extract all tasks in order. For each task, note:
 - Action description
 - Verify command
 
-**Check for prior progress:** Read `.planning/STATE.md` and look for an `## Execution Progress` section. If it exists with completed tasks (`- [x]`), skip those tasks — they were already committed in a previous session. Start execution from the first unchecked (`- [ ]`) task.
+**Check for prior progress:** Read `.planning/STATE.md` and look for an `## Execution Progress` section.
+
+1. **Missing Execution Progress section:** If STATE.md has no `## Execution Progress` section, assume no tasks have been completed. Create the section with all tasks listed as unchecked (`- [ ]`) before starting execution.
+
+2. **Execution Progress exists:** If the section exists with completed tasks (`- [x]`), skip those tasks — they were already committed in a previous session. Start execution from the first unchecked (`- [ ]`) task.
+
+3. **Task name mismatch:** Compare each task name in the Execution Progress checklist against the task names in the PLAN file. If a task name in Execution Progress does not match any task in the plan (e.g., the plan was re-generated), treat the Execution Progress as stale. Log a deviation: "Execution Progress task names do not match plan — resetting progress." Clear the Execution Progress section and start from task 1. Do NOT silently skip mismatched tasks.
+
+4. **Commit hash validation:** For each completed task in Execution Progress that lists a commit hash (e.g., `(commit abc123)`), run `git log --oneline -1 abc123` to verify the commit exists. If a commit hash does not exist in the git history, mark that task as unchecked and re-execute it. Log a deviation: "Commit [hash] from Execution Progress not found in git history — re-executing task [name]."
 
 ### Step 2 — Execute Tasks Sequentially
 
