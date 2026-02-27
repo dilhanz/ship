@@ -1,7 +1,9 @@
-const { describe, it } = require('node:test');
+const { describe, it, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
 
 const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-statusline.js');
 
@@ -197,6 +199,41 @@ describe('ship-statusline hook', () => {
         !clean.includes('/home/user/projects/my-awesome-app'),
         'should not contain full directory path'
       );
+    });
+  });
+
+  // ---- Atomic bridge file write ----
+
+  describe('atomic bridge file write', () => {
+    const SESSION_ID = `test-atomic-${process.pid}`;
+
+    afterEach(() => {
+      const tmpDir = os.tmpdir();
+      for (const suffix of ['.json', '.json.tmp.' + process.pid]) {
+        try { fs.unlinkSync(path.join(tmpDir, `claude-ctx-${SESSION_ID}${suffix}`)); } catch {}
+      }
+    });
+
+    it('writes bridge file without leaving .tmp file behind', async () => {
+      await runHook({
+        model: { display_name: 'TestModel' },
+        workspace: { current_dir: '/tmp/myproject' },
+        session_id: SESSION_ID,
+        context_window: { remaining_percentage: 50 },
+      });
+
+      const tmpDir = os.tmpdir();
+      const bridgePath = path.join(tmpDir, `claude-ctx-${SESSION_ID}.json`);
+
+      // Bridge file should exist and be valid JSON
+      assert.ok(fs.existsSync(bridgePath), 'bridge file should exist');
+      const data = JSON.parse(fs.readFileSync(bridgePath, 'utf8'));
+      assert.equal(data.session_id, SESSION_ID);
+      assert.equal(data.remaining_percentage, 50);
+
+      // Temp file should NOT exist (rename removes it)
+      const tmpFiles = fs.readdirSync(tmpDir).filter(f => f.includes(SESSION_ID) && f.includes('.tmp.'));
+      assert.equal(tmpFiles.length, 0, 'no temp files should remain');
     });
   });
 });

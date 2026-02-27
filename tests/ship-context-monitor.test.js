@@ -87,13 +87,21 @@ describe('ship-context-monitor hook', () => {
   beforeEach(() => {
     // Save any existing lock file so our tests don't interfere with real sessions
     try { savedLock = fs.readFileSync(LOCK_PATH, 'utf8'); } catch { savedLock = null; }
-    // Remove lock so existing tests run in a clean state (no concurrent session)
-    try { fs.unlinkSync(LOCK_PATH); } catch {}
+    // Write a lock claiming our test session so context-monitor sees "same session"
+    // and doesn't fire a concurrent session warning during the base threshold tests.
+    // (The concurrent session tests will overwrite this in their own bodies.)
+    try {
+      fs.writeFileSync(LOCK_PATH, JSON.stringify({
+        session_id: SESSION,
+        timestamp: Math.floor(Date.now() / 1000),
+        pid: process.pid
+      }));
+    } catch {}
     cleanup(SESSION);
   });
 
   afterEach(() => {
-    // Restore original lock file
+    // Restore or clean up the lock file
     if (savedLock !== null) {
       fs.writeFileSync(LOCK_PATH, savedLock);
     } else {
@@ -186,11 +194,66 @@ describe('ship-context-monitor hook', () => {
   // ───── Missing metrics file ─────
 
   it('missing metrics file exits silently', async () => {
-    // Don't create metrics file -- just run with a session_id
+    // beforeEach calls cleanup(SESSION) which removes the metrics file,
+    // so SESSION has no metrics file -- the hook should exit silently.
     const { code, output } = await runHook({
-      session_id: `${SESSION}-nonexistent`,
+      session_id: SESSION,
     });
     assert.equal(code, 0);
     assert.equal(output, null, 'missing metrics should produce no output');
+  });
+
+  // ---- Concurrent session detection ----
+
+  describe('concurrent session detection', () => {
+    const OTHER_SESSION = `test-other-session-${process.pid}`;
+
+    it('warns when lock belongs to different session', async () => {
+      // Write a lock file for a different session
+      fs.writeFileSync(LOCK_PATH, JSON.stringify({
+        session_id: OTHER_SESSION,
+        timestamp: Math.floor(Date.now() / 1000),
+        pid: 99999
+      }));
+
+      // Write normal metrics so the hook does not exit early for missing metrics
+      writeMetrics(SESSION, { remaining_percentage: 50, used_pct: 63 });
+
+      const { code, output } = await runHook({ session_id: SESSION });
+      assert.equal(code, 0);
+      assert.ok(output, 'should produce concurrent session warning');
+      const msg = output.hookSpecificOutput.additionalContext;
+      assert.ok(msg.includes('CONCURRENT SESSION'), 'message should mention concurrent session');
+      assert.ok(msg.includes(OTHER_SESSION), 'message should include other session id');
+    });
+
+    it('no warning when lock belongs to same session', async () => {
+      // Write a lock file for our own session
+      fs.writeFileSync(LOCK_PATH, JSON.stringify({
+        session_id: SESSION,
+        timestamp: Math.floor(Date.now() / 1000),
+        pid: process.pid
+      }));
+
+      writeMetrics(SESSION, { remaining_percentage: 50, used_pct: 63 });
+
+      const { code, output } = await runHook({ session_id: SESSION });
+      assert.equal(code, 0);
+      assert.equal(output, null, 'should not warn for own session');
+    });
+
+    it('no warning when lock is stale (>4 hours old)', async () => {
+      fs.writeFileSync(LOCK_PATH, JSON.stringify({
+        session_id: OTHER_SESSION,
+        timestamp: Math.floor(Date.now() / 1000) - (5 * 3600), // 5 hours ago
+        pid: 99999
+      }));
+
+      writeMetrics(SESSION, { remaining_percentage: 50, used_pct: 63 });
+
+      const { code, output } = await runHook({ session_id: SESSION });
+      assert.equal(code, 0);
+      assert.equal(output, null, 'stale lock should not trigger warning');
+    });
   });
 });
