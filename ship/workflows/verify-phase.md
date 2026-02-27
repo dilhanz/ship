@@ -69,7 +69,7 @@ targeted fixes instead of re-executing the full plan.
 Options:
 1. Run fix tasks: /ship:execute-phase N (executes only the fix tasks from VERIFY.md)
 2. Fix manually and re-verify: /ship:verify-phase N
-3. Accept partial and continue: /ship:plan-phase [N+1] (not recommended)
+3. Accept partial and continue: /ship:plan-phase [N+1] (**WARNING:** Unmet criteria may cause issues in later phases. Only use this if the gaps are cosmetic or will be addressed later.)
 ```
 
 **If FAIL:**
@@ -86,6 +86,8 @@ Fix tasks have been written to NN-VERIFY.md.
 Options:
 1. Run fix tasks: /ship:execute-phase N (executes only the fix tasks from VERIFY.md)
 2. Replan and re-execute: /ship:plan-phase N → /ship:execute-phase N (if gaps suggest plan was insufficient)
+
+> **Note:** "Accept and continue" is NOT available for FAIL outcomes. The phase must pass or be partially resolved before moving to the next phase.
 ```
 
 ### Step 4 — Final project check (last phase only)
