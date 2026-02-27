@@ -1,39 +1,33 @@
 ---
-description: Show current project status — phase, progress, and next action.
+description: Show all features and their current status.
 allowed-tools: Read, Glob
 ---
 
-Read `.planning/STATE.md` and `.planning/ROADMAP.md`, then produce a clean status summary.
+Show the status of all features.
 
-If `.planning/STATE.md` does not exist, output:
-```
-No Ship project found in this directory.
-Run /ship:new-project to start one.
-```
+1. Check if `.planning/features/` exists. If not, tell the user no features have been started and suggest `/ship:start`.
 
-Otherwise, output a status report in this format:
+2. List all feature directories in `.planning/features/`.
+
+3. For each feature, read `CONTEXT.md` and extract:
+   - Feature name (from frontmatter)
+   - Status (from frontmatter)
+   - Problem summary (first sentence of ## Problem)
+   - Number of acceptance criteria
+
+4. If a `PLAN.md` exists, also show:
+   - Total tasks and how many are done
+
+5. Display as a formatted table:
 
 ```
 ## Ship Status
 
-Project: [Read from .planning/PROJECT.md — project name]
-Current Phase: [from STATE.md]
-Status: [planning / executing / verifying / complete]
-
-Progress:
-[For each phase in ROADMAP.md, show one line:]
-  ✓ Phase 1 — Name (complete)
-  ▶ Phase 2 — Name (executing)  ← current
-  ○ Phase 3 — Name (pending)
-
-Last Action: [from STATE.md]
-Next Action: [from STATE.md]
-
-[If there are active blockers in STATE.md, show:]
-Blockers:
-- [blocker description]
+| Feature | Status | Tasks | Summary |
+|---------|--------|-------|---------|
+| {name}  | {status} | {done}/{total} | {problem summary} |
 ```
 
-Use ✓ for complete phases, ▶ for the current phase, ○ for pending phases.
+If there's an active (non-done) feature, suggest the next command based on its status.
 
-Determine phase completion status from STATE.md Phase History table.
+$ARGUMENTS
