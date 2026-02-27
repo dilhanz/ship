@@ -28,9 +28,9 @@ During execution, the executor must follow these rules when the plan does not ma
 
 **Trigger:** The `<verify>` command for a task fails after implementation.
 
-**Action:** Debug and fix the issue. Do not mark the task complete until the verify command passes. If the fix requires changing implementation details, note the change in SUMMARY.md.
+**Action:** Debug and fix the issue, then re-run the verify command. You have a **maximum of 3 attempts**. Track each attempt explicitly. If the verify command still fails after the third attempt, escalate to Rule 4 — treat the persistent failure as an architectural conflict and follow Rule 4's stop-and-report procedure.
 
-**Do not:** Skip the verify step. Do not proceed to the next task with a broken current task.
+**Do not:** Skip the verify step. Do not proceed to the next task with a broken current task. Do not attempt more than 3 fix cycles.
 
 ---
 
