@@ -22,6 +22,7 @@ requirements: [FEAT-XX, FEAT-YY]
 
 <task>
   <name>Task name (imperative verb)</name>
+  <mode>create | modify</mode>
   <files>path/to/file.ts, path/to/other.ts</files>
   <action>Specific description of what to implement. Include function signatures, field names, or schema details where relevant.</action>
   <verify>Command that proves this task is complete. Must be runnable. Example: npm test -- --grep "auth" or curl -X POST http://localhost:3000/api/auth/register</verify>
@@ -29,7 +30,12 @@ requirements: [FEAT-XX, FEAT-YY]
 
 <task>
   <name>Task name</name>
+  <mode>create | modify</mode>
   <files>path/to/file.ts</files>
   <action>...</action>
   <verify>...</verify>
 </task>
+
+## Risk Notes
+
+- [Task N — what could go wrong and what to do about it. Optional section — include when tasks involve external deps, migrations, or complex integrations.]

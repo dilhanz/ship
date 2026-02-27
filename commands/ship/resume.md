@@ -22,7 +22,7 @@ Determine the resumption action based on STATE.md status:
 | Status | Resumption Action |
 |--------|------------------|
 | planning | `/ship:plan-phase N` — plan hasn't been written yet |
-| executing | `/ship:execute-phase N` — plan exists, ready to execute (executor will skip completed tasks from Execution Progress) |
+| executing | If a `Checkpoint:` field exists in STATE.md, show the conflict description and suggest `/ship:plan-phase N` to replan instead of auto-executing. Otherwise, `/ship:execute-phase N` — plan exists, ready to execute (executor will skip completed tasks from Execution Progress) |
 | paused | `/ship:execute-phase N` — execution was paused, resume from where it stopped |
 | verifying | `/ship:verify-phase N` — execution done, needs verification |
 | complete | All phases complete. Run `/ship:complete` or start a new phase with `/ship:add-phase` |

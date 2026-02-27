@@ -33,7 +33,7 @@ Use Glob to check if `.planning/NN-PLAN.md` already exists.
 
 - If it exists: read it, then ask: "A plan for Phase N already exists. Do you want to (1) use the existing plan, (2) replan from scratch, or (3) revise the existing plan?"
   - Use existing → stop here, tell user to run `/ship:execute-phase N`
-  - Replan → proceed, the new plan will overwrite the old
+  - Replan → clear the `## Execution Progress` section in STATE.md and delete any existing `NN-SUMMARY.md` for this phase (this ensures the executor won't skip new tasks based on stale progress), then proceed — the new plan will overwrite the old
   - Revise → proceed and instruct ship-planner to treat the existing plan as a draft to improve
 
 ### Step 3 — Invoke ship-planner
@@ -47,13 +47,13 @@ The planner will:
 - Read the previous phase's SUMMARY.md (if planning phase N > 1) for execution context and decisions
 - Do up to 3 WebFetch calls if research is needed
 - Write `.planning/NN-PLAN.md`
-- Update STATE.md status to "executing"
+- Update STATE.md status to "planning" (kept in planning until quality gate passes)
 
 ### Step 3.5 — Verify plan quality
 
 Invoke the `ship-plan-checker` agent with the phase number, using `model: "opus"`.
 
-**If PLAN VERIFIED** → proceed to Step 4 normally.
+**If PLAN VERIFIED** → update STATE.md: set `Status:` to `executing` and `Next Action:` to `Run /ship:execute-phase NN`. Then proceed to Step 4 normally.
 
 **If PLAN HAS ISSUES:**
 
@@ -64,11 +64,11 @@ Present the issues to the user exactly as the checker reported them, then ask:
 > (2) Proceed anyway"
 
 - If **revise**: invoke `ship-planner` again (with `model: "opus"`), passing the checker's issue list as additional context so it knows what to fix. After the revised plan is written, run `ship-plan-checker` (with `model: "opus"`) once more.
-  - If the revised plan is **PLAN VERIFIED** → proceed to Step 4.
+  - If the revised plan is **PLAN VERIFIED** → update STATE.md Status to "executing" and Next Action to "Run /ship:execute-phase NN", then proceed to Step 4.
   - If the revised plan still has blockers → present the remaining issues to the user and ask: "The revised plan still has blockers. Proceed anyway, or stop here to fix manually?"
-    - If proceed → continue to Step 4 with a note that issues were acknowledged.
+    - If proceed → update STATE.md Status to "executing" and Next Action to "Run /ship:execute-phase NN", continue to Step 4 with a note that issues were acknowledged.
     - If stop → tell the user to edit `.planning/NN-PLAN.md` manually and re-run `/ship:plan-phase N`.
-- If **proceed anyway**: continue to Step 4 with a note that issues were acknowledged.
+- If **proceed anyway**: update STATE.md Status to "executing" and Next Action to "Run /ship:execute-phase NN", continue to Step 4 with a note that issues were acknowledged.
 
 > Note: Only one revision attempt is made automatically. Do not loop the planner/checker more than once.
 
