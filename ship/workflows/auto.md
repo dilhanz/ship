@@ -138,7 +138,20 @@ Repeat the following steps until CURRENT_PHASE > TOTAL_PHASES:
 
 Announce: "**[Phase CURRENT_PHASE / TOTAL_PHASES] Planning...**"
 
-Check if `.planning/NN-PLAN.md` already exists (where NN is the zero-padded phase number). If it exists, discard it — always replan from scratch in auto mode.
+Check if `.planning/NN-PLAN.md` already exists (where NN is the zero-padded phase number). If it exists, read the plan and present a brief summary to the user:
+
+```
+An existing plan was found for Phase [N]: [Phase Name]
+Tasks: [count tasks in the plan]
+
+Options:
+1. Use existing plan (skip replanning)
+2. Discard and replan from scratch
+```
+
+Wait for the user's choice.
+- If **use existing** → skip the planner and plan-checker invocations, proceed directly to Step C2.
+- If **discard and replan** → clear any `## Execution Progress` section in STATE.md for this phase, delete any existing `NN-SUMMARY.md`, then proceed with planning as normal.
 
 Invoke the `ship-planner` agent with the phase number, using `model: "opus"`.
 
