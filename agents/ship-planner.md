@@ -52,7 +52,7 @@ If a decision contradicts CONTEXT.md, flag it explicitly.
 
 ### Step 5 — Design Tasks
 
-Write 3-8 tasks. Each task must:
+Write 3-12 tasks. Each task must:
 - Be atomic — one coherent chunk of work
 - Have a specific verify command that proves the task is done
 - List the exact files that will be created or modified
@@ -80,6 +80,33 @@ Write 3-8 tasks. Each task must:
 
 **Task ordering:** infrastructure before logic, models before services, services before routes.
 
+**Phasing:** After designing all tasks, assess whether they need to be grouped into phases:
+- **≤4 simple tasks:** flat plan, no phases needed
+- **>4 tasks OR complex tasks:** wrap in `<phase>` groups
+
+Phase sizing is judgment-based — complex tasks (many files, new patterns, research-heavy) get smaller phases; simple tasks (single file edits, straightforward logic) can be grouped more densely. General target: 3-5 tasks per phase.
+
+Each phase gets a short descriptive name reflecting its focus. Group by natural boundaries: infrastructure → logic → integration → tests.
+
+```xml
+<phase id="1" name="Core data models" status="pending">
+
+<task id="1" status="pending">...</task>
+<task id="2" status="pending">...</task>
+<task id="3" status="pending">...</task>
+
+</phase>
+
+<phase id="2" name="API integration" status="pending">
+
+<task id="4" status="pending">...</task>
+<task id="5" status="pending">...</task>
+
+</phase>
+```
+
+Phase status: `pending` → `building` → `done`. Task IDs are globally unique across all phases.
+
 ### Step 6 — Self-Check
 
 Before writing, verify:
@@ -88,7 +115,8 @@ Before writing, verify:
 2. **Task completeness:** Every task has `name`, `files`, `action`, `verify` filled with specifics
 3. **Verify quality:** Every `<verify>` is a runnable shell command, not prose
 4. **Task ordering:** No task depends on output from a later task
-5. **Scope:** 3-8 tasks total. Fewer = underplanned. More = split the feature.
+5. **Scope:** 3-12 tasks total. Fewer = underplanned. More = split the feature.
+6. **Phase coherence (if phased):** Each phase is self-contained — no half-finished features mid-phase. A phase boundary should be a natural stopping point.
 
 Fix any issues before writing.
 
@@ -140,11 +168,11 @@ Update the `status` field in CONTEXT.md frontmatter to `planned`.
 ## PLAN READY
 
 Feature: {name}
-Tasks: [N]
+Tasks: [N] [in M phases / flat]
 Must Deliver: [N items]
 Research: [done / skipped]
 
-[List each task name on its own line]
+[List each task name on its own line, grouped by phase if phased]
 
 Next: /ship:build
 ```

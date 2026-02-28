@@ -11,9 +11,18 @@ Before starting, verify:
 
 If prerequisites fail, stop and tell the user what's missing.
 
+## Phase Detection
+
+Before iterating tasks, check if PLAN.md contains `<phase>` elements:
+
+- **If phased:** Find the first phase with `status` != `done`. Set that as the current phase. Only execute tasks within that phase. If no non-done phase exists, all phases are complete — proceed to Completion.
+- **If flat (no phases):** Execute all tasks as normal — no behavior change.
+
+When starting a phased build, mark the current phase `status="building"`.
+
 ## Execution Loop
 
-For each task in PLAN.md with `status="pending"`, in order:
+For each task in the current scope (current phase, or all tasks if flat) with `status="pending"`, in order:
 
 ### 1. Read the Task
 
@@ -56,9 +65,30 @@ Update the task's status attribute in PLAN.md from `pending` to `done`:
 
 After the first task completes, update CONTEXT.md frontmatter to `status: building`.
 
+## Phase Completion (phased plans only)
+
+When all tasks in the current phase are done:
+
+1. Mark the phase `status="done"` in PLAN.md
+2. Check if more phases remain (any phase with `status` != `done`)
+3. **If more phases remain:** Leave CONTEXT.md status as `building` and output:
+
+```
+## PHASE COMPLETE
+
+Feature: {name}
+Phase: [M] / [total] — [phase name]
+Tasks completed: [N] / [N] in this phase
+Commits: [list short hashes]
+
+Next: /ship:build (for next phase)
+```
+
+4. **If all phases are done:** Proceed to Completion below.
+
 ## Completion
 
-When all tasks are done:
+When all tasks are done (flat plan) or all phases are done (phased plan):
 
 1. Update CONTEXT.md frontmatter to `status: built`
 2. Output:
