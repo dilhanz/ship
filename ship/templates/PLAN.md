@@ -33,6 +33,37 @@ goal: "[Goal from CONTEXT.md]"
   <verify>...</verify>
 </task>
 
+When the planner groups tasks into phases:
+
+<phase id="1" name="Phase name describing focus" status="pending">
+
+<task id="1" status="pending">
+  <name>Task name</name>
+  <files>path/to/file.ts</files>
+  <action>...</action>
+  <verify>...</verify>
+</task>
+
+<task id="2" status="pending">
+  <name>Task name</name>
+  <files>path/to/file.ts</files>
+  <action>...</action>
+  <verify>...</verify>
+</task>
+
+</phase>
+
+<phase id="2" name="Next phase focus" status="pending">
+
+<task id="3" status="pending">
+  <name>Task name</name>
+  <files>path/to/file.ts</files>
+  <action>...</action>
+  <verify>...</verify>
+</task>
+
+</phase>
+
 ## Risk Notes
 
 - [Task N — what could go wrong and what to do about it. Optional section.]
