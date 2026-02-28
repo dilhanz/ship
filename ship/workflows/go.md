@@ -30,6 +30,8 @@ Run each remaining step in sequence: **plan → build → verify**
 
 After each step completes successfully, check the output and continue to the next step.
 
+**Phase-aware building:** When build completes a phase but more phases remain (output shows PHASE COMPLETE instead of BUILD COMPLETE), loop back and continue building the next phase. Repeat until all phases are done or a stop condition is hit.
+
 **Stop conditions:**
 - A step reports a blocker (CHECKPOINT REACHED, PLAN HAS ISSUES)
 - Verification returns PARTIAL or FAIL (fix tasks were written — the user should review)
