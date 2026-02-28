@@ -57,7 +57,7 @@ Or let Ship run everything automatically:
 
 **Plan:** Reads CONTEXT.md, explores the codebase, and writes a concrete task list with specific file paths and runnable verify commands. Self-validates plan quality (acceptance coverage, task completeness, verify command quality, scope).
 
-**Build:** Implements tasks sequentially, runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Applies 3 deviation rules when reality diverges from plan.
+**Build:** Implements tasks sequentially, runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Larger plans (>4 tasks) are automatically grouped into phases — build executes one phase at a time. Applies 3 deviation rules when reality diverges from plan.
 
 **Verify:** Reads acceptance criteria from CONTEXT.md as truths, checks backwards into the code (file exists → has substance → is wired up). Scans for TODOs and stubs. If gaps exist, writes fix tasks back to PLAN.md.
 
@@ -87,9 +87,11 @@ Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `b
 
 **Atomic commits.** One commit per task. Specific files staged. Verify command must pass before committing.
 
+**Phased builds.** Plans with more than 4 tasks are automatically grouped into phases (3-5 tasks each). Build executes one phase at a time; `/ship:go` loops through all phases automatically.
+
 **Deviation rules.** 3 rules for when reality diverges from plan: fix and continue for small issues, fix with limits for verify failures (max 3 attempts), stop and report for architectural conflicts.
 
-**No ceremony.** No phases, no milestones, no FEAT-XX IDs. Just features with context, plans, and verification.
+**No ceremony.** No milestones, no FEAT-XX IDs. Just features with context, plans, and verification.
 
 ## Hooks
 
