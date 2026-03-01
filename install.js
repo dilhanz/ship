@@ -97,6 +97,36 @@ const AGENT_FILES = [
   'ship-verifier.md',
 ];
 
+// Legacy phased-system files to remove on install (cleanup from pre-rewrite era)
+const LEGACY_FILES = [
+  // Agents
+  path.join('agents', 'ship-executor.md'),
+  path.join('agents', 'ship-roadmapper.md'),
+  path.join('agents', 'ship-plan-checker.md'),
+  // Commands
+  path.join('commands', 'ship', 'auto.md'),
+  path.join('commands', 'ship', 'add-phase.md'),
+  path.join('commands', 'ship', 'complete.md'),
+  path.join('commands', 'ship', 'execute-phase.md'),
+  path.join('commands', 'ship', 'feature-brainstorm.md'),
+  path.join('commands', 'ship', 'new-project.md'),
+  path.join('commands', 'ship', 'pause-work.md'),
+  path.join('commands', 'ship', 'plan-phase.md'),
+  path.join('commands', 'ship', 'verify-phase.md'),
+  // Workflows
+  path.join('ship', 'workflows', 'auto.md'),
+  path.join('ship', 'workflows', 'deep-brainstorm.md'),
+  path.join('ship', 'workflows', 'execute-phase.md'),
+  path.join('ship', 'workflows', 'new-project.md'),
+  path.join('ship', 'workflows', 'plan-phase.md'),
+  path.join('ship', 'workflows', 'verify-phase.md'),
+  // Templates
+  path.join('ship', 'templates', 'PROJECT.md'),
+  path.join('ship', 'templates', 'REQUIREMENTS.md'),
+  path.join('ship', 'templates', 'ROADMAP.md'),
+  path.join('ship', 'templates', 'STATE.md'),
+];
+
 // Ship-owned hook files (for clean uninstall)
 const HOOK_FILES = [
   'ship-check-update.js',
@@ -257,6 +287,22 @@ function install() {
   console.log('Files installed:');
   for (const f of allCopied) {
     console.log(`  ${f}`);
+  }
+
+  // Clean up legacy phased-system files
+  const removed = [];
+  for (const relPath of LEGACY_FILES) {
+    const fullPath = path.join(CLAUDE_DIR, relPath);
+    if (fs.existsSync(fullPath)) {
+      fs.rmSync(fullPath);
+      removed.push(relPath);
+    }
+  }
+  if (removed.length > 0) {
+    console.log('\nLegacy files removed:');
+    for (const f of removed) {
+      console.log(`  .claude/${f}`);
+    }
   }
 
   const settingsPath = registerSettings();
