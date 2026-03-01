@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"/mnt/c/Program Files/nodejs/node.exe\" \"C:\\src\\ship\\.claude\\hooks\\ship-check-update.js\""
+            "command": "node /Users/dilhan/src/ship/.claude/hooks/ship-check-update.js"
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"/mnt/c/Program Files/nodejs/node.exe\" \"C:\\src\\ship\\.claude\\hooks\\ship-context-monitor.js\""
+            "command": "node /Users/dilhan/src/ship/.claude/hooks/ship-context-monitor.js"
           }
         ]
       }
@@ -23,6 +23,6 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "\"/mnt/c/Program Files/nodejs/node.exe\" \"C:\\src\\ship\\.claude\\hooks\\ship-statusline.js\""
+    "command": "node /Users/dilhan/src/ship/.claude/hooks/ship-statusline.js"
   }
 }
