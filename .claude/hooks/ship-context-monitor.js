@@ -39,6 +39,44 @@ process.stdin.on('end', () => {
     }
 
     const tmpDir = os.tmpdir();
+
+    // --- Concurrent session check ---
+    const lockPath = path.join(tmpDir, 'claude-ship-session.lock');
+    const LOCK_STALE_HOURS = 4;
+    if (sessionId && fs.existsSync(lockPath)) {
+      try {
+        const lockData = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+        const lockAge = Math.floor(Date.now() / 1000) - (lockData.timestamp || 0);
+        if (lockData.session_id && lockData.session_id !== sessionId && lockAge < LOCK_STALE_HOURS * 3600) {
+          // Another session owns the lock -- check debounce for this warning type
+          const lockWarnPath = path.join(tmpDir, `claude-ctx-${sessionId}-lock-warned.json`);
+          let shouldWarn = true;
+          if (fs.existsSync(lockWarnPath)) {
+            try {
+              const lwData = JSON.parse(fs.readFileSync(lockWarnPath, 'utf8'));
+              const warnAge = Math.floor(Date.now() / 1000) - (lwData.timestamp || 0);
+              if (warnAge < 300) shouldWarn = false; // Debounce: warn at most once per 5 minutes
+            } catch (e) {}
+          }
+          if (shouldWarn) {
+            fs.writeFileSync(lockWarnPath, JSON.stringify({ timestamp: Math.floor(Date.now() / 1000) }));
+            const lockMsg = `CONCURRENT SESSION WARNING: Another Claude session (${lockData.session_id}) appears active. ` +
+              'Concurrent sessions can cause state file conflicts. Consider closing the other session.';
+            const lockOutput = {
+              hookSpecificOutput: {
+                hookEventName: "PostToolUse",
+                additionalContext: lockMsg
+              }
+            };
+            process.stdout.write(JSON.stringify(lockOutput));
+            process.exit(0);
+          }
+        }
+      } catch (e) {
+        // Corrupted lock file, ignore
+      }
+    }
+
     const metricsPath = path.join(tmpDir, `claude-ctx-${sessionId}.json`);
 
     // If no metrics file, this is a subagent or fresh session -- exit silently

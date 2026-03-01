@@ -1,45 +1,26 @@
 ---
-description: Resume a Ship project from wherever you left off. Reads state and automatically continues execution.
-allowed-tools: Read, Glob
+description: Resume work on a feature — picks up where you left off.
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch
 ---
 
-Read `.planning/STATE.md` to understand the current position, then automatically resume work.
+Resume work on a feature.
 
-If `.planning/STATE.md` does not exist, output:
-```
-No Ship project found in this directory.
-Run /ship:new-project to start one.
-```
+1. Check `.planning/features/` for feature directories. If none exist, tell the user to run `/ship:start`.
 
-Otherwise:
-1. Read STATE.md fully
-2. Read ROADMAP.md to understand the full picture
-3. Check which phase files exist (Glob `.planning/*.md`) to understand what has been done
-4. If STATE.md has an `## Execution Progress` section, note which tasks are already complete — the executor will skip them automatically
+2. If `$ARGUMENTS` is provided, use it as the feature name. Otherwise, find features that are not `done`.
 
-Determine the resumption action based on STATE.md status:
+3. If multiple non-done features exist, show them and ask which one to resume.
 
-| Status | Resumption Action |
-|--------|------------------|
-| planning | `/ship:plan-phase N` — plan hasn't been written yet |
-| executing | If a `Checkpoint:` field exists in STATE.md, show the conflict description and suggest `/ship:plan-phase N` to replan instead of auto-executing. Otherwise, `/ship:execute-phase N` — plan exists, ready to execute (executor will skip completed tasks from Execution Progress) |
-| paused | `/ship:execute-phase N` — execution was paused, resume from where it stopped |
-| verifying | `/ship:verify-phase N` — execution done, needs verification |
-| complete | All phases complete. Run `/ship:complete` or start a new phase with `/ship:add-phase` |
+4. Read the feature's `CONTEXT.md` and determine the next action based on status:
 
-Output a clear resumption message and then **automatically invoke the next command**:
+| Status | Action |
+|--------|--------|
+| `brainstormed` | Run `/ship:plan` |
+| `planned` | Run `/ship:build` |
+| `building` | Run `/ship:build` (will resume from last completed task) |
+| `built` | Run `/ship:verify` |
+| `done` | Tell the user this feature is complete |
 
-```
-## Resuming Ship Project
+5. Tell the user what you found and what the next step is, then invoke the appropriate command.
 
-[Project name] — Phase N of M
-
-You were: [last action from STATE.md]
-[If Execution Progress exists: "Tasks completed: X/Y — will resume from task X+1"]
-
-Continuing automatically...
-```
-
-Then immediately invoke the appropriate command (e.g., `/ship:execute-phase N`). Do not wait for the user to manually type the next command — the whole point of resume is seamless continuation.
-
-**Exception:** If the status is `complete`, do NOT auto-invoke. Just show the status and suggest next steps.
+$ARGUMENTS
