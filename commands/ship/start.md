@@ -1,6 +1,6 @@
 ---
 description: Start brainstorming a new feature or fix. Creates a feature directory and runs an intensive questioning session.
-allowed-tools: Read, Write, WebSearch, WebFetch, Glob, Bash
+allowed-tools: Read, Write, WebSearch, WebFetch, Glob, Bash, AskUserQuestion
 ---
 
 Start a new feature brainstorming session.
