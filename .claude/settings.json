@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/dilhan/src/ship/.claude/hooks/ship-check-update.js"
+            "command": "node .claude/hooks/ship-check-update.js"
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node /Users/dilhan/src/ship/.claude/hooks/ship-context-monitor.js"
+            "command": "node .claude/hooks/ship-context-monitor.js"
           }
         ]
       }
@@ -23,6 +23,6 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "node /Users/dilhan/src/ship/.claude/hooks/ship-statusline.js"
+    "command": "node .claude/hooks/ship-statusline.js"
   }
 }
