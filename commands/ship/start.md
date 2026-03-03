@@ -21,10 +21,12 @@ Start a new feature brainstorming session.
 
 ## Brainstorm
 
-Read `.claude/agents/ship-brainstormer.md` and follow its instructions with:
+**IMPORTANT: Do NOT launch a subagent for brainstorming.** The brainstorming process requires interactive user input via `AskUserQuestion`, which only works correctly in the main conversation — not inside a subagent.
+
+Read `.claude/agents/ship-brainstormer.md` and follow its instructions **directly in this conversation** with:
 - Feature name: `{name}`
 - Feature idea: `$ARGUMENTS`
 
-The brainstormer will ask 5-10+ questions, explore the codebase, and write `.planning/features/{name}/CONTEXT.md`.
+You must ask the user 5-10+ questions using `AskUserQuestion`, explore the codebase, and write `.planning/features/{name}/CONTEXT.md`.
 
 $ARGUMENTS
