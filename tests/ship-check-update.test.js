@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-check-update.js');
+const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-check-update.cjs');
 
 /**
  * Helper: spawn the check-update hook, send inputObj via stdin, return { code, stdout }.

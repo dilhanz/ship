@@ -5,7 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
-const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-statusline.js');
+const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-statusline.cjs');
 
 /**
  * Helper: spawn the statusline hook, pipe JSON via stdin, capture raw stdout.
