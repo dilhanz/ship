@@ -46,9 +46,9 @@ Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `buil
 
 ```
 hooks/                 3 Node.js hooks (stdin->stdout, zero dependencies)
-  ship-statusline.js     StatusLine event — displays model, task, dir, context %
-  ship-context-monitor.js PostToolUse event — injects warnings when context is high
-  ship-check-update.js   SessionStart event — checks GitHub for newer version
+  ship-statusline.cjs     StatusLine event — displays model, task, dir, context %
+  ship-context-monitor.cjs PostToolUse event — injects warnings when context is high
+  ship-check-update.cjs   SessionStart event — checks GitHub for newer version
 
 ship/templates/*.md    3 planning file templates (CONTEXT, PLAN, VERIFY)
 ship/references/*.md   Git commit conventions and deviation rules

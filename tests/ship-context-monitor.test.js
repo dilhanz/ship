@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-context-monitor.js');
+const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-context-monitor.cjs');
 
 /**
  * Helper: spawn the hook as a child process, pipe JSON via stdin,

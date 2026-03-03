@@ -46,8 +46,12 @@ const AGENT_FILES = [
   'ship-verifier.md',
 ];
 
-// Legacy phased-system files to remove on install (cleanup from pre-rewrite era)
+// Legacy files to remove on install
 const LEGACY_FILES = [
+  // Old .js hooks (renamed to .cjs for ESM compatibility)
+  path.join('hooks', 'ship-check-update.js'),
+  path.join('hooks', 'ship-context-monitor.js'),
+  path.join('hooks', 'ship-statusline.js'),
   // Agents
   path.join('agents', 'ship-executor.md'),
   path.join('agents', 'ship-roadmapper.md'),
@@ -78,9 +82,9 @@ const LEGACY_FILES = [
 
 // Ship-owned hook files (for clean uninstall)
 const HOOK_FILES = [
-  'ship-check-update.js',
-  'ship-context-monitor.js',
-  'ship-statusline.js',
+  'ship-check-update.cjs',
+  'ship-context-monitor.cjs',
+  'ship-statusline.cjs',
 ];
 
 function ensureDir(dirPath) {
@@ -125,9 +129,9 @@ function registerSettings() {
   // Use bare 'node' (resolved from PATH) and relative paths for portability
   // across macOS, Windows (Git Bash), and WSL.
   const hooksDir = '.claude/hooks';
-  const checkUpdateCmd = `node ${hooksDir}/ship-check-update.js`;
-  const contextMonitorCmd = `node ${hooksDir}/ship-context-monitor.js`;
-  const statuslineCmd = `node ${hooksDir}/ship-statusline.js`;
+  const checkUpdateCmd = `node ${hooksDir}/ship-check-update.cjs`;
+  const contextMonitorCmd = `node ${hooksDir}/ship-context-monitor.cjs`;
+  const statuslineCmd = `node ${hooksDir}/ship-statusline.cjs`;
 
   if (!settings.hooks) settings.hooks = {};
 
