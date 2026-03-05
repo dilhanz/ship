@@ -19,8 +19,8 @@ Based on the feature's `status` in CONTEXT.md:
 | Status | Next Step |
 |--------|-----------|
 | `brainstormed` | Run plan (invoke ship-planner agent) |
-| `planned` | Run build (follow build.md workflow) |
-| `building` | Resume build (follow build.md workflow — skip completed tasks) |
+| `planned` | Run build (follow /ship-build skill instructions) |
+| `building` | Resume build (follow /ship-build skill instructions — skip completed tasks) |
 | `built` | Run verify (invoke ship-verifier agent) |
 | `done` | Nothing to do — feature is complete |
 
