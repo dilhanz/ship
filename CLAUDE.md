@@ -27,11 +27,11 @@ agents/*.md                   4 specialized agents (brainstormer, planner, build
 ## Flow
 
 ```
-/ship:start "idea" → brainstorm (5-10+ questions) → CONTEXT.md
-/ship:plan         → explore code, design tasks    → PLAN.md
-/ship:build        → implement, verify, commit     → tasks marked done
-/ship:verify       → check acceptance criteria      → VERIFY.md
-/ship:go           → auto-run remaining steps
+/ship-start "idea" → brainstorm (5-10+ questions) → CONTEXT.md
+/ship-plan         → explore code, design tasks    → PLAN.md
+/ship-build        → implement, verify, commit     → tasks marked done
+/ship-verify       → check acceptance criteria      → VERIFY.md
+/ship-go           → auto-run remaining steps
 ```
 
 ## Feature Directory Structure

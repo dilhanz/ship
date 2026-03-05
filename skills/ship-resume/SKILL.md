@@ -8,7 +8,7 @@ argument-hint: "[feature-name]"
 
 Resume work on a feature.
 
-1. Check `.planning/features/` for feature directories. If none exist, tell the user to run `/ship:start`.
+1. Check `.planning/features/` for feature directories. If none exist, tell the user to run `/ship-start`.
 
 2. If `$ARGUMENTS` is provided, use it as the feature name. Otherwise, find features that are not `done`.
 
@@ -18,10 +18,10 @@ Resume work on a feature.
 
 | Status | Action |
 |--------|--------|
-| `brainstormed` | Run `/ship:plan` |
-| `planned` | Run `/ship:build` |
-| `building` | Run `/ship:build` (will resume from last completed task) |
-| `built` | Run `/ship:verify` |
+| `brainstormed` | Run `/ship-plan` |
+| `planned` | Run `/ship-build` |
+| `building` | Run `/ship-build` (will resume from last completed task) |
+| `built` | Run `/ship-verify` |
 | `done` | Tell the user this feature is complete |
 
 5. Tell the user what you found and what the next step is, then invoke the appropriate command.
