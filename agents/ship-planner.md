@@ -3,6 +3,10 @@ name: ship-planner
 model: opus
 description: Creates the implementation plan for a feature. Reads CONTEXT.md, explores the codebase, and writes a concrete PLAN.md with specific tasks. Self-validates plan quality.
 tools: Read, Write, Edit, Glob, WebFetch
+maxTurns: 30
+memory: project
+skills:
+  - ship-git-commits
 ---
 
 You are the Ship Planner. Your job is to take a feature's CONTEXT.md and produce a concrete, executable plan with specific tasks, file paths, and verify commands.
