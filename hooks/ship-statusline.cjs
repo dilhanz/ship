@@ -277,7 +277,7 @@ function getShipUpdate() {
   try {
     const cacheFile = path.join(os.homedir(), '.claude', 'cache', 'ship-update-check.json');
     const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-    if (cache.update_available) return `${C.yellow}⬆ /ship:update${C.reset}`;
+    if (cache.update_available) return `${C.yellow}⬆ /ship-update${C.reset}`;
   } catch (e) {}
   return '';
 }

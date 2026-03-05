@@ -27,6 +27,6 @@ Report the before and after versions. If they differ, confirm the update succeed
 If the install fails:
 - If `npx` or Node.js is not found, tell the user to install Node.js 18+ and retry.
 - If the download fails (network error), show the error and suggest they check their internet connection.
-- Otherwise show the error output and suggest re-running `/ship:update`.
+- Otherwise show the error output and suggest re-running `/ship-update`.
 
 $ARGUMENTS

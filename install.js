@@ -297,7 +297,7 @@ function install() {
 
   console.log(`\nShip installed — ${allCopied.length} files copied to .claude/`);
   console.log('\nGet started:');
-  console.log('  /ship:start "your feature idea"');
+  console.log('  /ship-start "your feature idea"');
 }
 
 function uninstall() {

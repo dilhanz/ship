@@ -7,7 +7,7 @@ allowed-tools: Read, Glob
 
 Show the status of all features.
 
-1. Check if `.planning/features/` exists. If not, tell the user no features have been started and suggest `/ship:start`.
+1. Check if `.planning/features/` exists. If not, tell the user no features have been started and suggest `/ship-start`.
 
 2. List all feature directories in `.planning/features/`.
 

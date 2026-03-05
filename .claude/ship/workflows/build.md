@@ -47,7 +47,7 @@ Phase: [M] / [total] — [phase name]
 Tasks completed: [N] / [N] in this phase
 Commits: [list short hashes]
 
-Next: /ship:build (for next phase)
+Next: /ship-build (for next phase)
 ```
 
 4. **If all phases are done:** Proceed to Completion below.
@@ -84,5 +84,5 @@ Feature: {name}
 Tasks completed: [N] / [N]
 Commits: [list short hashes]
 
-Next: /ship:verify
+Next: /ship-verify
 ```

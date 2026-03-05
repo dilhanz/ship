@@ -138,11 +138,11 @@ process.stdin.on('end', () => {
     if (isCritical) {
       message = `CONTEXT MONITOR CRITICAL: Usage at ${usedPct}%. Remaining: ${remaining}%. ` +
         'STOP new work immediately. Save state NOW and inform the user that context is nearly exhausted. ' +
-        'If using Ship, inform the user that context is low and they can run /ship:resume in a new session to continue.';
+        'If using Ship, inform the user that context is low and they can run /ship-resume in a new session to continue.';
     } else {
       message = `CONTEXT MONITOR WARNING: Usage at ${usedPct}%. Remaining: ${remaining}%. ` +
         'Begin wrapping up current task. Do not start new complex work. ' +
-        'If using Ship, consider wrapping up and suggesting /ship:resume in a new session if needed.';
+        'If using Ship, consider wrapping up and suggesting /ship-resume in a new session if needed.';
     }
 
     const output = {
