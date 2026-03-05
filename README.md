@@ -28,27 +28,27 @@ npx github:dilhanz/ship --uninstall
 ## Usage
 
 ```
-/ship:start "your idea"     Brainstorm → CONTEXT.md
-/ship:plan                  Plan tasks → PLAN.md
-/ship:build                 Implement with atomic commits
-/ship:verify                Check against acceptance criteria → VERIFY.md
+/ship-start "your idea"     Brainstorm → CONTEXT.md
+/ship-plan                  Plan tasks → PLAN.md
+/ship-build                 Implement with atomic commits
+/ship-verify                Check against acceptance criteria → VERIFY.md
 ```
 
 Or let Ship run everything automatically:
 
 ```
-/ship:start "your idea"     Brainstorm first (interactive)
-/ship:go                    Then auto-run: plan → build → verify
+/ship-start "your idea"     Brainstorm first (interactive)
+/ship-go                    Then auto-run: plan → build → verify
 ```
 
 ## Utility Commands
 
 ```
-/ship:status            Show all features and their status
-/ship:resume            Pick up where you left off
-/ship:update            Update Ship to latest version
-/ship:uninstall         Remove Ship from this project
-/ship:help              Full command reference
+/ship-status            Show all features and their status
+/ship-resume            Pick up where you left off
+/ship-update            Update Ship to latest version
+/ship-uninstall         Remove Ship from this project
+/ship-help              Full command reference
 ```
 
 ## What Ship Does
@@ -87,7 +87,7 @@ Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `b
 
 **Atomic commits.** One commit per task. Specific files staged. Verify command must pass before committing.
 
-**Phased builds.** Plans with more than 4 tasks are automatically grouped into phases (3-5 tasks each). Build executes one phase at a time; `/ship:go` loops through all phases automatically.
+**Phased builds.** Plans with more than 4 tasks are automatically grouped into phases (3-5 tasks each). Build executes one phase at a time; `/ship-go` loops through all phases automatically.
 
 **Deviation rules.** 3 rules for when reality diverges from plan: fix and continue for small issues, fix with limits for verify failures (max 3 attempts), stop and report for architectural conflicts.
 

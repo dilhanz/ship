@@ -174,7 +174,7 @@ Research: [done / skipped]
 
 [List each task name on its own line, grouped by phase if phased]
 
-Next: /ship:build
+Next: /ship-build
 ```
 
 ## What NOT to Do

@@ -96,7 +96,7 @@ process.stdin.on('end', () => {
       try {
         const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
         if (cache.update_available) {
-          shipUpdate = '\x1b[33m⬆ /ship:update\x1b[0m │ ';
+          shipUpdate = '\x1b[33m⬆ /ship-update\x1b[0m │ ';
         }
       } catch (e) {}
     }
