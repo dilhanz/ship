@@ -104,6 +104,8 @@ describe('ship-check-update hook', () => {
 
     beforeEach(() => {
       try { originalLock = fs.readFileSync(lockPath, 'utf8'); } catch { originalLock = null; }
+      // Delete lock so test starts clean regardless of prior test state
+      try { fs.unlinkSync(lockPath); } catch {}
     });
 
     afterEach(() => {
