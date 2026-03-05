@@ -11,7 +11,7 @@ cd your-project
 npx github:dilhanz/ship
 ```
 
-Copies skills, agents, hooks, and framework files into `.claude/` in your current project directory. No dependencies, no build step — just Node.js 18+. v3 uses native Claude Code skills with `context: fork` for isolated subagent execution.
+Copies skills, agents, hooks, and framework files into `.claude/` in your current project directory. No dependencies, no build step — just Node.js 18+. Uses native Claude Code skills with `context: fork` for isolated subagent execution.
 
 **Update** — run the same command again from your project:
 
