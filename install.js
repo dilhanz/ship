@@ -16,10 +16,10 @@ const SHIP_ROOT = path.resolve(__dirname);
 const CLAUDE_DIR = path.join(process.cwd(), '.claude');
 
 const COPIES = [
-  // Commands → .claude/commands/ship/
+  // Skills → .claude/skills/
   {
-    src: path.join(SHIP_ROOT, 'commands', 'ship'),
-    dest: path.join(CLAUDE_DIR, 'commands', 'ship'),
+    src: path.join(SHIP_ROOT, 'skills'),
+    dest: path.join(CLAUDE_DIR, 'skills'),
   },
   // Agents → .claude/agents/
   {
@@ -66,6 +66,17 @@ const LEGACY_FILES = [
   path.join('commands', 'ship', 'pause-work.md'),
   path.join('commands', 'ship', 'plan-phase.md'),
   path.join('commands', 'ship', 'verify-phase.md'),
+  // Old v2 commands (replaced by skills in v3)
+  path.join('commands', 'ship', 'start.md'),
+  path.join('commands', 'ship', 'plan.md'),
+  path.join('commands', 'ship', 'build.md'),
+  path.join('commands', 'ship', 'verify.md'),
+  path.join('commands', 'ship', 'go.md'),
+  path.join('commands', 'ship', 'status.md'),
+  path.join('commands', 'ship', 'resume.md'),
+  path.join('commands', 'ship', 'help.md'),
+  path.join('commands', 'ship', 'update.md'),
+  path.join('commands', 'ship', 'uninstall.md'),
   // Workflows
   path.join('ship', 'workflows', 'auto.md'),
   path.join('ship', 'workflows', 'deep-brainstorm.md'),
@@ -79,6 +90,22 @@ const LEGACY_FILES = [
   path.join('ship', 'templates', 'ROADMAP.md'),
   path.join('ship', 'templates', 'STATE.md'),
   path.join('ship', 'templates', 'SUMMARY.md'),
+];
+
+// Ship-owned skill directories (for clean uninstall)
+const SKILL_DIRS = [
+  'ship-start',
+  'ship-plan',
+  'ship-build',
+  'ship-verify',
+  'ship-go',
+  'ship-status',
+  'ship-resume',
+  'ship-help',
+  'ship-update',
+  'ship-uninstall',
+  'ship-deviation-rules',
+  'ship-git-commits',
 ];
 
 // Ship-owned hook files (for clean uninstall)
@@ -278,7 +305,13 @@ function uninstall() {
 
   const removed = [];
 
-  // Remove commands directory
+  // Remove ship skill directories
+  for (const dir of SKILL_DIRS) {
+    const r = removeFile(path.join(CLAUDE_DIR, 'skills', dir));
+    if (r) removed.push(r);
+  }
+
+  // Remove old commands directory (v2 legacy)
   const r1 = removeFile(path.join(CLAUDE_DIR, 'commands', 'ship'));
   if (r1) removed.push(r1);
 
