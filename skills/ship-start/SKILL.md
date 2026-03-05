@@ -18,7 +18,7 @@ Start a new feature brainstorming session.
 
 3. Check if `.planning/features/{name}/` already exists:
    - If it exists and status is `done`, tell the user this feature is complete. Ask if they want to start a new related feature.
-   - If it exists and status is not `done`, tell the user this feature already exists and suggest `/ship:resume` instead.
+   - If it exists and status is not `done`, tell the user this feature already exists and suggest `/ship-resume` instead.
 
 4. Create the feature directory: `.planning/features/{name}/`
 

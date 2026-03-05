@@ -10,7 +10,7 @@ Look in `.planning/features/` for a feature directory. If multiple features exis
 - Read each `CONTEXT.md` and check the `status` field
 - If exactly one non-done feature exists, use it
 - If multiple non-done features exist, ask the user which one to continue
-- If no features exist, tell the user to run `/ship:start` first
+- If no features exist, tell the user to run `/ship-start` first
 
 ### 2. Determine Next Step
 
