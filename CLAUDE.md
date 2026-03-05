@@ -10,13 +10,13 @@ Three-layer design, all Markdown with YAML frontmatter:
 skills/ship-*/SKILL.md   10 skills (thin entry points, some with context:fork for subagent execution)
 skills/ship-deviation-rules/  Reference skill preloaded into builder agent
 skills/ship-git-commits/      Reference skill preloaded into builder/planner agents
-ship/workflows/*.md           2 orchestration workflows (build, go)
+ship/workflows/*.md           1 orchestration workflow (go)
 agents/*.md                   4 specialized agents (brainstormer, planner, builder, verifier)
 ```
 
 **Skills** define frontmatter fields like `context: fork`, `agent`, `model`, and `allowed-tools`. Skills with `context: fork` run in isolated subagent contexts, preserving the main conversation window. Skills reference agents via the `agent` field.
 
-**Workflows** define multi-step processes: `build` (execute tasks), `go` (auto-run remaining steps).
+**Workflows** define multi-step processes: `go` (auto-run remaining steps).
 
 **Agents** define `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, and `skills` in frontmatter. Each agent has a single responsibility:
 - `ship-brainstormer` — intensive questioning → CONTEXT.md
@@ -83,7 +83,7 @@ Hooks are stdin->stdout Node.js scripts. They receive JSON on stdin and (optiona
 
 ### Skills
 
-Skills live in `skills/ship-*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `context: fork` (runs in isolated subagent), `agent` (delegates to named agent), `model`, `disable-model-invocation`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan, build, and verify skills use `context: fork` for subagent execution; start and go run inline.
+Skills live in `skills/ship-*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `context: fork` (runs in isolated subagent), `agent` (delegates to named agent), `model`, `disable-model-invocation`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and verify skills use `context: fork` for subagent execution; start and go run inline. Build runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress.
 
 ### Agents
 
