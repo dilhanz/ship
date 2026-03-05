@@ -1,4 +1,4 @@
-# Ship v3
+# Ship
 
 A feature-centric development framework for Claude Code.
 
@@ -105,3 +105,4 @@ The installer automatically registers 4 hooks in `.claude/settings.json`:
 | `ship-safety-gate` | PreToolUse | Blocks `git add .` and `git add -A` to enforce atomic commits |
 
 Hooks use `matcher` fields (e.g., `Bash`, `Write|Edit|Bash|Agent`) to only fire on relevant tool calls. The context monitor warns the agent to save state before the context window fills up, preventing lost progress.
+
