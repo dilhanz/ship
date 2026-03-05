@@ -7,18 +7,21 @@ Ship is a feature-centric development framework for Claude Code. Every piece of 
 Three-layer design, all Markdown with YAML frontmatter:
 
 ```
-commands/ship/*.md   10 slash commands (thin entry points, invoked as /ship:command-name)
-ship/workflows/*.md   2 orchestration workflows (build, go)
-agents/*.md           3 specialized agents (brainstormer, planner, verifier)
+skills/ship-*/SKILL.md   10 skills (thin entry points, some with context:fork for subagent execution)
+skills/ship-deviation-rules/  Reference skill preloaded into builder agent
+skills/ship-git-commits/      Reference skill preloaded into builder/planner agents
+ship/workflows/*.md           2 orchestration workflows (build, go)
+agents/*.md                   4 specialized agents (brainstormer, planner, builder, verifier)
 ```
 
-**Commands** define `description` and `allowed-tools` in frontmatter, then delegate to a workflow or agent.
+**Skills** define frontmatter fields like `context: fork`, `agent`, `model`, and `allowed-tools`. Skills with `context: fork` run in isolated subagent contexts, preserving the main conversation window. Skills reference agents via the `agent` field.
 
 **Workflows** define multi-step processes: `build` (execute tasks), `go` (auto-run remaining steps).
 
-**Agents** define `name`, `description`, and `tools` in frontmatter. Each agent has a single responsibility:
+**Agents** define `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, and `skills` in frontmatter. Each agent has a single responsibility:
 - `ship-brainstormer` — intensive questioning → CONTEXT.md
 - `ship-planner` — codebase exploration → PLAN.md
+- `ship-builder` — task execution with atomic commits
 - `ship-verifier` — acceptance criteria checking → VERIFY.md
 
 ## Flow
@@ -45,14 +48,15 @@ Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `buil
 ## Supporting Files
 
 ```
-hooks/                 3 Node.js hooks (stdin->stdout, zero dependencies)
+hooks/                 4 Node.js hooks (stdin->stdout, zero dependencies)
   ship-statusline.cjs     StatusLine event — displays model, task, dir, context %
-  ship-context-monitor.cjs PostToolUse event — injects warnings when context is high
+  ship-context-monitor.cjs PostToolUse event — injects warnings when context is high (matcher: Write|Edit|Bash|Agent)
   ship-check-update.cjs   SessionStart event — checks GitHub for newer version
+  ship-safety-gate.cjs    PreToolUse event — blocks git add . to enforce atomic commits (matcher: Bash)
 
 ship/templates/*.md    3 planning file templates (CONTEXT, PLAN, VERIFY)
 ship/references/*.md   Git commit conventions and deviation rules
-install.js             Copies everything to .claude/ in the current project and registers hooks
+install.js             Copies skills, agents, hooks, and ship data to .claude/ and registers hooks
 ```
 
 ## Key Concepts
@@ -77,13 +81,13 @@ Hooks are stdin->stdout Node.js scripts. They receive JSON on stdin and (optiona
 
 `install.js` copies the full directory tree to `.claude/` in the current working directory and registers hooks in `.claude/settings.json`. It is idempotent — running it again updates files without duplicating hook registrations.
 
-### Commands
+### Skills
 
-Commands live in `commands/ship/`. Each file is a Markdown document with frontmatter (`description`, `allowed-tools`). The body tells Claude what to do, usually delegating to a workflow or agent. `$ARGUMENTS` is replaced with user-provided arguments.
+Skills live in `skills/ship-*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `context: fork` (runs in isolated subagent), `agent` (delegates to named agent), `model`, `disable-model-invocation`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan, build, and verify skills use `context: fork` for subagent execution; start and go run inline.
 
 ### Agents
 
-Agents live in `agents/`. Frontmatter: `name`, `description`, `tools`. The body contains detailed instructions for the agent's role. Agents are invoked by commands, not directly by users.
+Agents live in `agents/`. Frontmatter: `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, `skills`. The body contains detailed instructions for the agent's role. Agents are invoked by skills via the `agent` field, not directly by users.
 
 ### Templates
 

@@ -1,4 +1,4 @@
-# Ship
+# Ship v3
 
 A feature-centric development framework for Claude Code.
 
@@ -11,7 +11,7 @@ cd your-project
 npx github:dilhanz/ship
 ```
 
-Copies all framework files into `.claude/` in your current project directory. No dependencies, no build step — just Node.js 18+.
+Copies skills, agents, hooks, and framework files into `.claude/` in your current project directory. No dependencies, no build step — just Node.js 18+. v3 uses native Claude Code skills with `context: fork` for isolated subagent execution.
 
 **Update** — run the same command again from your project:
 
@@ -95,12 +95,13 @@ Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `b
 
 ## Hooks
 
-The installer automatically registers 3 hooks in `.claude/settings.json`:
+The installer automatically registers 4 hooks in `.claude/settings.json`:
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
 | `ship-statusline` | statusLine | Shows model, current task, directory, and context usage in the Claude Code status bar |
 | `ship-check-update` | SessionStart | Checks for Ship updates once per session in the background |
 | `ship-context-monitor` | PostToolUse | Injects warnings into the agent's context when usage exceeds thresholds |
+| `ship-safety-gate` | PreToolUse | Blocks `git add .` and `git add -A` to enforce atomic commits |
 
-The context monitor warns the agent to save state before the context window fills up, preventing lost progress.
+Hooks use `matcher` fields (e.g., `Bash`, `Write|Edit|Bash|Agent`) to only fire on relevant tool calls. The context monitor warns the agent to save state before the context window fills up, preventing lost progress.
