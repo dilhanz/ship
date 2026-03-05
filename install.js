@@ -84,6 +84,7 @@ const LEGACY_FILES = [
 const HOOK_FILES = [
   'ship-check-update.cjs',
   'ship-context-monitor.cjs',
+  'ship-safety-gate.cjs',
   'ship-statusline.cjs',
 ];
 
@@ -150,7 +151,19 @@ function registerSettings() {
     !group.hooks?.some(h => h.command?.includes('ship-context-monitor'))
   );
   settings.hooks.PostToolUse.push({
+    matcher: 'Write|Edit|Bash|Agent',
     hooks: [{ type: 'command', command: contextMonitorCmd }]
+  });
+
+  // PreToolUse: ship-safety-gate — always update
+  const safetyGateCmd = `node ${hooksDir}/ship-safety-gate.cjs`;
+  if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
+  settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(group =>
+    !group.hooks?.some(h => h.command?.includes('ship-safety-gate'))
+  );
+  settings.hooks.PreToolUse.push({
+    matcher: 'Bash',
+    hooks: [{ type: 'command', command: safetyGateCmd }]
   });
 
   // statusLine: always update to keep node path current
@@ -185,6 +198,14 @@ function deregisterSettings() {
       !group.hooks?.some(h => h.command?.includes('ship-context-monitor'))
     );
     if (settings.hooks.PostToolUse.length === 0) delete settings.hooks.PostToolUse;
+  }
+
+  // Remove ship hooks from PreToolUse
+  if (settings.hooks?.PreToolUse) {
+    settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(group =>
+      !group.hooks?.some(h => h.command?.includes('ship-safety-gate'))
+    );
+    if (settings.hooks.PreToolUse.length === 0) delete settings.hooks.PreToolUse;
   }
 
   if (settings.hooks && Object.keys(settings.hooks).length === 0) {
