@@ -126,7 +126,7 @@ describe('ship-statusline hook', () => {
         workspace: { current_dir: '/tmp/myproject' },
         context_window: { remaining_percentage: 70 },
       });
-      assert.ok(raw.includes('\x1b[32m'), 'should use green ANSI code');
+      assert.ok(raw.includes('\x1b[38;2;0;160;0m'), 'should use green ANSI code');
     });
 
     it('yellow color for medium usage (63-80% scaled)', async () => {
@@ -136,7 +136,7 @@ describe('ship-statusline hook', () => {
         workspace: { current_dir: '/tmp/myproject' },
         context_window: { remaining_percentage: 36 },
       });
-      assert.ok(raw.includes('\x1b[33m'), 'should use yellow ANSI code');
+      assert.ok(raw.includes('\x1b[38;2;230;200;0m'), 'should use yellow ANSI code');
     });
 
     it('orange color for high usage (81-94% scaled)', async () => {
@@ -146,7 +146,7 @@ describe('ship-statusline hook', () => {
         workspace: { current_dir: '/tmp/myproject' },
         context_window: { remaining_percentage: 26 },
       });
-      assert.ok(raw.includes('\x1b[38;5;208m'), 'should use orange ANSI code');
+      assert.ok(raw.includes('\x1b[38;2;255;176;85m'), 'should use orange ANSI code');
     });
 
     it('red blinking color for extreme usage (>= 95% scaled)', async () => {
@@ -156,7 +156,8 @@ describe('ship-statusline hook', () => {
         workspace: { current_dir: '/tmp/myproject' },
         context_window: { remaining_percentage: 20 },
       });
-      assert.ok(raw.includes('\x1b[5;31m'), 'should use red blinking ANSI code');
+      assert.ok(raw.includes('\x1b[5m'), 'should include blink ANSI code');
+      assert.ok(raw.includes('\x1b[38;2;255;85;85m'), 'should use red ANSI code');
     });
   });
 

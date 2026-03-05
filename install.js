@@ -78,6 +78,7 @@ const LEGACY_FILES = [
   path.join('ship', 'templates', 'REQUIREMENTS.md'),
   path.join('ship', 'templates', 'ROADMAP.md'),
   path.join('ship', 'templates', 'STATE.md'),
+  path.join('ship', 'templates', 'SUMMARY.md'),
 ];
 
 // Ship-owned hook files (for clean uninstall)
