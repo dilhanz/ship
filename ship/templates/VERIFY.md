@@ -4,17 +4,27 @@
 **Verified:** {date}
 **Overall Status:** PASS | PARTIAL | FAIL
 
-## Acceptance Criteria Check
+## Stage 1 — Spec Compliance
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
-| [Criterion from CONTEXT.md] | PASS / FAIL / NEEDS-HUMAN | [File path, test output, or observation] |
+| [Criterion from CONTEXT.md] | PASS / FAIL / NEEDS-HUMAN | [Command run, output observed, or file path checked] |
 
-## Anti-Pattern Scan
+## Stage 2 — Code Quality
+
+[Only completed if all Stage 1 criteria passed. Otherwise: "Skipped — Stage 1 has failures."]
+
+### Anti-Pattern Scan
 
 - TODO/FIXME/placeholder strings found: [list files, or "None"]
 - Stub implementations: [list, or "None"]
 - Hardcoded values that should be config: [list, or "None"]
+
+### Quality Notes
+
+- [Convention adherence, unnecessary abstractions, error handling — observations only]
+
+(If clean: "No quality issues found.")
 
 ## Human Checks Required
 
