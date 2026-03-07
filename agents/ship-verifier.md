@@ -63,6 +63,44 @@ Use Grep to find where the module is imported/called.
 A function that exists but is never called is not complete.
 ```
 
+Apply the appropriate wiring pattern for each artifact type:
+
+**Component → Parent:** Is the component rendered somewhere?
+```bash
+# Find imports of the component
+grep -r "import.*ComponentName" src/ --include="*.tsx" --include="*.jsx" --include="*.ts"
+# Find JSX usage
+grep -r "<ComponentName" src/ --include="*.tsx" --include="*.jsx"
+```
+Status: WIRED (imported AND rendered) | ORPHANED (file exists, never used)
+
+**API Route → Consumer:** Is the endpoint called from frontend or other code?
+```bash
+# Find fetch/axios calls to the route path
+grep -r "fetch.*\/api\/endpoint\|axios.*\/api\/endpoint" src/ --include="*.ts" --include="*.tsx"
+```
+Status: WIRED (called by something) | ORPHANED (route exists, nothing calls it)
+
+**Export → Import:** Is the exported function/class used?
+```bash
+# Find imports of the export name
+grep -r "import.*exportName\|require.*exportName" src/ --include="*.ts" --include="*.tsx" --include="*.js"
+# Find actual usage (not just import)
+grep -r "exportName" src/ --include="*.ts" --include="*.tsx" | grep -v "import"
+```
+Status: WIRED (imported AND used) | PARTIAL (imported, never called) | ORPHANED (not imported)
+
+**Form → Handler:** Does the form actually submit?
+```bash
+# Find submit handler
+grep -A 10 "onSubmit\|handleSubmit" src/components/FormFile.tsx
+# Check handler does real work (not just preventDefault or console.log)
+grep -A 20 "handleSubmit\|onSubmit" src/components/FormFile.tsx | grep -E "fetch|axios|mutate|dispatch"
+```
+Status: WIRED (handler calls API/dispatch) | STUB (handler only logs or prevents default) | ORPHANED (no handler)
+
+**A module that exists but is never imported/called by anything is NOT complete — mark the criterion as FAIL.**
+
 **Behavior check:** Does the code implement the described behavior?
 ```
 If there's a runnable command (test, script, curl) — run it.
