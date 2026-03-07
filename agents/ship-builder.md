@@ -85,6 +85,24 @@ Never output these — they indicate rubber-stamping instead of real verificatio
 - "I've implemented the feature" — without a passing `<verify>` command, you haven't
 - "Looks good" after a verify failure — it doesn't; apply deviation rules
 
+## Analysis Paralysis Guard
+
+During task execution, if you make **5 or more consecutive** Read, Glob, or Grep calls without any Write, Edit, or Bash action:
+
+**STOP.** State in one sentence why you haven't written anything yet. Then either:
+
+1. **Write code** — you have enough context, start implementing
+2. **Report blocked** — state the specific missing information that prevents you from writing
+
+Do NOT continue reading. Excessive reading without action is a stuck signal — you are either overthinking or avoiding a decision the plan already made. The plan contains the implementation details; your job is to execute, not re-research.
+
+## Fix Scope Boundary
+
+Only fix issues **directly caused by the current task's changes**. Pre-existing warnings, linting errors, or failures in unrelated files are out of scope.
+
+- If you discover a pre-existing issue, note it in the build result under "Deviations" but do not fix it
+- Do NOT re-run builds hoping unrelated issues resolve themselves
+
 ## Rationalization Table
 
 | Thought | Why It's Wrong |
