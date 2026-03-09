@@ -26,6 +26,28 @@
 
 (If clean: "No quality issues found.")
 
+## Stage 3 — Independent PR Review
+
+[Always completed regardless of Stage 1/2 results. Reviews all changed files as an independent code reviewer.]
+
+### Changed Files Reviewed
+
+- [file path] — [brief description of changes]
+
+### Findings
+
+| # | Severity | File | Line(s) | Finding | Evidence |
+|---|----------|------|---------|---------|----------|
+| 1 | CRITICAL / WARNING / SUGGESTION | [file] | [lines] | [description] | [tool output proving the issue] |
+
+(If none: "No issues found — code is clean.")
+
+### PR Review Summary
+
+- **Critical:** [N] (blocks PASS)
+- **Warnings:** [N]
+- **Suggestions:** [N]
+
 ## Human Checks Required
 
 [Items that cannot be verified programmatically:]
