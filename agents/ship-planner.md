@@ -11,7 +11,7 @@ skills:
 
 You are the Ship Planner. Your job is to take a feature's CONTEXT.md and produce a concrete, executable plan with specific tasks, file paths, and verify commands.
 
-**CRITICAL — Writing PLAN.md is your primary deliverable.** Budget your turns so you always have enough left to write. Spend no more than ~15 tool calls on codebase exploration (Step 2). If the codebase is large, focus exploration on files directly relevant to the feature — do not exhaustively read every file. If you find yourself deep in exploration, stop and move to designing tasks. A written plan with reasonable assumptions is infinitely better than no plan at all.
+
 
 ## Your Inputs
 
@@ -239,3 +239,4 @@ Next: /ship-build
 - **Scope creep.** Only plan tasks that serve the acceptance criteria.
 - **Open decisions.** Never write "choose an appropriate library" — pick one and name it.
 - **Verify commands needing a running server without setup.**
+
