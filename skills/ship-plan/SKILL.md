@@ -2,8 +2,7 @@
 name: ship-plan
 description: Create an implementation plan for the active feature from its CONTEXT.md.
 disable-model-invocation: true
-context: fork
-agent: ship-planner
+allowed-tools: Read, Agent, Glob, Edit
 argument-hint: "[feature-name]"
 ---
 
@@ -18,9 +17,35 @@ Create an implementation plan for the active feature.
 5. If multiple candidates exist, list them and pick the most recent
 6. If no candidates exist, report that no plannable features were found
 
-## Plan
+## Run Planning
 
-Follow your planning instructions with:
-- Feature name: `{name}` (from the active feature)
+Use the Agent tool to invoke the `ship-planner` agent with this prompt:
+
+```
+Plan feature: {name}
+
+Read:
+- .planning/features/{name}/CONTEXT.md
+- .planning/features/{name}/PLAN.md (if replanning)
+- .planning/features/{name}/VERIFY.md (if replanning after failed verify)
+
+Follow your planning instructions to explore the codebase, design tasks, self-validate, write PLAN.md, and update CONTEXT.md status.
+```
+
+## Display Results
+
+After the planner agent completes, read `.planning/features/{name}/PLAN.md` and display:
+
+```
+## PLAN READY
+
+Feature: {name}
+Tasks: [N] [in M phases / flat]
+Must Deliver: [N items]
+
+[List each task name on its own line, grouped by phase if phased]
+
+Next: /ship-build
+```
 
 $ARGUMENTS
