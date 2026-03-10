@@ -7,13 +7,17 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 
+function sanitizeId(id) {
+  return String(id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
   try {
     const data = JSON.parse(input || '{}');
-    const sessionId = data.session_id || '';
+    const sessionId = sanitizeId(data.session_id);
 
     // --- Session lock: detect concurrent sessions ---
     const tmpDir = os.tmpdir();
@@ -27,7 +31,7 @@ process.stdin.on('end', () => {
           const existing = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
           const ageSeconds = Math.floor(Date.now() / 1000) - (existing.timestamp || 0);
           if (existing.session_id !== sessionId && ageSeconds < STALE_HOURS * 3600) {
-            warnMsg = `WARNING: Another Claude session (${existing.session_id}) may still be active (started ${Math.round(ageSeconds / 60)} min ago). Concurrent sessions can cause state conflicts in .planning/ files. Proceed with caution.`;
+            warnMsg = `WARNING: Another Claude session (${sanitizeId(existing.session_id)}) may still be active (started ${Math.round(ageSeconds / 60)} min ago). Concurrent sessions can cause state conflicts in .planning/ files. Proceed with caution.`;
           }
         } catch (e) {
           // Corrupted lock file, overwrite it
@@ -72,8 +76,8 @@ process.stdin.on('end', () => {
       const fs = require('fs');
       const https = require('https');
 
-      const cacheFile = ${JSON.stringify(cacheFile)};
-      const installedVersionFile = ${JSON.stringify(installedVersionFile)};
+      const cacheFile = process.env.SHIP_CACHE_FILE;
+      const installedVersionFile = process.env.SHIP_VERSION_FILE;
       const remoteUrl = 'https://raw.githubusercontent.com/dilhanz/ship/main/ship/VERSION';
 
       let installed = '0.0.0';
@@ -88,6 +92,16 @@ process.stdin.on('end', () => {
         res.on('data', chunk => body += chunk);
         res.on('end', () => {
           const latest = body.trim();
+          // Validate semver format to prevent false update banners
+          if (!/^\\d+\\.\\d+\\.\\d+/.test(latest)) {
+            try { fs.writeFileSync(cacheFile, JSON.stringify({
+              update_available: false,
+              installed,
+              latest: 'unknown',
+              checked: Math.floor(Date.now() / 1000)
+            })); } catch (e) {}
+            return;
+          }
           const result = {
             update_available: !!latest && installed !== latest,
             installed,
@@ -107,6 +121,7 @@ process.stdin.on('end', () => {
         } catch (e) {}
       });
     `], {
+      env: { ...process.env, SHIP_CACHE_FILE: cacheFile, SHIP_VERSION_FILE: installedVersionFile },
       stdio: 'ignore',
       windowsHide: true,
       detached: true

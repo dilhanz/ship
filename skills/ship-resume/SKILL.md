@@ -19,7 +19,8 @@ Resume work on a feature.
 | Status | Action |
 |--------|--------|
 | `brainstormed` | Run `/ship-plan` |
-| `planned` | Run `/ship-build` |
+| `planned` | Run `/ship-plan-verify` |
+| `plan-verified` | Run `/ship-build` |
 | `building` | Run `/ship-build` (will resume from last completed task) |
 | `built` | Run `/ship-verify` |
 | `done` | Tell the user this feature is complete |
