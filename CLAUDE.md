@@ -7,11 +7,11 @@ Ship is a feature-centric development framework for Claude Code. Every piece of 
 Three-layer design, all Markdown with YAML frontmatter:
 
 ```
-skills/ship-*/SKILL.md   10 skills (thin entry points, some with context:fork for subagent execution)
+skills/ship-*/SKILL.md   11 skills (thin entry points, some with context:fork for subagent execution)
 skills/ship-deviation-rules/  Reference skill preloaded into builder agent
 skills/ship-git-commits/      Reference skill preloaded into builder/planner agents
 ship/workflows/*.md           1 orchestration workflow (go)
-agents/*.md                   4 specialized agents (brainstormer, planner, builder, verifier)
+agents/*.md                   5 specialized agents (brainstormer, planner, plan-verifier, builder, verifier)
 ```
 
 **Skills** define frontmatter fields like `context: fork`, `agent`, `model`, and `allowed-tools`. Skills with `context: fork` run in isolated subagent contexts, preserving the main conversation window. Skills reference agents via the `agent` field.
@@ -21,17 +21,19 @@ agents/*.md                   4 specialized agents (brainstormer, planner, build
 **Agents** define `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, and `skills` in frontmatter. Each agent has a single responsibility:
 - `ship-brainstormer` — intensive questioning → CONTEXT.md
 - `ship-planner` — codebase exploration → PLAN.md
+- `ship-plan-verifier` — independent plan review against codebase patterns
 - `ship-builder` — task execution with atomic commits
 - `ship-verifier` — acceptance criteria checking → VERIFY.md
 
 ## Flow
 
 ```
-/ship-start "idea" → brainstorm (5-10+ questions) → CONTEXT.md
-/ship-plan         → explore code, design tasks    → PLAN.md
-/ship-build        → implement, verify, commit     → tasks marked done
-/ship-verify       → check acceptance criteria      → VERIFY.md
-/ship-go           → auto-run remaining steps
+/ship-start       "idea" → brainstorm (5-10+ questions) → CONTEXT.md
+/ship-plan               → explore code, design tasks    → PLAN.md
+/ship-plan-verify        → verify plan against codebase  → PLAN.md (review appended)
+/ship-build              → implement, verify, commit     → tasks marked done
+/ship-verify             → check acceptance criteria      → VERIFY.md
+/ship-go                 → auto-run remaining steps
 ```
 
 ## Feature Directory Structure
@@ -43,7 +45,7 @@ agents/*.md                   4 specialized agents (brainstormer, planner, build
   VERIFY.md     — verification report
 ```
 
-Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `building` → `built` → `done`
+Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `done`
 
 ## Supporting Files
 

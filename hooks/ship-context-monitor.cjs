@@ -26,61 +26,71 @@ const CRITICAL_THRESHOLD = 25; // remaining_percentage <= 25%
 const STALE_SECONDS = 60;      // ignore metrics older than 60s
 const DEBOUNCE_CALLS = 5;      // min tool uses between warnings
 
+function sanitizeId(id) {
+  return String(id || '').replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+function emitMessages(messages) {
+  if (messages.length > 0) {
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        additionalContext: messages.join('\n\n')
+      }
+    }));
+  }
+}
+
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
   try {
     const data = JSON.parse(input);
-    const sessionId = data.session_id;
+    const sessionId = sanitizeId(data.session_id);
 
     if (!sessionId) {
       process.exit(0);
     }
 
     const tmpDir = os.tmpdir();
+    const messages = [];
 
     // --- Concurrent session check ---
     const lockPath = path.join(tmpDir, 'claude-ship-session.lock');
     const LOCK_STALE_HOURS = 4;
-    if (sessionId && fs.existsSync(lockPath)) {
+    if (fs.existsSync(lockPath)) {
       try {
         const lockData = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
         const lockAge = Math.floor(Date.now() / 1000) - (lockData.timestamp || 0);
         if (lockData.session_id && lockData.session_id !== sessionId && lockAge < LOCK_STALE_HOURS * 3600) {
-          // Another session owns the lock -- check debounce for this warning type
           const lockWarnPath = path.join(tmpDir, `claude-ctx-${sessionId}-lock-warned.json`);
           let shouldWarn = true;
           if (fs.existsSync(lockWarnPath)) {
             try {
               const lwData = JSON.parse(fs.readFileSync(lockWarnPath, 'utf8'));
               const warnAge = Math.floor(Date.now() / 1000) - (lwData.timestamp || 0);
-              if (warnAge < 300) shouldWarn = false; // Debounce: warn at most once per 5 minutes
+              if (warnAge < 300) shouldWarn = false;
             } catch (e) {}
           }
           if (shouldWarn) {
-            fs.writeFileSync(lockWarnPath, JSON.stringify({ timestamp: Math.floor(Date.now() / 1000) }));
-            const lockMsg = `CONCURRENT SESSION WARNING: Another Claude session (${lockData.session_id}) appears active. ` +
-              'Concurrent sessions can cause state file conflicts. Consider closing the other session.';
-            const lockOutput = {
-              hookSpecificOutput: {
-                hookEventName: "PostToolUse",
-                additionalContext: lockMsg
-              }
-            };
-            process.stdout.write(JSON.stringify(lockOutput));
-            process.exit(0);
+            try {
+              fs.writeFileSync(lockWarnPath, JSON.stringify({ timestamp: Math.floor(Date.now() / 1000) }));
+            } catch (e) {}
+            messages.push(
+              `CONCURRENT SESSION WARNING: Another Claude session (${sanitizeId(lockData.session_id)}) appears active. ` +
+              'Concurrent sessions can cause state file conflicts. Consider closing the other session.'
+            );
           }
         }
-      } catch (e) {
-        // Corrupted lock file, ignore
-      }
+      } catch (e) {}
     }
 
+    // --- Context threshold check (always runs, even after concurrent session warning) ---
     const metricsPath = path.join(tmpDir, `claude-ctx-${sessionId}.json`);
 
-    // If no metrics file, this is a subagent or fresh session -- exit silently
     if (!fs.existsSync(metricsPath)) {
+      emitMessages(messages);
       process.exit(0);
     }
 
@@ -89,14 +99,16 @@ process.stdin.on('end', () => {
 
     // Ignore stale metrics
     if (metrics.timestamp && (now - metrics.timestamp) > STALE_SECONDS) {
+      emitMessages(messages);
       process.exit(0);
     }
 
     const remaining = metrics.remaining_percentage;
     const usedPct = metrics.used_pct;
 
-    // No warning needed
+    // No context warning needed
     if (remaining > WARNING_THRESHOLD) {
+      emitMessages(messages);
       process.exit(0);
     }
 
@@ -123,8 +135,9 @@ process.stdin.on('end', () => {
     // Severity escalation (WARNING -> CRITICAL) bypasses debounce
     const severityEscalated = currentLevel === 'critical' && warnData.lastLevel === 'warning';
     if (!firstWarn && warnData.callsSinceWarn < DEBOUNCE_CALLS && !severityEscalated) {
-      // Update counter and exit without warning
+      // Update counter and exit without context warning (but still emit concurrent warning if any)
       fs.writeFileSync(warnPath, JSON.stringify(warnData));
+      emitMessages(messages);
       process.exit(0);
     }
 
@@ -133,26 +146,22 @@ process.stdin.on('end', () => {
     warnData.lastLevel = currentLevel;
     fs.writeFileSync(warnPath, JSON.stringify(warnData));
 
-    // Build warning message
-    let message;
+    // Build context warning message
     if (isCritical) {
-      message = `CONTEXT MONITOR CRITICAL: Usage at ${usedPct}%. Remaining: ${remaining}%. ` +
+      messages.push(
+        `CONTEXT MONITOR CRITICAL: Usage at ${usedPct}%. Remaining: ${remaining}%. ` +
         'STOP new work immediately. Save state NOW and inform the user that context is nearly exhausted. ' +
-        'If using Ship, inform the user that context is low and they can run /ship-resume in a new session to continue.';
+        'If using Ship, inform the user that context is low and they can run /ship-resume in a new session to continue.'
+      );
     } else {
-      message = `CONTEXT MONITOR WARNING: Usage at ${usedPct}%. Remaining: ${remaining}%. ` +
+      messages.push(
+        `CONTEXT MONITOR WARNING: Usage at ${usedPct}%. Remaining: ${remaining}%. ` +
         'Begin wrapping up current task. Do not start new complex work. ' +
-        'If using Ship, consider wrapping up and suggesting /ship-resume in a new session if needed.';
+        'If using Ship, consider wrapping up and suggesting /ship-resume in a new session if needed.'
+      );
     }
 
-    const output = {
-      hookSpecificOutput: {
-        hookEventName: "PostToolUse",
-        additionalContext: message
-      }
-    };
-
-    process.stdout.write(JSON.stringify(output));
+    emitMessages(messages);
   } catch (e) {
     // Silent fail -- never block tool execution
     process.exit(0);

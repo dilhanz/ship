@@ -19,20 +19,26 @@ Based on the feature's `status` in CONTEXT.md:
 | Status | Next Step |
 |--------|-----------|
 | `brainstormed` | Run plan (invoke ship-planner agent) |
-| `planned` | Run build (follow /ship-build skill instructions) |
+| `planned` | Run plan-verify (invoke ship-plan-verifier agent) |
+| `plan-verified` | Run build (follow /ship-build skill instructions) |
 | `building` | Resume build (follow /ship-build skill instructions — skip completed tasks) |
 | `built` | Run verify (invoke ship-verifier agent) |
 | `done` | Nothing to do — feature is complete |
 
 ### 3. Execute Remaining Steps
 
-Run each remaining step in sequence: **plan → build → verify**
+Run each remaining step in sequence: **plan → plan-verify → build → verify**
 
 After each step completes successfully, check the output and continue to the next step.
 
 **Phase-aware building:** When build completes a phase but more phases remain (output shows PHASE COMPLETE instead of BUILD COMPLETE), loop back and continue building the next phase. Repeat until all phases are done or a stop condition is hit.
 
+**Plan verification:** When plan-verify completes, check the result:
+- If APPROVED: continue to build
+- If NEEDS-REVISION: stop and tell the user to replan with `/ship-plan {name}`
+
 **Stop conditions:**
+- Plan verification returns NEEDS-REVISION (critical issues found — replan needed)
 - A step reports a blocker (CHECKPOINT REACHED, PLAN HAS ISSUES)
 - Verification returns PARTIAL or FAIL (fix tasks were written — the user should review)
 - All steps complete (feature is done)

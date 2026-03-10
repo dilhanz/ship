@@ -42,6 +42,7 @@ const COPIES = [
 const AGENT_FILES = [
   'ship-brainstormer.md',
   'ship-builder.md',
+  'ship-plan-verifier.md',
   'ship-planner.md',
   'ship-verifier.md',
 ];
@@ -96,6 +97,7 @@ const LEGACY_FILES = [
 const SKILL_DIRS = [
   'ship-start',
   'ship-plan',
+  'ship-plan-verify',
   'ship-build',
   'ship-verify',
   'ship-go',
@@ -122,6 +124,10 @@ function ensureDir(dirPath) {
   }
 }
 
+function relDisplay(fullPath) {
+  return path.relative(process.cwd(), fullPath).replace(/\\/g, '/');
+}
+
 function copyDir(src, dest) {
   ensureDir(dest);
   const entries = fs.readdirSync(src, { withFileTypes: true });
@@ -136,7 +142,7 @@ function copyDir(src, dest) {
       copied.push(...subCopied);
     } else if (entry.isFile()) {
       fs.copyFileSync(srcPath, destPath);
-      copied.push(destPath.replace(process.cwd(), '.'));
+      copied.push(relDisplay(destPath));
     }
   }
 
@@ -198,7 +204,7 @@ function registerSettings() {
   settings.statusLine = { type: 'command', command: statuslineCmd };
 
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  return settingsPath.replace(process.cwd(), '.');
+  return relDisplay(settingsPath);
 }
 
 function deregisterSettings() {
@@ -246,13 +252,13 @@ function deregisterSettings() {
   }
 
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  return settingsPath.replace(process.cwd(), '.');
+  return relDisplay(settingsPath);
 }
 
 function removeFile(filePath) {
   if (fs.existsSync(filePath)) {
     fs.rmSync(filePath, { recursive: true, force: true });
-    return filePath.replace(process.cwd(), '.');
+    return relDisplay(filePath);
   }
   return null;
 }

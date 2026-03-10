@@ -78,8 +78,19 @@ function formatResetTime(isoStr) {
 
 function writeFileAtomic(filePath, data) {
   const tmpPath = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmpPath, data);
-  fs.renameSync(tmpPath, filePath);
+  try {
+    fs.writeFileSync(tmpPath, data);
+    fs.renameSync(tmpPath, filePath);
+  } catch (e) {
+    // On Windows, rename can fail with EBUSY/EPERM if the target is locked
+    if (e.code === 'EBUSY' || e.code === 'EPERM') {
+      try { fs.unlinkSync(tmpPath); } catch (_) {}
+      fs.writeFileSync(filePath, data);
+    } else {
+      try { fs.unlinkSync(tmpPath); } catch (_) {}
+      throw e;
+    }
+  }
 }
 
 // ── Git Branch ──
@@ -308,7 +319,7 @@ async function main() {
   const data = JSON.parse(input);
   const model = data.model?.display_name || 'Claude';
   const dir = data.cwd || data.workspace?.current_dir || process.cwd();
-  const session = data.session_id || '';
+  const session = String(data.session_id || '').replace(/[^a-zA-Z0-9_-]/g, '');
   const dirname = path.basename(dir);
 
   // Token counts
