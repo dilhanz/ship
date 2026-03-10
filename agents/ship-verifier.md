@@ -237,7 +237,7 @@ Read the template from `.claude/ship/templates/VERIFY.md` and write `.planning/f
 
 Update CONTEXT.md frontmatter:
 - If PASS: set `status: done`
-- If PARTIAL/FAIL: set `status: planned` (needs rebuild), and append Fix Tasks to PLAN.md
+- If PARTIAL/FAIL: set `status: plan-verified` (needs rebuild — plan was already verified, skip re-verification), and append Fix Tasks to PLAN.md
 
 ## Forbidden Responses
 
