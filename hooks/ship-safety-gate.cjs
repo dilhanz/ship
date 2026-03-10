@@ -13,10 +13,10 @@ process.stdin.on('end', () => {
 
     // Block git add . and git add -A (enforce atomic staging)
     const dangerousPatterns = [
-      /\bgit\s+add\s+\.\s*$/,
-      /\bgit\s+add\s+\.\s*[;&|]/,
-      /\bgit\s+add\s+-A\b/,
-      /\bgit\s+add\s+--all\b/,
+      /\bgit\s+add\s+\.\s*$/m,
+      /\bgit\s+add\s+\.\s*[;&|]/m,
+      /\bgit\s+add\s+-A\b/m,
+      /\bgit\s+add\s+--all\b/m,
     ];
 
     for (const pattern of dangerousPatterns) {

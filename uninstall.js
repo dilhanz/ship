@@ -24,18 +24,36 @@ const SHIP_PREFIX_DIRS = [
 ];
 
 function removeDirRecursive(dirPath, collected) {
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  let entries;
+  try {
+    entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  } catch (e) {
+    collected.push(path.relative(process.cwd(), dirPath) + '/ (access denied, skipped)');
+    return;
+  }
   for (const entry of entries) {
     const fullPath = path.join(dirPath, entry.name);
     if (entry.isDirectory()) {
       removeDirRecursive(fullPath, collected);
     } else {
-      fs.unlinkSync(fullPath);
-      collected.push(path.relative(process.cwd(), fullPath));
+      try {
+        fs.unlinkSync(fullPath);
+        collected.push(path.relative(process.cwd(), fullPath));
+      } catch (e) {
+        if (e.code === 'EBUSY' || e.code === 'EPERM' || e.code === 'EACCES') {
+          collected.push(path.relative(process.cwd(), fullPath) + ' (locked, skipped)');
+        } else {
+          throw e;
+        }
+      }
     }
   }
-  fs.rmdirSync(dirPath);
-  collected.push(path.relative(process.cwd(), dirPath) + '/');
+  try {
+    fs.rmdirSync(dirPath);
+    collected.push(path.relative(process.cwd(), dirPath) + '/');
+  } catch (e) {
+    // Directory may not be empty if some files were locked
+  }
 }
 
 function removePrefixedFiles(dir, prefix, collected) {
@@ -44,15 +62,25 @@ function removePrefixedFiles(dir, prefix, collected) {
   for (const entry of entries) {
     if (entry.isFile() && entry.name.startsWith(prefix)) {
       const fullPath = path.join(dir, entry.name);
-      fs.unlinkSync(fullPath);
-      collected.push(path.relative(process.cwd(), fullPath));
+      try {
+        fs.unlinkSync(fullPath);
+        collected.push(path.relative(process.cwd(), fullPath));
+      } catch (e) {
+        if (e.code === 'EBUSY' || e.code === 'EPERM' || e.code === 'EACCES') {
+          collected.push(path.relative(process.cwd(), fullPath) + ' (locked, skipped)');
+        } else {
+          throw e;
+        }
+      }
     }
   }
   // Remove dir if now empty
-  if (fs.readdirSync(dir).length === 0) {
-    fs.rmdirSync(dir);
-    collected.push(path.relative(process.cwd(), dir) + '/');
-  }
+  try {
+    if (fs.readdirSync(dir).length === 0) {
+      fs.rmdirSync(dir);
+      collected.push(path.relative(process.cwd(), dir) + '/');
+    }
+  } catch (e) {}
 }
 
 function cleanSettings(collected) {
@@ -86,6 +114,16 @@ function cleanSettings(collected) {
     );
     if (settings.hooks.PostToolUse.length !== before) changed = true;
     if (settings.hooks.PostToolUse.length === 0) delete settings.hooks.PostToolUse;
+  }
+
+  // Remove ship-safety-gate from PreToolUse
+  if (settings.hooks?.PreToolUse) {
+    const before = settings.hooks.PreToolUse.length;
+    settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(
+      group => !group.hooks?.some(h => h.command?.includes('ship-safety-gate'))
+    );
+    if (settings.hooks.PreToolUse.length !== before) changed = true;
+    if (settings.hooks.PreToolUse.length === 0) delete settings.hooks.PreToolUse;
   }
 
   // Remove empty hooks object

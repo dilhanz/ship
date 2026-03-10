@@ -12,7 +12,7 @@ Build the active feature by executing its plan phase by phase.
 
 1. Look in `.planning/features/` for feature directories
 2. Read each `CONTEXT.md` and check the `status` field
-3. Find the feature with status `planned` or `building` (resuming)
+3. Find the feature with status `plan-verified` or `building` (resuming)
 4. If `$ARGUMENTS` is provided, use it as the feature name
 5. If multiple candidates exist, list them and pick the most recent
 6. If no candidates exist, report that no buildable features were found
@@ -75,6 +75,7 @@ Parse the builder agent's `## BUILD RESULT` output.
 Feature: {name}
 Phase: [M] / [total] — [phase name]
 Tasks completed: [N] / [N] in this phase
+Overall progress: [done_across_all_phases] / [total_across_all_phases] tasks
 Commits: [list short hashes]
 ```
 
