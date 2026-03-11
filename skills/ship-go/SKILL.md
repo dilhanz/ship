@@ -2,7 +2,7 @@
 name: ship-go
 description: Automatically run all remaining steps for the active feature (plan -> build -> verify).
 disable-model-invocation: true
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 argument-hint: "[feature-name]"
 ---
 
