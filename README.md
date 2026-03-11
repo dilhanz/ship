@@ -29,7 +29,9 @@ npx github:dilhanz/ship --uninstall
 
 ```
 /ship-start "your idea"     Brainstorm → CONTEXT.md
+/ship-design                Compare architecture approaches (optional)
 /ship-plan                  Plan tasks → PLAN.md
+/ship-plan-verify           Verify plan against codebase patterns
 /ship-build                 Implement with atomic commits
 /ship-verify                Check against acceptance criteria → VERIFY.md
 ```
@@ -38,7 +40,7 @@ Or let Ship run everything automatically:
 
 ```
 /ship-start "your idea"     Brainstorm first (interactive)
-/ship-go                    Then auto-run: plan → build → verify
+/ship-go                    Then auto-run: plan → plan-verify → build → verify
 ```
 
 ## Utility Commands
@@ -55,11 +57,13 @@ Or let Ship run everything automatically:
 
 **Start / Brainstorm:** Asks 5-10+ questions to deeply understand what you want to build. Reads your codebase directly to ask smarter questions. Captures everything in a `CONTEXT.md` with problem statement, decisions, acceptance criteria, and scope boundaries.
 
-**Plan:** Reads CONTEXT.md, explores the codebase, and writes a concrete task list with specific file paths and runnable verify commands. Self-validates plan quality (acceptance coverage, task completeness, verify command quality, scope).
+**Design (optional):** Launches 3 parallel architect sub-agents — each with a different philosophy (minimal changes, clean architecture, pragmatic balance) — and presents the trade-offs. You choose the approach before planning.
 
-**Build:** Implements tasks sequentially, runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Larger plans (>4 tasks) are automatically grouped into phases — build executes one phase at a time. Applies 3 deviation rules when reality diverges from plan.
+**Plan:** Launches 3 parallel exploration sub-agents to map similar features, architecture, and conventions. Asks targeted follow-up questions informed by what the explorers found. Then writes a concrete task list with specific file paths and runnable verify commands. Self-validates plan quality (acceptance coverage, task completeness, verify command quality, scope). Plan is independently verified against the codebase before building.
 
-**Verify:** Reads acceptance criteria from CONTEXT.md as truths, checks backwards into the code (file exists → has substance → is wired up). Scans for TODOs and stubs. If gaps exist, writes fix tasks back to PLAN.md.
+**Build:** Reads key files from the plan to build rich context before starting. Implements tasks sequentially, runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Larger plans (>4 tasks) are automatically grouped into phases — build executes one phase at a time. Applies 3 deviation rules when reality diverges from plan.
+
+**Verify:** Launches 3 parallel reviewer sub-agents (simplicity/DRY, bugs/correctness, conventions/security) then runs the full verifier. Reads acceptance criteria from CONTEXT.md as truths, checks backwards into the code (file exists → has substance → is wired up). Scans for TODOs and stubs. PR review findings use confidence scoring (0-100, only ≥80 reported). If gaps exist, writes fix tasks back to PLAN.md.
 
 ## Feature Directory
 
@@ -77,7 +81,7 @@ Each feature gets its own directory under `.planning/features/`:
 └── ...
 ```
 
-Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `building` → `built` → `done`
+Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `done`
 
 ## Core Principles
 
@@ -87,7 +91,7 @@ Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `b
 
 **Atomic commits.** One commit per task. Specific files staged. Verify command must pass before committing.
 
-**Phased builds.** Plans with more than 4 tasks are automatically grouped into phases (3-5 tasks each). Build executes one phase at a time; `/ship-go` loops through all phases automatically.
+**Phased builds.** Plans with more than 4 tasks are automatically grouped into phases (3-5 tasks each). Build executes one phase at a time; `/ship-go` loops through all phases automatically. An approval gate pauses before building to show the plan summary and ask for confirmation.
 
 **Deviation rules.** 3 rules for when reality diverges from plan: fix and continue for small issues, fix with limits for verify failures (max 3 attempts), stop and report for architectural conflicts.
 
