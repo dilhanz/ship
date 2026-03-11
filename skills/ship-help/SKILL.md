@@ -12,6 +12,7 @@ Ship — Feature-centric development framework for Claude Code
 
 Commands:
   /ship-start "idea"   Start brainstorming a new feature or fix
+  /ship-design         Compare architecture approaches and let user choose (optional)
   /ship-plan           Create implementation plan from CONTEXT.md
   /ship-plan-verify    Verify plan against codebase patterns before building
   /ship-build          Execute the plan with atomic commits
@@ -26,7 +27,7 @@ Commands:
   /ship-help           Show this reference
 
 Flow:
-  start → plan → plan-verify → build → verify
+  start → [design →] plan → plan-verify → build → verify
   (or just: start → go)
 
 Feature directory: .planning/features/{name}/

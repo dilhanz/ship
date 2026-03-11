@@ -33,6 +33,10 @@ Extract from CONTEXT.md:
 
 ### Step 2 — Explore the Codebase
 
+First, check if your prompt includes an `## Exploration Findings` section. If it does, read it — these are findings from parallel explorers run before you. Use them as your starting context and skip redundant exploration. Do supplementary Glob/Read calls only for specific details not covered.
+
+If no pre-gathered findings exist, explore from scratch:
+
 Use Glob and Read to understand what already exists:
 - What files and patterns are in the project?
 - What conventions are used (naming, structure, imports)?
@@ -51,6 +55,8 @@ If the feature involves unfamiliar technology, make up to 3 WebFetch calls.
 Document findings in `## Research Notes`.
 
 ### Step 4 — Make Decisions
+
+If CONTEXT.md contains a `## Chosen Architecture` section, use that approach as your architectural foundation. Design tasks that follow the chosen approach's implementation points.
 
 Document implementation decisions not already in CONTEXT.md. For each, note the rationale.
 
