@@ -17,6 +17,37 @@ Verify the implementation plan against the actual codebase.
 5. If multiple candidates exist, list them and pick the most recent
 6. If no candidates exist, report that no verifiable plans were found
 
+## Pre-Verification Exploration
+
+Before invoking the verifier, launch 2 parallel exploration sub-agents using the Agent tool. Run both simultaneously in a single response:
+
+**Agent 1 — Codebase Patterns & Conventions:**
+```
+Survey coding conventions and architecture in this project. Read 3-5 representative source files.
+Report:
+- Directory layout and module boundaries
+- File naming style (camelCase, kebab-case, PascalCase)
+- Import patterns (relative vs alias, default vs named exports)
+- File extension conventions
+- Error handling conventions
+- Test file locations and framework
+- Any linting/formatting config (eslint, prettier, tsconfig)
+Be concise. Max 500 words.
+```
+
+**Agent 2 — Plan File Analysis:**
+```
+Read .planning/features/{name}/PLAN.md.
+Extract and report:
+- Every file path mentioned in <files> elements across all tasks
+- For each path, whether it's a new file or modifying an existing one (use Glob to check existence)
+- For modification targets, read the file and note its structure, key exports, and patterns
+- Count of tasks and phases
+Be concise. Max 600 words.
+```
+
+Collect the output from both agents. Concatenate into an `## Exploration Findings` block.
+
 ## Run Verification
 
 Use the Agent tool to invoke the `ship-plan-verifier` agent with this prompt:
@@ -28,7 +59,13 @@ Read:
 - .planning/features/{name}/CONTEXT.md
 - .planning/features/{name}/PLAN.md
 
-Follow your plan verification instructions with this feature.
+## Exploration Findings (pre-gathered by parallel explorers)
+
+{paste the full Exploration Findings block here}
+
+Follow your plan verification instructions. Use the exploration findings above as your
+Stage 1 starting context — skip redundant exploration but do supplementary reads as needed.
+Proceed through all remaining stages (structural verification, landscape review, verdict, write results).
 ```
 
 ## Display Results
