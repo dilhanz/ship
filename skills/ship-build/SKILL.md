@@ -25,6 +25,20 @@ Before starting, verify:
 
 If prerequisites fail, stop and tell the user what's missing.
 
+## Pre-Build Context Loading
+
+Before executing any phase, load key file context into the main conversation to enrich the builder agent's understanding.
+
+1. Read `.planning/features/{name}/PLAN.md` in full
+2. Extract all `<files>` elements across all pending tasks. Deduplicate the paths.
+3. Filter to files that already exist (skip files the plan creates from scratch — use Glob to check existence)
+4. Read up to 8 of those existing files (prioritize files modified by early tasks, skip binary/lock/generated files)
+5. Build a `## Key File Context` block summarizing what you observed:
+   - For each file read: one sentence describing its structure and relevant patterns
+   - Note any conventions or patterns the builder should preserve
+
+This context block is embedded into each builder agent invocation below.
+
 ## Phase Detection
 
 Read PLAN.md and check if it contains `<phase>` elements:
@@ -51,6 +65,10 @@ Use the Agent tool to invoke the `ship-builder` agent with this prompt:
 ```
 Build feature: {name}
 Phase: {phase-id} — {phase-name}
+
+## Key File Context (pre-read by orchestrator)
+
+{paste the Key File Context block from Pre-Build Context Loading here}
 
 Execute all pending tasks in this phase. Read:
 - .planning/features/{name}/PLAN.md

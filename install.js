@@ -106,6 +106,7 @@ const SKILL_DIRS = [
   'ship-help',
   'ship-update',
   'ship-uninstall',
+  'ship-design',
   'ship-deviation-rules',
   'ship-git-commits',
 ];
