@@ -17,6 +17,13 @@ goal: "[Goal from CONTEXT.md]"
 - [Observable outcome 2]
 - [Observable outcome 3]
 
+## Acceptance Coverage Map
+
+```
+Criterion: "[Criterion text from CONTEXT.md]" → Task [N] ([brief description])
+Criterion: "[Criterion text]" → Task [N] + Task [M]
+```
+
 ---
 
 <task id="1" status="pending">

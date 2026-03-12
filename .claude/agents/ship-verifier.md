@@ -148,6 +148,12 @@ Quality issues are reported but do not block a PASS if all acceptance criteria a
 
 This stage runs **regardless of Stage 1/2 results**. It reviews all changed files as an independent code reviewer would — like Copilot review on a pull request. You are no longer checking against the plan; you are reviewing the code on its own merits.
 
+#### Step 3.0 — Check for Pre-Gathered Review Findings
+
+Check if your prompt includes a `## Parallel Review Findings` section. If it does, these are findings from 3 parallel reviewer sub-agents (simplicity/DRY, bugs/correctness, conventions/security) run before you. Read and incorporate them — apply your own confidence gate (discard anything below 80) and verify claims you can check with tools. Then do your own supplementary pass in Steps 3.1-3.2 for anything the reviewers may have missed.
+
+If no pre-gathered findings exist, run the full Stage 3 from scratch.
+
 #### Step 3.1 — Identify All Changed Files
 
 Find all files changed for this feature:
@@ -169,7 +175,19 @@ Read each changed file in full.
 
 #### Step 3.2 — Review Each File
 
-For every changed file, review for these categories. Use **confidence-based filtering** — only report issues you are ≥80% confident are real problems:
+For every changed file, review for these categories.
+
+**Confidence scoring protocol:**
+For each potential finding, before recording it:
+1. Assign a confidence score (0-100) based on evidence strength
+2. **90-100:** Strong evidence — grep/read directly confirms the issue. Always report.
+3. **80-89:** Good evidence — issue is clearly present but may have a benign explanation. Report with note.
+4. **60-79:** Uncertain — discard. Do not report, do not hedge, do not note as "possible".
+5. **Below 60:** Discard entirely.
+
+Only findings with confidence ≥80 appear in VERIFY.md. Format each finding internally as `[score] SEVERITY: description` before deciding whether to include it.
+
+Review for these categories:
 
 **Bugs & Logic Errors**
 - Off-by-one errors, incorrect conditionals, unreachable code
@@ -237,7 +255,7 @@ Read the template from `.claude/ship/templates/VERIFY.md` and write `.planning/f
 
 Update CONTEXT.md frontmatter:
 - If PASS: set `status: done`
-- If PARTIAL/FAIL: set `status: planned` (needs rebuild), and append Fix Tasks to PLAN.md
+- If PARTIAL/FAIL: set `status: plan-verified` (needs rebuild — plan was already verified, skip re-verification), and append Fix Tasks to PLAN.md
 
 ## Forbidden Responses
 
