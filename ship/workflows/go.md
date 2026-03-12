@@ -18,8 +18,8 @@ Based on the feature's `status` in CONTEXT.md:
 
 | Status | Next Step |
 |--------|-----------|
-| `brainstormed` | Run plan (invoke ship-planner agent) |
-| `planned` | Run plan-verify (invoke ship-plan-verifier agent) |
+| `brainstormed` | Run plan (invoke /ship-plan skill) |
+| `planned` | Run plan-verify (invoke /ship-plan-verify skill) |
 | `plan-verified` | Run build (follow /ship-build skill instructions) |
 | `building` | Resume build (follow /ship-build skill instructions — skip completed tasks) |
 | `built` | Run verify (invoke ship-verifier agent) |
