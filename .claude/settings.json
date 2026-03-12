@@ -12,10 +12,22 @@
     ],
     "PostToolUse": [
       {
+        "matcher": "Write|Edit|Bash|Agent",
         "hooks": [
           {
             "type": "command",
             "command": "node .claude/hooks/ship-context-monitor.cjs"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/ship-safety-gate.cjs"
           }
         ]
       }

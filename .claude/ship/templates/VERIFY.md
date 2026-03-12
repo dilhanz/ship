@@ -36,14 +36,15 @@
 
 ### Findings
 
-| # | Severity | File | Line(s) | Finding | Evidence |
-|---|----------|------|---------|---------|----------|
-| 1 | CRITICAL / WARNING / SUGGESTION | [file] | [lines] | [description] | [tool output proving the issue] |
+| # | Confidence | Severity | File | Line(s) | Finding | Evidence |
+|---|------------|----------|------|---------|---------|----------|
+| 1 | [80-100] | CRITICAL / WARNING / SUGGESTION | [file] | [lines] | [description] | [tool output proving the issue] |
 
 (If none: "No issues found — code is clean.")
 
 ### PR Review Summary
 
+- **Confidence threshold:** 80 (findings below threshold are discarded)
 - **Critical:** [N] (blocks PASS)
 - **Warnings:** [N]
 - **Suggestions:** [N]

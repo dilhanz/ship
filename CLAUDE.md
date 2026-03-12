@@ -11,19 +11,21 @@ skills/ship-*/SKILL.md   11 skills (thin entry points, some with context:fork fo
 skills/ship-deviation-rules/  Reference skill preloaded into builder agent
 skills/ship-git-commits/      Reference skill preloaded into builder/planner agents
 ship/workflows/*.md           1 orchestration workflow (go)
-agents/*.md                   5 specialized agents (brainstormer, planner, plan-verifier, builder, verifier)
+agents/*.md                   3 specialized agents (brainstormer, builder, verifier)
 ```
 
-**Skills** define frontmatter fields like `context: fork`, `agent`, `model`, and `allowed-tools`. Skills with `context: fork` run in isolated subagent contexts, preserving the main conversation window. Skills reference agents via the `agent` field.
+**Skills** define frontmatter fields like `context: fork`, `agent`, `model`, and `allowed-tools`. Skills with `context: fork` run in isolated subagent contexts, preserving the main conversation window. Some skills delegate to agents via the `agent` field; others run inline with full instructions embedded in the skill body.
 
 **Workflows** define multi-step processes: `go` (auto-run remaining steps).
 
 **Agents** define `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, and `skills` in frontmatter. Each agent has a single responsibility:
 - `ship-brainstormer` — intensive questioning → CONTEXT.md
-- `ship-planner` — codebase exploration → PLAN.md
-- `ship-plan-verifier` — independent plan review against codebase patterns
 - `ship-builder` — task execution with atomic commits
 - `ship-verifier` — acceptance criteria checking → VERIFY.md
+
+**Inline skills** (run in the main conversation for unlimited turns):
+- `ship-plan` — codebase exploration → PLAN.md (uses parallel Explore agents for pre-planning, then plans inline)
+- `ship-plan-verify` — independent plan review against codebase patterns (runs inline to avoid turn limits)
 
 ## Flow
 
@@ -85,7 +87,7 @@ Hooks are stdin->stdout Node.js scripts. They receive JSON on stdin and (optiona
 
 ### Skills
 
-Skills live in `skills/ship-*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `context: fork` (runs in isolated subagent), `agent` (delegates to named agent), `model`, `disable-model-invocation`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and verify skills use `context: fork` for subagent execution; start and go run inline. Build runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress.
+Skills live in `skills/ship-*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `context: fork` (runs in isolated subagent), `agent` (delegates to named agent), `model`, `disable-model-invocation`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and plan-verify skills run inline in the main conversation (full instructions in the skill body, no agent delegation) for unlimited turns. Start and go also run inline. Build runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress.
 
 ### Agents
 
