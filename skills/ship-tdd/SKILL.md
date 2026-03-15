@@ -1,6 +1,6 @@
 ---
 name: ship-tdd
-description: Test-driven development guidelines for writing tests before implementation code
+description: Use when implementing tasks that have test-based verify commands — provides RED-GREEN-REFACTOR cycle guidance
 user-invocable: false
 ---
 

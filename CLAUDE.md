@@ -54,7 +54,8 @@ Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan
 ## Supporting Files
 
 ```
-hooks/                 4 Node.js hooks (stdin->stdout, zero dependencies)
+hooks/                 5 Node.js hooks (stdin->stdout, zero dependencies)
+  ship-guide.cjs          SessionStart event — injects Ship awareness so Claude proactively suggests commands
   ship-statusline.cjs     StatusLine event — displays model, task, dir, context %
   ship-context-monitor.cjs PostToolUse event — injects warnings when context is high (matcher: Write|Edit|Bash|Agent)
   ship-check-update.cjs   SessionStart event — checks GitHub for newer version
@@ -73,6 +74,7 @@ install.js             Copies skills, agents, hooks, and ship data to .claude/ a
 - **Deviation rules:** 3 escalation levels when reality diverges from the plan, with structured debugging in Rule 2 (see `ship/references/deviation-rules.md`)
 - **Test-driven development:** Builder follows RED-GREEN-REFACTOR when tasks have test-based verify commands
 - **Context bridge:** The statusline hook writes context metrics to `/tmp/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
+- **Auto-discovery:** The ship-guide SessionStart hook injects Ship awareness into every conversation, so Claude proactively suggests commands when it detects feature work. Skill descriptions use "Use when..." trigger-condition format for semantic matching (inspired by superpowers CSO pattern).
 
 ## Development Guidelines
 

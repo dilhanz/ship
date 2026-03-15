@@ -1,7 +1,7 @@
 ---
 name: ship-builder
 model: sonnet
-description: Executes the implementation plan for a feature. Reads PLAN.md, implements each task sequentially, applies deviation rules on failure, and makes atomic commits. Returns a compact build result.
+description: Use when executing a verified implementation plan — reads PLAN.md, implements tasks sequentially, applies deviation rules on failure, and makes atomic commits
 tools: Read, Write, Edit, Bash, Glob, Grep
 maxTurns: 40
 memory: project
