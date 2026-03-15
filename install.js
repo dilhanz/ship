@@ -117,6 +117,7 @@ const SKILL_DIRS = [
 const HOOK_FILES = [
   'ship-check-update.cjs',
   'ship-context-monitor.cjs',
+  'ship-guide.cjs',
   'ship-safety-gate.cjs',
   'ship-statusline.cjs',
 ];
@@ -182,6 +183,15 @@ function registerSettings() {
     hooks: [{ type: 'command', command: checkUpdateCmd }]
   });
 
+  // SessionStart: ship-guide — inject Ship awareness into every conversation
+  const guideCmd = `node ${hooksDir}/ship-guide.cjs`;
+  settings.hooks.SessionStart = settings.hooks.SessionStart.filter(group =>
+    !group.hooks?.some(h => h.command?.includes('ship-guide'))
+  );
+  settings.hooks.SessionStart.push({
+    hooks: [{ type: 'command', command: guideCmd }]
+  });
+
   // PostToolUse: ship-context-monitor — always update to keep node path current
   if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
   settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter(group =>
@@ -224,7 +234,10 @@ function deregisterSettings() {
   // Remove ship hooks from SessionStart
   if (settings.hooks?.SessionStart) {
     settings.hooks.SessionStart = settings.hooks.SessionStart.filter(group =>
-      !group.hooks?.some(h => h.command?.includes('ship-check-update'))
+      !group.hooks?.some(h =>
+        h.command?.includes('ship-check-update') ||
+        h.command?.includes('ship-guide')
+      )
     );
     if (settings.hooks.SessionStart.length === 0) delete settings.hooks.SessionStart;
   }

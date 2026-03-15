@@ -1,6 +1,6 @@
 ---
 name: ship-start
-description: Start brainstorming a new feature or fix. Creates a feature directory and runs an intensive questioning session.
+description: Use when beginning new feature work, adding functionality, or fixing a bug — runs intensive brainstorming to capture requirements before planning
 disable-model-invocation: true
 allowed-tools: Read, Write, WebSearch, WebFetch, Glob, Bash
 argument-hint: "[feature description]"

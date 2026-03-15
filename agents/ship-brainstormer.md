@@ -1,7 +1,7 @@
 ---
 name: ship-brainstormer
 model: opus
-description: Intensive brainstorming session for a feature or fix. Explores the codebase, asks 5-10+ questions to deeply understand the problem, and produces a CONTEXT.md in .planning/features/{name}/. Use when starting new work with /ship-start.
+description: Use when starting new work with /ship-start — intensive brainstorming that explores codebase, asks 5-10+ questions, and produces CONTEXT.md
 tools: Read, Write, WebSearch, WebFetch, Glob, AskUserQuestion
 maxTurns: 50
 ---

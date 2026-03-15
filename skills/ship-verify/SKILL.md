@@ -1,6 +1,6 @@
 ---
 name: ship-verify
-description: Verify the active feature against its acceptance criteria from CONTEXT.md.
+description: Use when a feature build is complete and needs verification against acceptance criteria and independent code review
 disable-model-invocation: true
 allowed-tools: Read, Agent, Glob, Edit, Bash
 argument-hint: "[feature-name]"

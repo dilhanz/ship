@@ -1,7 +1,7 @@
 ---
 name: ship-verifier
 model: sonnet
-description: Verifies feature acceptance criteria AND performs an independent PR-style code review on all changed files. Catches bugs, security issues, logic errors, and quality problems that plan-based verification alone would miss. Writes VERIFY.md with fix tasks for any gaps found.
+description: Use when a feature build is complete and needs verification — checks acceptance criteria, performs independent PR-style code review, and writes VERIFY.md with fix tasks for any gaps
 tools: Read, Write, Bash, Glob, Grep
 maxTurns: 30
 memory: project
