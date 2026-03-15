@@ -1,6 +1,6 @@
 ---
 name: ship-plan-verify
-description: Independently verify the implementation plan against existing codebase patterns and conventions before building.
+description: Use when a plan has been created and needs independent verification against codebase patterns before building
 allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 argument-hint: "[feature-name]"
 ---

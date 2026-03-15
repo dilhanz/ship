@@ -1,6 +1,6 @@
 ---
 name: ship-deviation-rules
-description: Deviation rules for when plan diverges from reality during build execution
+description: Use when plan diverges from reality during build execution — provides 3 escalation levels for handling failures
 user-invocable: false
 ---
 

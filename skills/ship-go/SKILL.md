@@ -1,6 +1,6 @@
 ---
 name: ship-go
-description: Automatically run all remaining steps for the active feature (plan -> build -> verify).
+description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
 argument-hint: "[feature-name]"

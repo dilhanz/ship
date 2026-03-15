@@ -1,6 +1,6 @@
 ---
 name: ship-finish
-description: Complete a feature by creating a PR, merging locally, or keeping the branch for later.
+description: Use when a feature has been verified and needs to be completed — creates PR, merges locally, or keeps branch
 disable-model-invocation: true
 allowed-tools: Read, Bash, Glob, AskUserQuestion
 argument-hint: "[feature-name]"
