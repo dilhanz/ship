@@ -23,11 +23,11 @@ Based on the feature's `status` in CONTEXT.md:
 | `plan-verified` | Run build (follow /ship-build skill instructions) |
 | `building` | Resume build (follow /ship-build skill instructions — skip completed tasks) |
 | `built` | Run verify (invoke ship-verifier agent) |
-| `done` | Nothing to do — feature is complete |
+| `done` | Run finish (invoke /ship-finish skill) |
 
 ### 3. Execute Remaining Steps
 
-Run each remaining step in sequence: **plan → plan-verify → build → verify**
+Run each remaining step in sequence: **plan → plan-verify → build → verify → finish**
 
 After each step completes successfully, check the output and continue to the next step.
 
@@ -62,11 +62,17 @@ Plan review warnings: [N — or "None"]
 5. If the user chooses "Adjust first": stop the go workflow and tell them to run `/ship-plan {name}` to replan, then `/ship-go` to continue
 6. If the user chooses "Proceed": continue to build
 
+**Build status handling:** When a build phase returns, check the status:
+- **COMPLETE / COMPLETE_WITH_CONCERNS:** Continue to the next phase. If COMPLETE_WITH_CONCERNS, surface the concerns to the user but keep going.
+- **NEEDS_CONTEXT:** Stop and ask the user for the missing information. Do not continue until they provide it.
+- **CHECKPOINT:** Stop. The builder hit an architectural blocker.
+
 **Stop conditions:**
 - Plan verification returns NEEDS-REVISION (critical issues found — replan needed)
-- A step reports a blocker (CHECKPOINT REACHED, PLAN HAS ISSUES)
+- Build returns CHECKPOINT (architectural blocker — needs replanning)
+- Build returns NEEDS_CONTEXT (missing information — user must provide it)
 - Verification returns PARTIAL or FAIL (fix tasks were written — the user should review)
-- All steps complete (feature is done)
+- All steps complete (feature is finished)
 
 ### 4. Report
 
