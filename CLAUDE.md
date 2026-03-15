@@ -7,9 +7,10 @@ Ship is a feature-centric development framework for Claude Code. Every piece of 
 Three-layer design, all Markdown with YAML frontmatter:
 
 ```
-skills/ship-*/SKILL.md   11 skills (thin entry points, some with context:fork for subagent execution)
+skills/ship-*/SKILL.md   12 skills (thin entry points, some with context:fork for subagent execution)
 skills/ship-deviation-rules/  Reference skill preloaded into builder agent
 skills/ship-git-commits/      Reference skill preloaded into builder/planner agents
+skills/ship-tdd/              Reference skill preloaded into builder agent (test-driven development)
 ship/workflows/*.md           1 orchestration workflow (go)
 agents/*.md                   3 specialized agents (brainstormer, builder, verifier)
 ```
@@ -35,6 +36,7 @@ agents/*.md                   3 specialized agents (brainstormer, builder, verif
 /ship-plan-verify        → verify plan against codebase  → PLAN.md (review appended)
 /ship-build              → implement, verify, commit     → tasks marked done
 /ship-verify             → check acceptance criteria      → VERIFY.md
+/ship-finish             → complete feature (PR, merge, or keep)
 /ship-go                 → auto-run remaining steps
 ```
 
@@ -68,7 +70,8 @@ install.js             Copies skills, agents, hooks, and ship data to .claude/ a
 - **Feature-centric:** Each feature/fix gets its own directory — no phases, no milestones, no FEAT-XX IDs
 - **Intensive brainstorming:** The brainstormer asks 5-10+ questions before writing CONTEXT.md
 - **Atomic commits:** One commit per task, specific files staged (never `git add .`), format: `feat(feature-name): description`
-- **Deviation rules:** 3 escalation levels when reality diverges from the plan (see `ship/references/deviation-rules.md`)
+- **Deviation rules:** 3 escalation levels when reality diverges from the plan, with structured debugging in Rule 2 (see `ship/references/deviation-rules.md`)
+- **Test-driven development:** Builder follows RED-GREEN-REFACTOR when tasks have test-based verify commands
 - **Context bridge:** The statusline hook writes context metrics to `/tmp/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
 
 ## Development Guidelines

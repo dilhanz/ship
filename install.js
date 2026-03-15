@@ -109,6 +109,8 @@ const SKILL_DIRS = [
   'ship-design',
   'ship-deviation-rules',
   'ship-git-commits',
+  'ship-tdd',
+  'ship-finish',
 ];
 
 // Ship-owned hook files (for clean uninstall)

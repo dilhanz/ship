@@ -99,6 +99,40 @@ Commits: [list short hashes]
 
 - Then **continue the loop** to the next pending phase
 
+**If Status: COMPLETE_WITH_CONCERNS:**
+- Same as COMPLETE (mark phase done, continue loop)
+- But also surface the concerns to the user:
+
+```
+## PHASE COMPLETE (with concerns)
+
+Feature: {name}
+Phase: [M] / [total] — [phase name]
+Tasks completed: [N] / [N] in this phase
+Commits: [list short hashes]
+
+Concerns flagged by builder:
+- [concern 1]
+- [concern 2]
+
+Continuing to next phase. Review concerns after build completes.
+```
+
+**If Status: NEEDS_CONTEXT:**
+- Leave CONTEXT.md status as `building`
+- Output to the user what information is missing
+- **Stop the loop** — the user must provide the missing context before continuing
+
+```
+## CONTEXT NEEDED
+
+Feature: {name}
+Tasks completed: [N] / [M]
+Missing: [from agent result]
+
+Provide the missing information, then run /ship-build to continue.
+```
+
 **If Status: CHECKPOINT:**
 - Leave CONTEXT.md status as `building`
 - Output to the user:
