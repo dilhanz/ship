@@ -1,7 +1,6 @@
 ---
 name: ship-help
 description: Use when the user asks about Ship commands, workflow, or how to use the framework
-disable-model-invocation: true
 allowed-tools: []
 ---
 

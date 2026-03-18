@@ -15,7 +15,7 @@ ship/workflows/*.md           1 orchestration workflow (go)
 agents/*.md                   3 specialized agents (brainstormer, builder, verifier)
 ```
 
-**Skills** define frontmatter fields like `model`, `disable-model-invocation`, and `allowed-tools`. Some skills delegate to agents via the Agent tool; others run inline with full instructions embedded in the skill body.
+**Skills** define frontmatter fields like `model` and `allowed-tools`. Some skills delegate to agents via the Agent tool; others run inline with full instructions embedded in the skill body.
 
 **Workflows** define multi-step processes: `go` (auto-run remaining steps).
 
@@ -91,7 +91,7 @@ Hooks are stdin->stdout Node.js scripts. They receive JSON on stdin and (optiona
 
 ### Skills
 
-Skills live in `skills/ship-*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `model`, `disable-model-invocation`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and plan-verify skills run inline in the main conversation (full instructions in the skill body, no agent delegation) for unlimited turns. Start and go also run inline. Build runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress.
+Skills live in `skills/ship-*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `model`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and plan-verify skills run inline in the main conversation (full instructions in the skill body, no agent delegation) for unlimited turns. Start and go also run inline. Build runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress.
 
 ### Agents
 
