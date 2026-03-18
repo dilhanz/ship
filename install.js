@@ -42,8 +42,6 @@ const COPIES = [
 const AGENT_FILES = [
   'ship-brainstormer.md',
   'ship-builder.md',
-  'ship-plan-verifier.md',
-  'ship-planner.md',
   'ship-verifier.md',
 ];
 
@@ -52,11 +50,14 @@ const LEGACY_FILES = [
   // Old .js hooks (renamed to .cjs for ESM compatibility)
   path.join('hooks', 'ship-check-update.js'),
   path.join('hooks', 'ship-context-monitor.js'),
+  path.join('hooks', 'ship-safety-gate.js'),
   path.join('hooks', 'ship-statusline.js'),
   // Agents
   path.join('agents', 'ship-executor.md'),
   path.join('agents', 'ship-roadmapper.md'),
   path.join('agents', 'ship-plan-checker.md'),
+  path.join('agents', 'ship-planner.md'),
+  path.join('agents', 'ship-plan-verifier.md'),
   // Commands
   path.join('commands', 'ship', 'auto.md'),
   path.join('commands', 'ship', 'add-phase.md'),
@@ -91,6 +92,11 @@ const LEGACY_FILES = [
   path.join('ship', 'templates', 'ROADMAP.md'),
   path.join('ship', 'templates', 'STATE.md'),
   path.join('ship', 'templates', 'SUMMARY.md'),
+  path.join('ship', 'templates', 'CONTEXT.md'),
+  path.join('ship', 'templates', 'PLAN.md'),
+  // References (content now lives in skills)
+  path.join('ship', 'references', 'deviation-rules.md'),
+  path.join('ship', 'references', 'git-commits.md'),
 ];
 
 // Ship-owned skill directories (for clean uninstall)

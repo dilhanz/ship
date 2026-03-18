@@ -1,6 +1,6 @@
 ---
 name: ship-status
-description: Show all features and their current status with progress details.
+description: Use when checking feature progress or wanting to see what features exist and their current status
 disable-model-invocation: true
 allowed-tools: Read, Glob
 ---

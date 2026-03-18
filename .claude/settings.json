@@ -8,6 +8,14 @@
             "command": "node .claude/hooks/ship-check-update.cjs"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/ship-guide.cjs"
+          }
+        ]
       }
     ],
     "PostToolUse": [
