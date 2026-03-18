@@ -66,7 +66,7 @@ git add <file1> <file2> ...
 git commit -m "feat({feature-name}): {task description}"
 ```
 
-Follow the commit conventions from `.claude/ship/references/git-commits.md`.
+Follow the commit conventions from your preloaded `ship-git-commits` skill.
 
 ### 5. Mark Done
 
