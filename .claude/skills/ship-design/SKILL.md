@@ -1,6 +1,6 @@
 ---
 name: ship-design
-description: Present 2-3 architecture approaches for the active feature and let the user choose before planning tasks.
+description: Use when a brainstormed feature needs architectural decisions — presents 2-3 approaches for user to choose before planning
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Agent, Glob, Grep, AskUserQuestion
 argument-hint: "[feature-name]"

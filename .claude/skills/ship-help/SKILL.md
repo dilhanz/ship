@@ -1,6 +1,6 @@
 ---
 name: ship-help
-description: Show Ship command reference.
+description: Use when the user asks about Ship commands, workflow, or how to use the framework
 disable-model-invocation: true
 allowed-tools: []
 ---
@@ -18,6 +18,7 @@ Commands:
   /ship-build          Execute the plan with atomic commits
   /ship-verify         Verify implementation against acceptance criteria
   /ship-go             Auto-run remaining steps (plan → plan-verify → build → verify)
+  /ship-finish         Complete a feature (create PR, merge, or keep branch)
 
   /ship-status         Show all features and their status
   /ship-resume         Pick up where you left off on a feature
@@ -27,8 +28,8 @@ Commands:
   /ship-help           Show this reference
 
 Flow:
-  start → [design →] plan → plan-verify → build → verify
-  (or just: start → go)
+  start → [design →] plan → plan-verify → build → verify → finish
+  (or just: start → go → finish)
 
 Feature directory: .planning/features/{name}/
   CONTEXT.md   Brainstorm output (problem, decisions, acceptance criteria)

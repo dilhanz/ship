@@ -1,6 +1,6 @@
 ---
 name: ship-git-commits
-description: Git commit conventions for Ship atomic commits
+description: Use when making git commits during Ship feature builds — provides atomic commit format and conventions
 user-invocable: false
 ---
 

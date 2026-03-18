@@ -1,6 +1,6 @@
 ---
 name: ship-deviation-rules
-description: Deviation rules for when plan diverges from reality during build execution
+description: Use when plan diverges from reality during build execution — provides 3 escalation levels for handling failures
 user-invocable: false
 ---
 
@@ -26,9 +26,18 @@ During build execution, follow these rules when the plan does not match reality.
 
 **Trigger:** The `<verify>` command for a task fails after implementation.
 
-**Action:** Debug and fix the issue, then re-run the verify command. Maximum **3 attempts**. Track each attempt. If verify still fails after the third attempt, escalate to Rule 3.
+**Action:** Debug systematically, then fix and re-verify. Maximum **3 attempts**. Track each attempt.
 
-**Do not:** Skip the verify step. Do not proceed to the next task with a broken current task.
+**Debugging protocol (before each fix attempt):**
+1. **Read the error** — full output, stack trace, exit code. The error message often contains the answer.
+2. **Trace the cause** — where does the bad value originate? Follow it backward, not forward.
+3. **One fix at a time** — change one thing, re-verify. Never batch multiple fixes.
+
+If verify still fails after the third attempt, escalate to Rule 3.
+
+**If each fix reveals a new problem in a different place:** This is not a single bug — it's an architectural mismatch. Skip directly to Rule 3.
+
+**Do not:** Skip the verify step. Do not proceed to the next task with a broken current task. Do not guess — read the error first.
 
 ---
 
@@ -41,4 +50,7 @@ During build execution, follow these rules when the plan does not match reality.
 2. Leave the feature status as `building` in CONTEXT.md
 3. Output `## CHECKPOINT REACHED` with a clear explanation and recommendation
 
-**Example:** Plan assumes REST API but codebase uses GraphQL. This requires replanning, not improvisation.
+**Signals:**
+- Plan assumes REST API but codebase uses GraphQL — replanning needed, not improvisation
+- Each fix attempt reveals a new problem in a different place — architectural mismatch
+- Fix requires "massive refactoring" to implement — wrong approach, not wrong code
