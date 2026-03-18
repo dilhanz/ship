@@ -1,7 +1,6 @@
 ---
 name: ship-build
 description: Use when a feature plan has been verified and is ready for implementation — executes tasks with atomic commits
-disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 argument-hint: "[feature-name]"
 ---

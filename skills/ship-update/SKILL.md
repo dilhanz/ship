@@ -1,7 +1,6 @@
 ---
 name: ship-update
 description: Use when Ship needs updating to the latest version from GitHub
-disable-model-invocation: true
 allowed-tools: Bash
 ---
 

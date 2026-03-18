@@ -1,7 +1,6 @@
 ---
 name: ship-uninstall
 description: Use when removing Ship from the current project — removes framework files and hooks while preserving .planning/ data
-disable-model-invocation: true
 allowed-tools: Bash
 ---
 

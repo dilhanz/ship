@@ -1,7 +1,6 @@
 ---
 name: ship-verify
 description: Use when a feature build is complete and needs verification against acceptance criteria and independent code review
-disable-model-invocation: true
 allowed-tools: Read, Agent, Glob, Edit, Bash
 argument-hint: "[feature-name]"
 ---
