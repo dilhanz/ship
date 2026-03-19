@@ -1,7 +1,7 @@
 ---
 name: ship-go
 description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion, Skill
 argument-hint: "[feature-name]"
 ---
 
