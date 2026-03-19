@@ -26,13 +26,9 @@
 
 (If clean: "No quality issues found.")
 
-## Stage 3 — Independent PR Review
+## Stage 3 — PR Review (powered by /review)
 
-[Always completed regardless of Stage 1/2 results. Reviews all changed files as an independent code reviewer.]
-
-### Changed Files Reviewed
-
-- [file path] — [brief description of changes]
+[Always populated from Claude Code's `/review` skill findings. The review is context-aware — aligned with the feature's goals and acceptance criteria from CONTEXT.md and PLAN.md.]
 
 ### Findings
 
@@ -44,9 +40,9 @@
 
 ### PR Review Summary
 
-- **Confidence threshold:** 80 (findings below threshold are discarded)
+- **Source:** Claude Code `/review` skill with Ship context
 - **Critical:** [N] (blocks PASS)
-- **Warnings:** [N]
+- **Warnings:** [N] (blocks PASS)
 - **Suggestions:** [N]
 
 ## Human Checks Required
