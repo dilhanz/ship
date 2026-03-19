@@ -1,7 +1,7 @@
 ---
 name: ship-verify
 description: Use when a feature build is complete and needs verification against acceptance criteria and independent code review
-allowed-tools: Read, Agent, Glob, Edit, Bash
+allowed-tools: Read, Agent, Glob, Edit, Bash, Skill
 argument-hint: "[feature-name]"
 ---
 
@@ -16,45 +16,15 @@ Verify the active feature's implementation.
 5. If multiple candidates exist, list them and pick the most recent
 6. If no candidates exist, report that no verifiable features were found
 
-## Run Parallel Review
+## Run Code Review
 
-Before invoking the verifier, launch 3 parallel reviewer sub-agents using the Agent tool. Run all three simultaneously in a single response:
+Before invoking the verifier, run Claude Code's `/review` skill with Ship context so the review is aligned with the feature's goals and acceptance criteria.
 
-First, identify the changed files:
-```bash
-git diff --name-only main...HEAD
-```
-If that fails, try: `git log --oneline --all --grep="{name}"` to find feature commits and their files.
+Use the Skill tool:
+- skill: "review"
+- args: "Review all code changes on the current branch. Use these Ship planning files as context for the feature's goals, acceptance criteria, and design decisions: .planning/features/{name}/CONTEXT.md and .planning/features/{name}/PLAN.md — review through the lens of what this feature is trying to achieve."
 
-**Agent 1 — Simplicity & DRY Reviewer:**
-```
-Review these files changed for feature '{name}': {list of changed files}.
-Focus exclusively on: code duplication, unnecessary complexity, over-engineering,
-dead code, opportunities to reuse existing utilities.
-For each finding report: file, line(s), description, confidence score (0-100).
-Only report findings with confidence ≥80. Max 600 words.
-```
-
-**Agent 2 — Bugs & Correctness Reviewer:**
-```
-Review these files changed for feature '{name}': {list of changed files}.
-Focus exclusively on: logic errors, off-by-one, null/undefined access, missing awaits,
-race conditions, incorrect type coercions, missing error handling at system boundaries.
-For each finding report: file, line(s), description, confidence score (0-100).
-Only report findings with confidence ≥80. Max 600 words.
-```
-
-**Agent 3 — Conventions & Security Reviewer:**
-```
-Review these files changed for feature '{name}': {list of changed files}.
-Focus exclusively on: deviations from project naming conventions, broken abstraction layers,
-missing wiring (functions created but never called), security issues (injection, XSS,
-missing validation, exposed secrets, path traversal).
-For each finding report: file, line(s), description, confidence score (0-100).
-Only report findings with confidence ≥80. Max 600 words.
-```
-
-Collect outputs from all three. Consolidate into a `## Parallel Review Findings` block, deduplicating any finding that appears in 2+ reviews (keep highest confidence score).
+After `/review` completes, collect its complete output. Format it as a `## /review Findings` section preserving all findings with their severity levels (CRITICAL, WARNING, SUGGESTION), file paths, line numbers, and descriptions. If `/review` produced no findings, write `## /review Findings\n\nNo issues found.`
 
 ## Run Verification
 
@@ -67,13 +37,12 @@ Read:
 - .planning/features/{name}/CONTEXT.md
 - .planning/features/{name}/PLAN.md
 
-## Parallel Review Findings (pre-gathered for Stage 3)
+## /review Findings (pre-gathered for Stage 3)
 
-{paste the consolidated Parallel Review Findings block here}
+{paste the /review findings here}
 
-Follow your verification instructions. For Stage 3 (PR Review), incorporate the
-pre-gathered findings above as your primary input. You may supplement with additional
-reads but do not re-run the full Stage 3 discovery from scratch.
+Follow your verification instructions. For Stage 3, write the /review findings above
+into VERIFY.md's Stage 3 section. Both CRITICAL and WARNING findings block a PASS verdict.
 Stage 1 and Stage 2 remain fully independent — do not use review findings for those.
 ```
 
