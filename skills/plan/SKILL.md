@@ -261,7 +261,7 @@ Research: [done / skipped]
 
 [List each task name on its own line, grouped by phase if phased]
 
-Next: /ship-plan-verify
+Next: /ship:plan-verify
 ```
 
 ## What NOT to Do
