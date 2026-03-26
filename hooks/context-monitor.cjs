@@ -53,18 +53,19 @@ process.stdin.on('end', () => {
       process.exit(0);
     }
 
-    const tmpDir = os.tmpdir();
+    const dataDir = process.env.CLAUDE_PLUGIN_DATA || path.join(os.tmpdir(), 'claude-ship');
+    try { fs.mkdirSync(dataDir, { recursive: true }); } catch (e) {}
     const messages = [];
 
     // --- Concurrent session check ---
-    const lockPath = path.join(tmpDir, 'claude-ship-session.lock');
+    const lockPath = path.join(dataDir,'claude-ship-session.lock');
     const LOCK_STALE_HOURS = 4;
     if (fs.existsSync(lockPath)) {
       try {
         const lockData = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
         const lockAge = Math.floor(Date.now() / 1000) - (lockData.timestamp || 0);
         if (lockData.session_id && lockData.session_id !== sessionId && lockAge < LOCK_STALE_HOURS * 3600) {
-          const lockWarnPath = path.join(tmpDir, `claude-ctx-${sessionId}-lock-warned.json`);
+          const lockWarnPath = path.join(dataDir,`claude-ctx-${sessionId}-lock-warned.json`);
           let shouldWarn = true;
           if (fs.existsSync(lockWarnPath)) {
             try {
@@ -87,7 +88,7 @@ process.stdin.on('end', () => {
     }
 
     // --- Context threshold check (always runs, even after concurrent session warning) ---
-    const metricsPath = path.join(tmpDir, `claude-ctx-${sessionId}.json`);
+    const metricsPath = path.join(dataDir,`claude-ctx-${sessionId}.json`);
 
     if (!fs.existsSync(metricsPath)) {
       emitMessages(messages);
@@ -113,7 +114,7 @@ process.stdin.on('end', () => {
     }
 
     // Debounce: check if we warned recently
-    const warnPath = path.join(tmpDir, `claude-ctx-${sessionId}-warned.json`);
+    const warnPath = path.join(dataDir,`claude-ctx-${sessionId}-warned.json`);
     let warnData = { callsSinceWarn: 0, lastLevel: null };
     let firstWarn = true;
 
