@@ -174,7 +174,7 @@ Both CRITICAL and WARNING findings from `/review` affect the verdict:
 
 ### Step 4 — Write VERIFY.md
 
-Read the template from `.claude/ship/templates/VERIFY.md` and write `.planning/features/{name}/VERIFY.md` following its structure. Key points:
+Read the template from `${CLAUDE_PLUGIN_ROOT}/ship/templates/VERIFY.md` and write `.planning/features/{name}/VERIFY.md` following its structure. Key points:
 
 - **Stage 1 table** contains every acceptance criterion with PASS/FAIL and the actual evidence (command output, file content, grep results — not your opinion)
 - **Stage 2 section** is only filled in if Stage 1 fully passed; otherwise write "Skipped — Stage 1 has failures."
