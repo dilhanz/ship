@@ -5,6 +5,9 @@ effort: low
 allowed-tools: Read, Glob
 ---
 
+## Active Feature State
+!`for f in .planning/features/*/CONTEXT.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d"): $(sed -n 's/^status: *//p' "$f")"; done 2>/dev/null`
+
 Show the status of all features with progress details.
 
 1. Check if `.planning/features/` exists. If not, tell the user no features have been started and suggest `/ship-start "your idea"`.
