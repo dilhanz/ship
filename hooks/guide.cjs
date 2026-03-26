@@ -41,7 +41,7 @@ process.stdin.on('end', () => {
           }
           if (features.length > 0) {
             featureSummary = '\nIn-progress features: ' + features.join(', ') +
-              '. Mention these to the user — they can run /ship-resume to continue.';
+              '. Mention these to the user — they can run /ship:resume to continue.';
           }
         }
       } catch (e) {
@@ -51,10 +51,10 @@ process.stdin.on('end', () => {
 
     const guide = [
       'Ship (feature development framework) is installed. When you detect feature/fix work, suggest the appropriate command:',
-      '- New feature or fix to build → /ship-start "description"',
-      '- Continue previous work → /ship-resume',
-      '- Check progress → /ship-status',
-      '- Full command reference → /ship-help',
+      '- New feature or fix to build → /ship:start "description"',
+      '- Continue previous work → /ship:resume',
+      '- Check progress → /ship:status',
+      '- Full command reference → /ship:help',
       'Only suggest Ship for multi-step feature work. Quick edits, questions, or explorations don\'t need it. Don\'t force it — if the user declines, work normally.',
       featureSummary
     ].filter(Boolean).join('\n');

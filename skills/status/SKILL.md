@@ -10,7 +10,7 @@ allowed-tools: Read, Glob
 
 Show the status of all features with progress details.
 
-1. Check if `.planning/features/` exists. If not, tell the user no features have been started and suggest `/ship-start "your idea"`.
+1. Check if `.planning/features/` exists. If not, tell the user no features have been started and suggest `/ship:start "your idea"`.
 
 2. List all feature directories in `.planning/features/`.
 
@@ -47,11 +47,11 @@ Show the status of all features with progress details.
    ```
 
    **Next step** based on status:
-   - `brainstormed` → "Next: `/ship-plan` to create the implementation plan"
-   - `planned` → "Next: `/ship-plan-verify` to verify the plan against the codebase"
-   - `plan-verified` → "Next: `/ship-build` to start building"
-   - `building` → "Next: `/ship-build` to continue building (or `/ship-resume` in a new session)"
-   - `built` → "Next: `/ship-verify` to verify acceptance criteria"
-   - `done` → "Feature complete! Start something new with `/ship-start`"
+   - `brainstormed` → "Next: `/ship:plan` to create the implementation plan"
+   - `planned` → "Next: `/ship:plan-verify` to verify the plan against the codebase"
+   - `plan-verified` → "Next: `/ship:build` to start building"
+   - `building` → "Next: `/ship:build` to continue building (or `/ship:resume` in a new session)"
+   - `built` → "Next: `/ship:verify` to verify acceptance criteria"
+   - `done` → "Feature complete! Start something new with `/ship:start`"
 
 $ARGUMENTS

@@ -232,5 +232,5 @@ PR Review Findings:
 - [WARNING] [description]
 
 [If PASS:] Feature complete!
-[If PARTIAL/FAIL:] Next: /ship-build (fix tasks added to PLAN.md)
+[If PARTIAL/FAIL:] Next: /ship:build (fix tasks added to PLAN.md)
 ```
