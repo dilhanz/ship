@@ -1,6 +1,7 @@
 ---
 name: ship-build
 description: Use when a feature plan has been verified and is ready for implementation — executes tasks with atomic commits
+effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 argument-hint: "[feature-name]"
 ---

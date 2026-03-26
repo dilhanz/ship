@@ -1,6 +1,7 @@
 ---
 name: ship-plan-verify
 description: Use when a plan has been created and needs independent verification against codebase patterns before building
+effort: high
 allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 argument-hint: "[feature-name]"
 ---
