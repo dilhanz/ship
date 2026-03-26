@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-context-monitor.cjs');
+const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'context-monitor.cjs');
 
 /**
  * Helper: spawn the hook as a child process, pipe JSON via stdin,
@@ -15,6 +15,7 @@ function runHook(inputObj) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [HOOK_PATH], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, CLAUDE_PLUGIN_DATA: os.tmpdir() },
     });
 
     let stdout = '';
@@ -81,7 +82,7 @@ const SESSION = `test-ctx-monitor-${process.pid}`;
 // Lock file path (may exist from another session -- save/restore around tests)
 const LOCK_PATH = path.join(os.tmpdir(), 'claude-ship-session.lock');
 
-describe('ship-context-monitor hook', () => {
+describe('context-monitor hook', () => {
   let savedLock = null;
 
   beforeEach(() => {

@@ -5,7 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 
-const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-statusline.cjs');
+const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'statusline.cjs');
 
 /**
  * Helper: spawn the statusline hook, pipe JSON via stdin, capture raw stdout.
@@ -14,6 +14,7 @@ function runHook(inputObj) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [HOOK_PATH], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, CLAUDE_PLUGIN_DATA: os.tmpdir() },
     });
 
     let stdout = '';
@@ -40,7 +41,7 @@ function stripAnsi(str) {
   return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-describe('ship-statusline hook', () => {
+describe('statusline hook', () => {
   // ───── Context scaling math ─────
 
   describe('context scaling', () => {
