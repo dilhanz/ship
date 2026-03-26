@@ -7,12 +7,12 @@ Ship is a feature-centric development framework for Claude Code. Every piece of 
 Three-layer design, all Markdown with YAML frontmatter:
 
 ```
-skills/ship-*/SKILL.md   16 skills (user-invocable commands + reference skills)
-skills/ship-deviation-rules/  Reference skill preloaded into builder agent
-skills/ship-git-commits/      Reference skill preloaded into builder agent
-skills/ship-tdd/              Reference skill preloaded into builder agent (test-driven development)
-ship/workflows/*.md           1 orchestration workflow (go)
-agents/*.md                   3 specialized agents (brainstormer, builder, verifier)
+skills/*/SKILL.md        14 skills (user-invocable commands + reference skills)
+skills/deviation-rules/  Reference skill preloaded into builder agent
+skills/git-commits/      Reference skill preloaded into builder agent
+skills/tdd/              Reference skill preloaded into builder agent (test-driven development)
+ship/workflows/*.md      1 orchestration workflow (go)
+agents/*.md              3 specialized agents (brainstormer, builder, verifier)
 ```
 
 **Skills** define frontmatter fields like `model` and `allowed-tools`. Some skills delegate to agents via the Agent tool; others run inline with full instructions embedded in the skill body.
@@ -25,19 +25,19 @@ agents/*.md                   3 specialized agents (brainstormer, builder, verif
 - `ship-verifier` — acceptance criteria checking → VERIFY.md
 
 **Inline skills** (run in the main conversation for unlimited turns):
-- `ship-plan` — codebase exploration → PLAN.md (uses parallel Explore agents for pre-planning, then plans inline)
-- `ship-plan-verify` — independent plan review against codebase patterns (runs inline to avoid turn limits)
+- `plan` — codebase exploration → PLAN.md (uses parallel Explore agents for pre-planning, then plans inline)
+- `plan-verify` — independent plan review against codebase patterns (runs inline to avoid turn limits)
 
 ## Flow
 
 ```
-/ship-start       "idea" → brainstorm (5-10+ questions) → CONTEXT.md
-/ship-plan               → explore code, design tasks    → PLAN.md
-/ship-plan-verify        → verify plan against codebase  → PLAN.md (review appended)
-/ship-build              → implement, verify, commit     → tasks marked done
-/ship-verify             → check acceptance criteria      → VERIFY.md
-/ship-finish             → complete feature (PR, merge, or keep)
-/ship-go                 → auto-run remaining steps
+/ship:start       "idea" → brainstorm (5-10+ questions) → CONTEXT.md
+/ship:plan               → explore code, design tasks    → PLAN.md
+/ship:plan-verify        → verify plan against codebase  → PLAN.md (review appended)
+/ship:build              → implement, verify, commit     → tasks marked done
+/ship:verify             → check acceptance criteria      → VERIFY.md
+/ship:finish             → complete feature (PR, merge, or keep)
+/ship:go                 → auto-run remaining steps
 ```
 
 ## Feature Directory Structure
@@ -54,17 +54,17 @@ Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan
 ## Supporting Files
 
 ```
-hooks/                 7 Node.js hooks (stdin->stdout, zero dependencies)
-  ship-guide.cjs          SessionStart event — injects Ship awareness so Claude proactively suggests commands
-  ship-statusline.cjs     StatusLine event — displays model, task, dir, context %
-  ship-context-monitor.cjs PostToolUse event — injects warnings when context is high (matcher: Write|Edit|Bash|Agent)
-  ship-check-update.cjs   SessionStart event — checks GitHub for newer version
-  ship-safety-gate.cjs    PreToolUse event — blocks git add . to enforce atomic commits (matcher: Bash)
-  ship-post-compact.cjs    PostCompact event — re-injects feature state after context compaction
-  ship-subagent-stop.cjs   SubagentStop event — validates builder BUILD RESULT format
+hooks/                 6 Node.js hooks (stdin->stdout, zero dependencies)
+  guide.cjs              SessionStart event — injects Ship awareness so Claude proactively suggests commands
+  statusline.cjs         StatusLine event — displays model, task, dir, context %
+  context-monitor.cjs    PostToolUse event — injects warnings when context is high (matcher: Write|Edit|Bash|Agent)
+  safety-gate.cjs        PreToolUse event — blocks git add . to enforce atomic commits (matcher: Bash)
+  post-compact.cjs       PostCompact event — re-injects feature state after context compaction
+  subagent-stop.cjs      SubagentStop event — validates builder BUILD RESULT format
+  hooks.json             Declarative hook registration for the plugin system
 
 ship/templates/*.md    1 planning file template (VERIFY)
-install.js             Copies skills, agents, hooks, and ship data to .claude/ and registers hooks
+install.js             Deprecated legacy installer — use claude plugin install ship instead
 ```
 
 ## Key Concepts
@@ -72,11 +72,22 @@ install.js             Copies skills, agents, hooks, and ship data to .claude/ a
 - **Feature-centric:** Each feature/fix gets its own directory — no phases, no milestones, no FEAT-XX IDs
 - **Intensive brainstorming:** The brainstormer asks 5-10+ questions before writing CONTEXT.md
 - **Atomic commits:** One commit per task, specific files staged (never `git add .`), format: `feat(feature-name): description`
-- **Deviation rules:** 3 escalation levels when reality diverges from the plan, with structured debugging in Rule 2 (see `skills/ship-deviation-rules/SKILL.md`)
+- **Deviation rules:** 3 escalation levels when reality diverges from the plan, with structured debugging in Rule 2 (see `skills/deviation-rules/SKILL.md`)
 - **Test-driven development:** Builder follows RED-GREEN-REFACTOR when tasks have test-based verify commands
-- **Context bridge:** The statusline hook writes context metrics to `/tmp/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
-- **Auto-discovery:** The ship-guide SessionStart hook injects Ship awareness into every conversation, so Claude proactively suggests commands when it detects feature work. Skill descriptions use "Use when..." trigger-condition format for semantic matching (inspired by superpowers CSO pattern).
+- **Context bridge:** The statusline hook writes context metrics to `${CLAUDE_PLUGIN_DATA}/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
+- **Auto-discovery:** The guide SessionStart hook injects Ship awareness into every conversation, so Claude proactively suggests commands when it detects feature work. Skill descriptions use "Use when..." trigger-condition format for semantic matching (inspired by superpowers CSO pattern).
 - **Builder continuation:** When the builder hits maxTurns without a valid BUILD RESULT, ship-build uses SendMessage to auto-continue up to 2 times (effective 120-turn max per phase)
+
+## Plugin Structure
+
+Ship is distributed as a Claude Code plugin. The `.claude-plugin/plugin.json` manifest declares the plugin name, version, and hooks reference. `hooks/hooks.json` declaratively registers all 6 hooks with `${CLAUDE_PLUGIN_ROOT}` paths. Skills are auto-discovered from `skills/*/SKILL.md` and auto-namespaced as `ship:skill-name`. Plugin data (session metrics, context bridge files) is stored under `${CLAUDE_PLUGIN_DATA}` which persists across updates at `~/.claude/plugins/data/ship/`.
+
+Install via:
+```bash
+claude plugin install ship
+# or from marketplace:
+/plugin marketplace add dilhanz/ship
+```
 
 ## Development Guidelines
 
@@ -90,11 +101,13 @@ Hooks are stdin->stdout Node.js scripts. They receive JSON on stdin and (optiona
 
 ### Installation
 
-`install.js` copies the full directory tree to `.claude/` in the current working directory and registers hooks in `.claude/settings.json`. It is idempotent — running it again updates files without duplicating hook registrations.
+**Primary:** `claude plugin install ship` — uses the Claude Code plugin system for automatic updates and clean uninstall.
+
+**Legacy (deprecated):** `npx github:dilhanz/ship` — copies the full directory tree to `.claude/` and registers hooks in `.claude/settings.json`. Still functional but will be removed in a future major version.
 
 ### Skills
 
-Skills live in `skills/ship-*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `model`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and plan-verify skills run inline in the main conversation (full instructions in the skill body, no agent delegation) for unlimited turns. Start and go also run inline. Build runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress.
+Skills live in `skills/*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `model`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and plan-verify skills run inline in the main conversation (full instructions in the skill body, no agent delegation) for unlimited turns. Start and go also run inline. Build runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress. Skills are auto-namespaced as `ship:skill-name` by the plugin system (e.g., `/ship:start`).
 
 ### Agents
 
