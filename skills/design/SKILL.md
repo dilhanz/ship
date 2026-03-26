@@ -129,7 +129,7 @@ Feature: {name}
 Chosen: {approach name}
 
 The planner will use this architecture to guide task design.
-Next: /ship-plan
+Next: /ship:plan
 ```
 
 $ARGUMENTS

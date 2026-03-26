@@ -166,14 +166,14 @@ Tasks reviewed: [N] / [N]
 [If APPROVED:]
 Findings: [N warnings, N suggestions — or "Clean"]
 Plan is ready to build.
-Next: /ship-build
+Next: /ship:build
 
 [If NEEDS-REVISION:]
 Critical issues: [N]
 - [Issue 1 summary]
 - [Issue 2 summary]
 
-Next: /ship-plan {name} (replan with review notes)
+Next: /ship:plan {name} (replan with review notes)
 ```
 
 ## What NOT to Do

@@ -90,7 +90,7 @@ Run tests again on the merged result. If tests pass, report success.
 
 ### Option 3: Keep As-Is
 
-Report: "Feature '{name}' kept on current branch. Run `/ship-finish` again when ready."
+Report: "Feature '{name}' kept on current branch. Run `/ship:finish` again when ready."
 
 ## Report
 

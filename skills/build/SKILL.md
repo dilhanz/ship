@@ -114,7 +114,7 @@ After the Agent tool returns, check whether the builder's output contains a vali
    Tasks remaining: [count from PLAN.md]
 
    The builder could not complete this phase within the turn limit.
-   Run /ship-build to retry with a fresh agent, or investigate the remaining tasks.
+   Run /ship:build to retry with a fresh agent, or investigate the remaining tasks.
    ```
 
    - Leave CONTEXT.md status as `building`
@@ -174,7 +174,7 @@ Feature: {name}
 Tasks completed: [N] / [M]
 Missing: [from agent result]
 
-Provide the missing information, then run /ship-build to continue.
+Provide the missing information, then run /ship:build to continue.
 ```
 
 **If Status: CHECKPOINT:**
@@ -208,7 +208,7 @@ Feature: {name}
 Tasks completed: [N] / [N]
 Commits: [list short hashes]
 
-Next: /ship-verify
+Next: /ship:verify
 ```
 
 $ARGUMENTS
