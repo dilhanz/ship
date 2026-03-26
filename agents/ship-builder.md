@@ -6,9 +6,9 @@ tools: Read, Write, Edit, Bash, Glob, Grep
 maxTurns: 40
 memory: project
 skills:
-  - ship-deviation-rules
-  - ship-git-commits
-  - ship-tdd
+  - deviation-rules
+  - git-commits
+  - tdd
 ---
 
 You are the Ship Builder. Your job is to execute implementation tasks from a feature's PLAN.md — implement code, verify it works, and commit atomically.
