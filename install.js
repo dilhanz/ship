@@ -124,6 +124,8 @@ const HOOK_FILES = [
   'ship-check-update.cjs',
   'ship-context-monitor.cjs',
   'ship-guide.cjs',
+  'ship-post-compact.cjs',
+  'ship-subagent-stop.cjs',
   'ship-safety-gate.cjs',
   'ship-statusline.cjs',
 ];
@@ -219,6 +221,26 @@ function registerSettings() {
     hooks: [{ type: 'command', command: safetyGateCmd }]
   });
 
+  // PostCompact: ship-post-compact — re-inject feature state after compaction
+  const postCompactCmd = `node ${hooksDir}/ship-post-compact.cjs`;
+  if (!settings.hooks.PostCompact) settings.hooks.PostCompact = [];
+  settings.hooks.PostCompact = settings.hooks.PostCompact.filter(group =>
+    !group.hooks?.some(h => h.command?.includes('ship-post-compact'))
+  );
+  settings.hooks.PostCompact.push({
+    hooks: [{ type: 'command', command: postCompactCmd }]
+  });
+
+  // SubagentStop: ship-subagent-stop — validate builder results
+  const subagentStopCmd = `node ${hooksDir}/ship-subagent-stop.cjs`;
+  if (!settings.hooks.SubagentStop) settings.hooks.SubagentStop = [];
+  settings.hooks.SubagentStop = settings.hooks.SubagentStop.filter(group =>
+    !group.hooks?.some(h => h.command?.includes('ship-subagent-stop'))
+  );
+  settings.hooks.SubagentStop.push({
+    hooks: [{ type: 'command', command: subagentStopCmd }]
+  });
+
   // statusLine: always update to keep node path current
   settings.statusLine = { type: 'command', command: statuslineCmd };
 
@@ -262,6 +284,22 @@ function deregisterSettings() {
       !group.hooks?.some(h => h.command?.includes('ship-safety-gate'))
     );
     if (settings.hooks.PreToolUse.length === 0) delete settings.hooks.PreToolUse;
+  }
+
+  // Remove ship hooks from PostCompact
+  if (settings.hooks?.PostCompact) {
+    settings.hooks.PostCompact = settings.hooks.PostCompact.filter(group =>
+      !group.hooks?.some(h => h.command?.includes('ship-post-compact'))
+    );
+    if (settings.hooks.PostCompact.length === 0) delete settings.hooks.PostCompact;
+  }
+
+  // Remove ship hooks from SubagentStop
+  if (settings.hooks?.SubagentStop) {
+    settings.hooks.SubagentStop = settings.hooks.SubagentStop.filter(group =>
+      !group.hooks?.some(h => h.command?.includes('ship-subagent-stop'))
+    );
+    if (settings.hooks.SubagentStop.length === 0) delete settings.hooks.SubagentStop;
   }
 
   if (settings.hooks && Object.keys(settings.hooks).length === 0) {
