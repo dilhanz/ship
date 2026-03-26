@@ -22,7 +22,7 @@ Based on the feature's `status` in CONTEXT.md:
 | `planned` | Run plan-verify (invoke /ship-plan-verify skill) |
 | `plan-verified` | Run build (follow /ship-build skill instructions) |
 | `building` | Resume build (follow /ship-build skill instructions — skip completed tasks) |
-| `built` | Run verify (invoke ship-verifier agent) |
+| `built` | Run verify (invoke /ship-verify skill) |
 | `done` | Run finish (invoke /ship-finish skill) |
 
 ### 3. Execute Remaining Steps

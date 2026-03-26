@@ -1,7 +1,6 @@
 ---
 name: ship-resume
 description: Use when returning to continue work on an in-progress feature — picks up where you left off based on feature status
-disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch
 argument-hint: "[feature-name]"
 ---
