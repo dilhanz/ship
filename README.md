@@ -63,7 +63,7 @@ Or let Ship run everything automatically:
 
 **Plan:** Launches 3 parallel exploration sub-agents to map similar features, architecture, and conventions. Asks targeted follow-up questions informed by what the explorers found. Then writes a concrete task list with specific file paths and runnable verify commands. Self-validates plan quality (acceptance coverage, task completeness, verify command quality, scope). Plan is independently verified against the codebase before building.
 
-**Build:** Reads key files from the plan to build rich context before starting. Implements tasks sequentially with test-driven development (RED-GREEN-REFACTOR) when tasks have test-based verify commands. Runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Larger plans (>4 tasks) are automatically grouped into phases — build executes one phase at a time. Applies 3 deviation rules when reality diverges from plan, with structured debugging (read error → trace cause → one fix at a time) before each retry. The builder reports 4 statuses: COMPLETE, COMPLETE_WITH_CONCERNS (done but flagging doubts), NEEDS_CONTEXT (pauses to ask user for missing info), and CHECKPOINT (hard block).
+**Build:** Reads key files from the plan to build rich context before starting. Implements tasks sequentially with test-driven development (RED-GREEN-REFACTOR) when tasks have test-based verify commands. Runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Larger plans (>4 tasks) are automatically grouped into phases — build executes one phase at a time. If the builder exhausts its turn limit mid-phase, Ship auto-continues it up to 2 times via SendMessage (preserving full context), for an effective 120-turn maximum per phase. Applies 3 deviation rules when reality diverges from plan, with structured debugging (read error → trace cause → one fix at a time) before each retry. The builder reports 4 statuses: COMPLETE, COMPLETE_WITH_CONCERNS (done but flagging doubts), NEEDS_CONTEXT (pauses to ask user for missing info), and CHECKPOINT (hard block).
 
 **Verify:** Launches 3 parallel reviewer sub-agents (simplicity/DRY, bugs/correctness, conventions/security) then runs the full verifier. Reads acceptance criteria from CONTEXT.md as truths, checks backwards into the code (file exists → has substance → is wired up). Scans for TODOs and stubs. PR review findings use confidence scoring (0-100, only ≥80 reported). If gaps exist, writes fix tasks back to PLAN.md.
 
@@ -105,14 +105,17 @@ Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `p
 
 ## Hooks
 
-The installer automatically registers 4 hooks in `.claude/settings.json`:
+The installer automatically registers 7 hooks in `.claude/settings.json`:
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
+| `ship-guide` | SessionStart | Injects Ship awareness so Claude proactively suggests commands when it detects feature work |
 | `ship-statusline` | statusLine | Shows model, current task, directory, and context usage in the Claude Code status bar |
 | `ship-check-update` | SessionStart | Checks for Ship updates once per session in the background |
 | `ship-context-monitor` | PostToolUse | Injects warnings into the agent's context when usage exceeds thresholds |
 | `ship-safety-gate` | PreToolUse | Blocks `git add .` and `git add -A` to enforce atomic commits |
+| `ship-post-compact` | PostCompact | Re-injects feature state after context compaction so progress isn't lost |
+| `ship-subagent-stop` | SubagentStop | Validates the builder emitted a valid BUILD RESULT; injects recovery if not |
 
 Hooks use `matcher` fields (e.g., `Bash`, `Write|Edit|Bash|Agent`) to only fire on relevant tool calls. The context monitor warns the agent to save state before the context window fills up, preventing lost progress.
 
