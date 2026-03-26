@@ -9,6 +9,16 @@
  *   npx github:dilhanz/ship --uninstall  Remove Ship
  */
 
+/**
+ * DEPRECATED: This installer is for legacy use only.
+ * The recommended installation method is the Claude Code plugin system:
+ *   claude plugin install ship
+ * Or from marketplace:
+ *   /plugin marketplace add dilhanz/ship
+ *
+ * This file will be removed in a future major version.
+ */
+
 const fs = require('fs');
 const path = require('path');
 
@@ -48,7 +58,7 @@ const AGENT_FILES = [
 // Legacy files to remove on install
 const LEGACY_FILES = [
   // Old .js hooks (renamed to .cjs for ESM compatibility)
-  path.join('hooks', 'ship-check-update.js'),
+  path.join("hooks", "ship-check-update.js"),
   path.join('hooks', 'ship-context-monitor.js'),
   path.join('hooks', 'ship-safety-gate.js'),
   path.join('hooks', 'ship-statusline.js'),
@@ -97,37 +107,59 @@ const LEGACY_FILES = [
   // References (content now lives in skills)
   path.join('ship', 'references', 'deviation-rules.md'),
   path.join('ship', 'references', 'git-commits.md'),
+  // Old ship-prefixed skills (renamed to drop prefix in v3 plugin migration)
+  path.join('skills', 'ship-start'),
+  path.join('skills', 'ship-plan'),
+  path.join('skills', 'ship-plan-verify'),
+  path.join('skills', 'ship-build'),
+  path.join('skills', 'ship-verify'),
+  path.join('skills', 'ship-go'),
+  path.join('skills', 'ship-status'),
+  path.join('skills', 'ship-resume'),
+  path.join('skills', 'ship-help'),
+  path.join('skills', 'ship-update'),
+  path.join('skills', 'ship-uninstall'),
+  path.join('skills', 'ship-design'),
+  path.join('skills', 'ship-deviation-rules'),
+  path.join('skills', 'ship-git-commits'),
+  path.join('skills', 'ship-tdd'),
+  path.join('skills', 'ship-finish'),
+  // Old ship-prefixed hooks
+  path.join("hooks", "ship-check-update.cjs"),
+  path.join("hooks", "ship-guide.cjs"),
+  path.join('hooks', 'ship-context-monitor.cjs'),
+  path.join('hooks', 'ship-safety-gate.cjs'),
+  path.join('hooks', 'ship-post-compact.cjs'),
+  path.join('hooks', 'ship-subagent-stop.cjs'),
+  path.join('hooks', 'ship-statusline.cjs'),
 ];
 
 // Ship-owned skill directories (for clean uninstall)
 const SKILL_DIRS = [
-  'ship-start',
-  'ship-plan',
-  'ship-plan-verify',
-  'ship-build',
-  'ship-verify',
-  'ship-go',
-  'ship-status',
-  'ship-resume',
-  'ship-help',
-  'ship-update',
-  'ship-uninstall',
-  'ship-design',
-  'ship-deviation-rules',
-  'ship-git-commits',
-  'ship-tdd',
-  'ship-finish',
+  'start',
+  'plan',
+  'plan-verify',
+  'build',
+  'verify',
+  'go',
+  'status',
+  'resume',
+  'help',
+  'design',
+  'deviation-rules',
+  'git-commits',
+  'tdd',
+  'finish',
 ];
 
 // Ship-owned hook files (for clean uninstall)
 const HOOK_FILES = [
-  'ship-check-update.cjs',
-  'ship-context-monitor.cjs',
-  'ship-guide.cjs',
-  'ship-post-compact.cjs',
-  'ship-subagent-stop.cjs',
-  'ship-safety-gate.cjs',
-  'ship-statusline.cjs',
+  'context-monitor.cjs',
+  'guide.cjs',
+  'post-compact.cjs',
+  'subagent-stop.cjs',
+  'safety-gate.cjs',
+  'statusline.cjs',
 ];
 
 function ensureDir(dirPath) {
@@ -154,6 +186,13 @@ function copyDir(src, dest) {
       copied.push(...subCopied);
     } else if (entry.isFile()) {
       fs.copyFileSync(srcPath, destPath);
+      if (entry.name.endsWith('.md')) {
+        let content = fs.readFileSync(destPath, 'utf8');
+        if (content.includes('${CLAUDE_PLUGIN_ROOT}')) {
+          content = content.replace(/\$\{CLAUDE_PLUGIN_ROOT\}\//g, '.claude/');
+          fs.writeFileSync(destPath, content);
+        }
+      }
       copied.push(relDisplay(destPath));
     }
   }
@@ -176,66 +215,57 @@ function registerSettings() {
   // Use bare 'node' (resolved from PATH) and relative paths for portability
   // across macOS, Windows (Git Bash), and WSL.
   const hooksDir = '.claude/hooks';
-  const checkUpdateCmd = `node ${hooksDir}/ship-check-update.cjs`;
-  const contextMonitorCmd = `node ${hooksDir}/ship-context-monitor.cjs`;
-  const statuslineCmd = `node ${hooksDir}/ship-statusline.cjs`;
+  const contextMonitorCmd = `node ${hooksDir}/context-monitor.cjs`;
+  const statuslineCmd = `node ${hooksDir}/statusline.cjs`;
 
   if (!settings.hooks) settings.hooks = {};
 
-  // SessionStart: ship-check-update — always update to keep node path current
+  // SessionStart: guide — inject Ship awareness into every conversation
+  const guideCmd = `node ${hooksDir}/guide.cjs`;
   if (!settings.hooks.SessionStart) settings.hooks.SessionStart = [];
   settings.hooks.SessionStart = settings.hooks.SessionStart.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-check-update'))
-  );
-  settings.hooks.SessionStart.push({
-    hooks: [{ type: 'command', command: checkUpdateCmd }]
-  });
-
-  // SessionStart: ship-guide — inject Ship awareness into every conversation
-  const guideCmd = `node ${hooksDir}/ship-guide.cjs`;
-  settings.hooks.SessionStart = settings.hooks.SessionStart.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-guide'))
+    !group.hooks?.some(h => h.command?.includes("ship-check-update") || h.command?.includes("ship-guide") || h.command?.includes('/guide'))
   );
   settings.hooks.SessionStart.push({
     hooks: [{ type: 'command', command: guideCmd }]
   });
 
-  // PostToolUse: ship-context-monitor — always update to keep node path current
+  // PostToolUse: context-monitor — always update to keep node path current
   if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
   settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-context-monitor'))
+    !group.hooks?.some(h => h.command?.includes('ship-context-monitor') || h.command?.includes('context-monitor'))
   );
   settings.hooks.PostToolUse.push({
     matcher: 'Write|Edit|Bash|Agent',
     hooks: [{ type: 'command', command: contextMonitorCmd }]
   });
 
-  // PreToolUse: ship-safety-gate — always update
-  const safetyGateCmd = `node ${hooksDir}/ship-safety-gate.cjs`;
+  // PreToolUse: safety-gate — always update
+  const safetyGateCmd = `node ${hooksDir}/safety-gate.cjs`;
   if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
   settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-safety-gate'))
+    !group.hooks?.some(h => h.command?.includes('ship-safety-gate') || h.command?.includes('safety-gate'))
   );
   settings.hooks.PreToolUse.push({
     matcher: 'Bash',
     hooks: [{ type: 'command', command: safetyGateCmd }]
   });
 
-  // PostCompact: ship-post-compact — re-inject feature state after compaction
-  const postCompactCmd = `node ${hooksDir}/ship-post-compact.cjs`;
+  // PostCompact: post-compact — re-inject feature state after compaction
+  const postCompactCmd = `node ${hooksDir}/post-compact.cjs`;
   if (!settings.hooks.PostCompact) settings.hooks.PostCompact = [];
   settings.hooks.PostCompact = settings.hooks.PostCompact.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-post-compact'))
+    !group.hooks?.some(h => h.command?.includes('ship-post-compact') || h.command?.includes('post-compact'))
   );
   settings.hooks.PostCompact.push({
     hooks: [{ type: 'command', command: postCompactCmd }]
   });
 
-  // SubagentStop: ship-subagent-stop — validate builder results
-  const subagentStopCmd = `node ${hooksDir}/ship-subagent-stop.cjs`;
+  // SubagentStop: subagent-stop — validate builder results
+  const subagentStopCmd = `node ${hooksDir}/subagent-stop.cjs`;
   if (!settings.hooks.SubagentStop) settings.hooks.SubagentStop = [];
   settings.hooks.SubagentStop = settings.hooks.SubagentStop.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-subagent-stop'))
+    !group.hooks?.some(h => h.command?.includes('ship-subagent-stop') || h.command?.includes('subagent-stop'))
   );
   settings.hooks.SubagentStop.push({
     hooks: [{ type: 'command', command: subagentStopCmd }]
@@ -263,8 +293,9 @@ function deregisterSettings() {
   if (settings.hooks?.SessionStart) {
     settings.hooks.SessionStart = settings.hooks.SessionStart.filter(group =>
       !group.hooks?.some(h =>
-        h.command?.includes('ship-check-update') ||
-        h.command?.includes('ship-guide')
+        h.command?.includes("ship-check-update") ||
+        h.command?.includes("ship-guide") ||
+        h.command?.includes('/guide')
       )
     );
     if (settings.hooks.SessionStart.length === 0) delete settings.hooks.SessionStart;
@@ -273,7 +304,10 @@ function deregisterSettings() {
   // Remove ship hooks from PostToolUse
   if (settings.hooks?.PostToolUse) {
     settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter(group =>
-      !group.hooks?.some(h => h.command?.includes('ship-context-monitor'))
+      !group.hooks?.some(h =>
+        h.command?.includes('ship-context-monitor') ||
+        h.command?.includes('context-monitor')
+      )
     );
     if (settings.hooks.PostToolUse.length === 0) delete settings.hooks.PostToolUse;
   }
@@ -281,7 +315,10 @@ function deregisterSettings() {
   // Remove ship hooks from PreToolUse
   if (settings.hooks?.PreToolUse) {
     settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(group =>
-      !group.hooks?.some(h => h.command?.includes('ship-safety-gate'))
+      !group.hooks?.some(h =>
+        h.command?.includes('ship-safety-gate') ||
+        h.command?.includes('safety-gate')
+      )
     );
     if (settings.hooks.PreToolUse.length === 0) delete settings.hooks.PreToolUse;
   }
@@ -289,7 +326,10 @@ function deregisterSettings() {
   // Remove ship hooks from PostCompact
   if (settings.hooks?.PostCompact) {
     settings.hooks.PostCompact = settings.hooks.PostCompact.filter(group =>
-      !group.hooks?.some(h => h.command?.includes('ship-post-compact'))
+      !group.hooks?.some(h =>
+        h.command?.includes('ship-post-compact') ||
+        h.command?.includes('post-compact')
+      )
     );
     if (settings.hooks.PostCompact.length === 0) delete settings.hooks.PostCompact;
   }
@@ -297,7 +337,10 @@ function deregisterSettings() {
   // Remove ship hooks from SubagentStop
   if (settings.hooks?.SubagentStop) {
     settings.hooks.SubagentStop = settings.hooks.SubagentStop.filter(group =>
-      !group.hooks?.some(h => h.command?.includes('ship-subagent-stop'))
+      !group.hooks?.some(h =>
+        h.command?.includes('ship-subagent-stop') ||
+        h.command?.includes('subagent-stop')
+      )
     );
     if (settings.hooks.SubagentStop.length === 0) delete settings.hooks.SubagentStop;
   }
@@ -307,7 +350,8 @@ function deregisterSettings() {
   }
 
   // Remove statusLine if it points to a ship hook
-  if (settings.statusLine?.command?.includes('ship-statusline')) {
+  if (settings.statusLine?.command?.includes('ship-statusline') ||
+      settings.statusLine?.command?.includes('statusline')) {
     delete settings.statusLine;
   }
 
@@ -324,6 +368,9 @@ function removeFile(filePath) {
 }
 
 function install() {
+  console.warn('\n⚠️  DEPRECATED: install.js is the legacy installation method.');
+  console.warn('   Recommended: claude plugin install ship');
+  console.warn('   See README.md for plugin installation instructions.\n');
   console.log('Installing Ship...\n');
 
   const allCopied = [];
@@ -347,7 +394,7 @@ function install() {
   for (const relPath of LEGACY_FILES) {
     const fullPath = path.join(CLAUDE_DIR, relPath);
     if (fs.existsSync(fullPath)) {
-      fs.rmSync(fullPath);
+      fs.rmSync(fullPath, { recursive: true, force: true });
       removed.push(relPath);
     }
   }
@@ -363,7 +410,7 @@ function install() {
 
   console.log(`\nShip installed — ${allCopied.length} files copied to .claude/`);
   console.log('\nGet started:');
-  console.log('  /ship-start "your feature idea"');
+  console.log('  /ship:start "your feature idea"');
 }
 
 function uninstall() {
