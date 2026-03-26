@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 
-const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-safety-gate.cjs');
+const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'safety-gate.cjs');
 
 function runHook(inputObj) {
   return new Promise((resolve, reject) => {
@@ -21,7 +21,7 @@ function runHook(inputObj) {
   });
 }
 
-describe('ship-safety-gate hook', () => {
+describe('safety-gate hook', () => {
   it('blocks git add .', async () => {
     const { code, stderr } = await runHook({ tool_input: { command: 'git add .' } });
     assert.equal(code, 2);
