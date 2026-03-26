@@ -54,12 +54,14 @@ Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan
 ## Supporting Files
 
 ```
-hooks/                 5 Node.js hooks (stdin->stdout, zero dependencies)
+hooks/                 7 Node.js hooks (stdin->stdout, zero dependencies)
   ship-guide.cjs          SessionStart event — injects Ship awareness so Claude proactively suggests commands
   ship-statusline.cjs     StatusLine event — displays model, task, dir, context %
   ship-context-monitor.cjs PostToolUse event — injects warnings when context is high (matcher: Write|Edit|Bash|Agent)
   ship-check-update.cjs   SessionStart event — checks GitHub for newer version
   ship-safety-gate.cjs    PreToolUse event — blocks git add . to enforce atomic commits (matcher: Bash)
+  ship-post-compact.cjs    PostCompact event — re-injects feature state after context compaction
+  ship-subagent-stop.cjs   SubagentStop event — validates builder BUILD RESULT format
 
 ship/templates/*.md    1 planning file template (VERIFY)
 install.js             Copies skills, agents, hooks, and ship data to .claude/ and registers hooks
@@ -74,6 +76,7 @@ install.js             Copies skills, agents, hooks, and ship data to .claude/ a
 - **Test-driven development:** Builder follows RED-GREEN-REFACTOR when tasks have test-based verify commands
 - **Context bridge:** The statusline hook writes context metrics to `/tmp/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
 - **Auto-discovery:** The ship-guide SessionStart hook injects Ship awareness into every conversation, so Claude proactively suggests commands when it detects feature work. Skill descriptions use "Use when..." trigger-condition format for semantic matching (inspired by superpowers CSO pattern).
+- **Builder continuation:** When the builder hits maxTurns without a valid BUILD RESULT, ship-build uses SendMessage to auto-continue up to 2 times (effective 120-turn max per phase)
 
 ## Development Guidelines
 
