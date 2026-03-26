@@ -25,7 +25,7 @@ const C = {
 const SEP = ` ${C.dim}│${C.reset} `;
 
 // ── Cache config ──
-const CACHE_DIR = path.join(os.tmpdir(), 'claude');
+const CACHE_DIR = process.env.CLAUDE_PLUGIN_DATA || path.join(os.tmpdir(), 'claude-ship');
 const CACHE_FILE = path.join(CACHE_DIR, 'statusline-usage-cache.json');
 const CACHE_MAX_AGE = 60; // seconds
 
@@ -282,23 +282,13 @@ function getCurrentTask(session) {
   return '';
 }
 
-// ── Ship Update Check ──
-
-function getShipUpdate() {
-  try {
-    const cacheFile = path.join(os.homedir(), '.claude', 'cache', 'ship-update-check.json');
-    const cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-    if (cache.update_available) return `${C.yellow}⬆ /ship-update${C.reset}`;
-  } catch (e) {}
-  return '';
-}
-
 // ── Context Bridge (for context-monitor hook) ──
 
 function writeContextBridge(session, remaining, usedPct) {
   if (!session) return;
   try {
-    const bridgePath = path.join(os.tmpdir(), `claude-ctx-${session}.json`);
+    try { fs.mkdirSync(CACHE_DIR, { recursive: true }); } catch (e) {}
+    const bridgePath = path.join(CACHE_DIR, `claude-ctx-${session}.json`);
     writeFileAtomic(bridgePath, JSON.stringify({
       session_id: session,
       remaining_percentage: remaining,
@@ -344,7 +334,6 @@ async function main() {
   const branch = getGitBranch(dir);
   const thinking = getThinkingEnabled();
   const task = getCurrentTask(session);
-  const shipUpdate = getShipUpdate();
 
   // Fetch rate limits (async, cached)
   let usageSegment = '';
@@ -355,8 +344,6 @@ async function main() {
 
   // ── Build output ──
   const parts = [];
-
-  if (shipUpdate) parts.push(shipUpdate);
 
   // Model
   parts.push(`${C.blue}${model}${C.reset}`);
