@@ -2,7 +2,7 @@
 name: ship-build
 description: Use when a feature plan has been verified and is ready for implementation — executes tasks with atomic commits
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, SendMessage
 argument-hint: "[feature-name]"
 ---
 
@@ -78,6 +78,46 @@ Follow your instructions for the execution loop, deviation rules, and commit con
 ```
 
 For flat plans, omit the Phase line.
+
+### 2.5. Auto-Continue on Incomplete Result
+
+After the Agent tool returns, check whether the builder's output contains a valid `## BUILD RESULT` block with one of the four expected statuses (COMPLETE, COMPLETE_WITH_CONCERNS, NEEDS_CONTEXT, CHECKPOINT).
+
+**If no valid BUILD RESULT is found** (likely turn exhaustion):
+
+1. Use `SendMessage` to the builder agent with this message:
+
+   ```
+   You were building feature "{name}" and stopped without emitting a BUILD RESULT.
+   Continue where you left off. Read PLAN.md to check which tasks are done (status="done")
+   and which are still pending. Resume from the first pending task.
+   When finished with all tasks in this phase, emit your ## BUILD RESULT block.
+   ```
+
+2. After `SendMessage` returns, check again for a valid `## BUILD RESULT`.
+3. If still no valid result, retry `SendMessage` one more time (same message).
+4. After 2 retries (3 total attempts including the original Agent call), if still no valid BUILD RESULT:
+   - Read PLAN.md to check actual progress (tasks marked done)
+   - Report to the user:
+
+   ```
+   ## BUILDER EXHAUSTED
+
+   Feature: {name}
+   Phase: {phase-id} — {phase-name}
+   Attempts: 3 (original + 2 continuations)
+   Tasks completed: [count from PLAN.md]
+   Tasks remaining: [count from PLAN.md]
+
+   The builder could not complete this phase within the turn limit.
+   Run /ship-build to retry with a fresh agent, or investigate the remaining tasks.
+   ```
+
+   - Leave CONTEXT.md status as `building`
+   - **Stop the loop** — do not continue to the next phase
+
+**If a valid BUILD RESULT is found** (either from original Agent call or after SendMessage):
+Proceed to the status handling below (### 3).
 
 ### 3. Handle Agent Result
 
