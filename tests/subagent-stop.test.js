@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 
-const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-subagent-stop.cjs');
+const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'subagent-stop.cjs');
 
 /**
  * Helper: spawn the hook as a child process, pipe JSON via stdin,
@@ -39,7 +39,7 @@ function runHook(inputObj) {
   });
 }
 
-describe('ship-subagent-stop hook', () => {
+describe('subagent-stop hook', () => {
   it('passes through valid COMPLETE result', async () => {
     const { code, output } = await runHook({
       agent_name: 'ship-builder',

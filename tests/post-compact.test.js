@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'ship-post-compact.cjs');
+const HOOK_PATH = path.join(__dirname, '..', 'hooks', 'post-compact.cjs');
 
 /**
  * Helper: spawn the hook as a child process with a given cwd,
@@ -96,7 +96,7 @@ function createFeature(tmpDir, name, status, opts = {}) {
   }
 }
 
-describe('ship-post-compact hook', () => {
+describe('post-compact hook', () => {
   let tmpDir;
 
   beforeEach(() => {
