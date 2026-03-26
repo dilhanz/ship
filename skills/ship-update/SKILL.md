@@ -1,6 +1,7 @@
 ---
 name: ship-update
 description: Use when Ship needs updating to the latest version from GitHub
+effort: medium
 allowed-tools: Bash
 ---
 

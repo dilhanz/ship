@@ -1,6 +1,7 @@
 ---
 name: ship-help
 description: Use when the user asks about Ship commands, workflow, or how to use the framework
+effort: low
 allowed-tools: []
 ---
 
