@@ -1,0 +1,6 @@
+{
+  "name": "ship",
+  "version": "3.0.0",
+  "description": "Feature-centric development framework for Claude Code — brainstorm, plan, build, and verify with structured workflows",
+  "hooks": "hooks/hooks.json"
+}
