@@ -6,6 +6,10 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, AskUserQuestion
 argument-hint: "[feature-name]"
 ---
 
+## Active Feature State
+!`for f in .planning/features/*/CONTEXT.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d"): $(sed -n 's/^status: *//p' "$f")"; done 2>/dev/null`
+!`for f in .planning/features/*/PLAN.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d") plan: $(grep -c 'status="done"' "$f" 2>/dev/null || echo 0) done, $(grep -c 'status="pending"' "$f" 2>/dev/null || echo 0) pending"; done 2>/dev/null`
+
 Create an implementation plan for the active feature.
 
 ## Find Active Feature

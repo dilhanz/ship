@@ -5,6 +5,9 @@ effort: medium
 allowed-tools: Bash
 ---
 
+## Active Feature State
+!`for f in .planning/features/*/CONTEXT.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d"): $(sed -n 's/^status: *//p' "$f")"; done 2>/dev/null`
+
 Update Ship to the latest version:
 
 1. Read the current installed version:
