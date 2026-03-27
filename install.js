@@ -306,7 +306,7 @@ function deregisterSettings() {
     settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter(group =>
       !group.hooks?.some(h =>
         h.command?.includes('ship-context-monitor') ||
-        h.command?.includes('context-monitor')
+        h.command?.includes('hooks/context-monitor.cjs')
       )
     );
     if (settings.hooks.PostToolUse.length === 0) delete settings.hooks.PostToolUse;
@@ -317,7 +317,7 @@ function deregisterSettings() {
     settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(group =>
       !group.hooks?.some(h =>
         h.command?.includes('ship-safety-gate') ||
-        h.command?.includes('safety-gate')
+        h.command?.includes('hooks/safety-gate.cjs')
       )
     );
     if (settings.hooks.PreToolUse.length === 0) delete settings.hooks.PreToolUse;
@@ -328,7 +328,7 @@ function deregisterSettings() {
     settings.hooks.PostCompact = settings.hooks.PostCompact.filter(group =>
       !group.hooks?.some(h =>
         h.command?.includes('ship-post-compact') ||
-        h.command?.includes('post-compact')
+        h.command?.includes('hooks/post-compact.cjs')
       )
     );
     if (settings.hooks.PostCompact.length === 0) delete settings.hooks.PostCompact;
@@ -339,7 +339,7 @@ function deregisterSettings() {
     settings.hooks.SubagentStop = settings.hooks.SubagentStop.filter(group =>
       !group.hooks?.some(h =>
         h.command?.includes('ship-subagent-stop') ||
-        h.command?.includes('subagent-stop')
+        h.command?.includes('hooks/subagent-stop.cjs')
       )
     );
     if (settings.hooks.SubagentStop.length === 0) delete settings.hooks.SubagentStop;
@@ -351,7 +351,7 @@ function deregisterSettings() {
 
   // Remove statusLine if it points to a ship hook
   if (settings.statusLine?.command?.includes('ship-statusline') ||
-      settings.statusLine?.command?.includes('statusline')) {
+      settings.statusLine?.command?.includes('hooks/statusline.cjs')) {
     delete settings.statusLine;
   }
 

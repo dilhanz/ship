@@ -66,7 +66,7 @@ git add <file1> <file2> ...
 git commit -m "feat({feature-name}): {task description}"
 ```
 
-Follow the commit conventions from your preloaded `ship-git-commits` skill.
+Follow the commit conventions from your preloaded `git-commits` skill.
 
 ### 5. Mark Done
 

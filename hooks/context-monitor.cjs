@@ -5,7 +5,7 @@
 // context limits (the statusline only shows the user).
 //
 // How it works:
-// 1. The statusline hook writes metrics to /tmp/claude-ctx-{session_id}.json
+// 1. The statusline hook writes metrics to ${CLAUDE_PLUGIN_DATA}/claude-ctx-{session_id}.json
 // 2. This hook reads those metrics after each tool use
 // 3. When remaining context drops below thresholds, it injects a warning
 //    as additionalContext, which the agent sees in its conversation
