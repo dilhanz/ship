@@ -76,7 +76,7 @@ install.js             Deprecated legacy installer — use claude plugin install
 - **Test-driven development:** Builder follows RED-GREEN-REFACTOR when tasks have test-based verify commands
 - **Context bridge:** The statusline hook writes context metrics to `${CLAUDE_PLUGIN_DATA}/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
 - **Auto-discovery:** The guide SessionStart hook injects Ship awareness into every conversation, so Claude proactively suggests commands when it detects feature work. Skill descriptions use "Use when..." trigger-condition format for semantic matching (inspired by superpowers CSO pattern).
-- **Builder continuation:** When the builder hits maxTurns without a valid BUILD RESULT, ship-build uses SendMessage to auto-continue up to 2 times (effective 120-turn max per phase)
+- **Builder continuation:** When the builder hits maxTurns without a valid BUILD RESULT, the build skill uses SendMessage to auto-continue up to 2 times (effective 120-turn max per phase)
 
 ## Plugin Structure
 
