@@ -5,15 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/ship-check-update.cjs"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/ship-guide.cjs"
+            "command": "node .claude/hooks/guide.cjs"
           }
         ]
       }
@@ -24,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/ship-context-monitor.cjs"
+            "command": "node .claude/hooks/context-monitor.cjs"
           }
         ]
       }
@@ -35,7 +27,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/ship-safety-gate.cjs"
+            "command": "node .claude/hooks/safety-gate.cjs"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/post-compact.cjs"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/subagent-stop.cjs"
           }
         ]
       }
@@ -43,6 +55,6 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "node .claude/hooks/ship-statusline.cjs"
+    "command": "node .claude/hooks/statusline.cjs"
   }
 }

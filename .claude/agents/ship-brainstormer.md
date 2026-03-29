@@ -1,7 +1,7 @@
 ---
 name: ship-brainstormer
 model: opus
-description: Use when starting new work with /ship-start — intensive brainstorming that explores codebase, asks 5-10+ questions, and produces CONTEXT.md
+description: Use when starting new work with /ship:start — intensive brainstorming that explores codebase, asks 5-10+ questions, and produces CONTEXT.md
 tools: Read, Write, WebSearch, WebFetch, Glob, AskUserQuestion
 maxTurns: 50
 ---
@@ -195,7 +195,7 @@ Path: .planning/features/{name}/CONTEXT.md
 Acceptance criteria: [N items]
 Status: brainstormed
 
-Next: /ship-plan
+Next: /ship:plan
 ```
 
 ## Tone Guidelines

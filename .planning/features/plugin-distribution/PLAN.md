@@ -395,9 +395,9 @@ These match the renamed skill directory names from Task 5.
 
 </phase>
 
-<phase id="4" name="Integration, tests, and docs" status="building">
+<phase id="4" name="Integration, tests, and docs" status="done">
 
-<task id="11" status="pending">
+<task id="11" status="done" commit="e0d8809">
   <name>Deprecate install.js and update internal references to new names</name>
   <files>install.js</files>
   <action>
@@ -530,7 +530,7 @@ console.log('  /ship:start "your feature idea"');
   <verify>node -e "const s=require('fs').readFileSync('install.js','utf8'); console.assert(s.includes('DEPRECATED')); console.assert(s.includes('guide.cjs')); console.assert(!s.includes(\"'ship-check-update\")); console.assert(s.includes('CLAUDE_PLUGIN_ROOT')); console.assert(s.includes('/ship:start')); console.log('PASS')"</verify>
 </task>
 
-<task id="12" status="pending">
+<task id="12" status="done" commit="dd705a4">
   <name>Rename test files and update hook path references</name>
   <files>tests/ship-safety-gate.test.js, tests/ship-context-monitor.test.js, tests/ship-statusline.test.js, tests/ship-post-compact.test.js, tests/ship-subagent-stop.test.js</files>
   <action>
