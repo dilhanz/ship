@@ -224,7 +224,7 @@ function registerSettings() {
   const guideCmd = `node ${hooksDir}/guide.cjs`;
   if (!settings.hooks.SessionStart) settings.hooks.SessionStart = [];
   settings.hooks.SessionStart = settings.hooks.SessionStart.filter(group =>
-    !group.hooks?.some(h => h.command?.includes("ship-check-update") || h.command?.includes("ship-guide") || h.command?.includes('/guide'))
+    !group.hooks?.some(h => h.command?.includes("ship-check-update") || h.command?.includes("ship-guide") || h.command?.includes('hooks/guide.cjs'))
   );
   settings.hooks.SessionStart.push({
     hooks: [{ type: 'command', command: guideCmd }]
@@ -233,7 +233,7 @@ function registerSettings() {
   // PostToolUse: context-monitor — always update to keep node path current
   if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
   settings.hooks.PostToolUse = settings.hooks.PostToolUse.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-context-monitor') || h.command?.includes('context-monitor'))
+    !group.hooks?.some(h => h.command?.includes('ship-context-monitor') || h.command?.includes('hooks/context-monitor.cjs'))
   );
   settings.hooks.PostToolUse.push({
     matcher: 'Write|Edit|Bash|Agent',
@@ -244,7 +244,7 @@ function registerSettings() {
   const safetyGateCmd = `node ${hooksDir}/safety-gate.cjs`;
   if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
   settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-safety-gate') || h.command?.includes('safety-gate'))
+    !group.hooks?.some(h => h.command?.includes('ship-safety-gate') || h.command?.includes('hooks/safety-gate.cjs'))
   );
   settings.hooks.PreToolUse.push({
     matcher: 'Bash',
@@ -255,7 +255,7 @@ function registerSettings() {
   const postCompactCmd = `node ${hooksDir}/post-compact.cjs`;
   if (!settings.hooks.PostCompact) settings.hooks.PostCompact = [];
   settings.hooks.PostCompact = settings.hooks.PostCompact.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-post-compact') || h.command?.includes('post-compact'))
+    !group.hooks?.some(h => h.command?.includes('ship-post-compact') || h.command?.includes('hooks/post-compact.cjs'))
   );
   settings.hooks.PostCompact.push({
     hooks: [{ type: 'command', command: postCompactCmd }]
@@ -265,7 +265,7 @@ function registerSettings() {
   const subagentStopCmd = `node ${hooksDir}/subagent-stop.cjs`;
   if (!settings.hooks.SubagentStop) settings.hooks.SubagentStop = [];
   settings.hooks.SubagentStop = settings.hooks.SubagentStop.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-subagent-stop') || h.command?.includes('subagent-stop'))
+    !group.hooks?.some(h => h.command?.includes('ship-subagent-stop') || h.command?.includes('hooks/subagent-stop.cjs'))
   );
   settings.hooks.SubagentStop.push({
     hooks: [{ type: 'command', command: subagentStopCmd }]
@@ -295,7 +295,7 @@ function deregisterSettings() {
       !group.hooks?.some(h =>
         h.command?.includes("ship-check-update") ||
         h.command?.includes("ship-guide") ||
-        h.command?.includes('/guide')
+        h.command?.includes('hooks/guide.cjs')
       )
     );
     if (settings.hooks.SessionStart.length === 0) delete settings.hooks.SessionStart;
