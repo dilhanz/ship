@@ -103,14 +103,30 @@ Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `p
 
 **No ceremony.** No milestones, no FEAT-XX IDs. Just features with context, plans, and verification.
 
+## Status Line
+
+Ship includes a rich status line showing model, current task, directory@branch, context usage bar, rate limits, and session cost.
+
+The plugin system doesn't support status line registration natively, so after installing the plugin you need to add this to your `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node ~/.claude/plugins/marketplaces/dilhanz-ship/hooks/statusline.cjs"
+  }
+}
+```
+
+This path is stable across plugin updates.
+
 ## Hooks
 
-6 hooks are declared in `hooks/hooks.json` for automatic registration by the plugin system:
+5 hooks are declared in `hooks/hooks.json` for automatic registration by the plugin system:
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
 | `guide` | SessionStart | Injects Ship awareness so Claude proactively suggests commands when it detects feature work |
-| `statusline` | statusLine | Shows model, current task, directory, and context usage in the Claude Code status bar |
 | `context-monitor` | PostToolUse | Injects warnings into the agent's context when usage exceeds thresholds |
 | `safety-gate` | PreToolUse | Blocks `git add .` and `git add -A` to enforce atomic commits |
 | `post-compact` | PostCompact | Re-injects feature state after context compaction so progress isn't lost |
