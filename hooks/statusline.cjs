@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 // Claude Code Statusline - Ship Edition
-// Shows: [update] model | task | dir@branch | tokens ctx% | thinking | 5h usage | 7d usage | extra
+// Shows: model | task | dir@branch | tokens ctx% | thinking | 5h usage | 7d usage | extra
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
-const https = require('https');
 
 // ── ANSI Colors (oh-my-posh theme) ──
 const C = {
@@ -26,8 +25,6 @@ const SEP = ` ${C.dim}│${C.reset} `;
 
 // ── Cache config ──
 const CACHE_DIR = process.env.CLAUDE_PLUGIN_DATA || path.join(os.tmpdir(), 'claude-ship');
-const CACHE_FILE = path.join(CACHE_DIR, 'statusline-usage-cache.json');
-const CACHE_MAX_AGE = 60; // seconds
 
 // ── Formatting Helpers ──
 
@@ -58,15 +55,13 @@ function rateBar(pct, width = 6) {
   return `${color}${'●'.repeat(filled)}${C.dim}${'○'.repeat(empty)}${C.reset}`;
 }
 
-function formatResetTime(isoStr) {
-  if (!isoStr || isoStr === 'null') return '';
+function formatResetTime(epochSecs) {
+  if (!epochSecs) return '';
   try {
-    const reset = new Date(isoStr);
-    if (isNaN(reset.getTime())) return '';
-    const now = Date.now();
-    const diffMs = reset - now;
-    if (diffMs <= 0) return '';
-    const mins = Math.floor(diffMs / 60000);
+    const now = Date.now() / 1000;
+    const diffSecs = epochSecs - now;
+    if (diffSecs <= 0) return '';
+    const mins = Math.floor(diffSecs / 60);
     if (mins < 60) return `${mins}m`;
     const hrs = Math.floor(mins / 60);
     const remMins = mins % 60;
@@ -82,7 +77,6 @@ function writeFileAtomic(filePath, data) {
     fs.writeFileSync(tmpPath, data);
     fs.renameSync(tmpPath, filePath);
   } catch (e) {
-    // On Windows, rename can fail with EBUSY/EPERM if the target is locked
     if (e.code === 'EBUSY' || e.code === 'EPERM') {
       try { fs.unlinkSync(tmpPath); } catch (_) {}
       fs.writeFileSync(filePath, data);
@@ -97,7 +91,6 @@ function writeFileAtomic(filePath, data) {
 
 function getGitBranch(cwd) {
   try {
-    // Use cwd option instead of -C flag to avoid shell injection
     return execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd,
       encoding: 'utf8',
@@ -119,147 +112,6 @@ function getThinkingEnabled() {
   } catch (e) {
     return false;
   }
-}
-
-// ── OAuth Token Resolution ──
-// Tries: env var → macOS Keychain → credentials file → Linux GNOME Keyring
-
-function getOAuthToken() {
-  // 1. Environment variable
-  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
-    return process.env.CLAUDE_CODE_OAUTH_TOKEN;
-  }
-
-  // 2. macOS Keychain (uses execFileSync to avoid shell injection)
-  if (process.platform === 'darwin') {
-    try {
-      const blob = execFileSync('security', [
-        'find-generic-password', '-s', 'Claude Code-credentials', '-w',
-      ], { encoding: 'utf8', timeout: 2000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-      if (blob) {
-        const token = JSON.parse(blob)?.claudeAiOauth?.accessToken;
-        if (token && token !== 'null') return token;
-      }
-    } catch (e) {}
-  }
-
-  // 3. Credentials file
-  try {
-    const credsPath = path.join(os.homedir(), '.claude', '.credentials.json');
-    const token = JSON.parse(fs.readFileSync(credsPath, 'utf8'))?.claudeAiOauth?.accessToken;
-    if (token && token !== 'null') return token;
-  } catch (e) {}
-
-  // 4. Linux GNOME Keyring
-  if (process.platform === 'linux') {
-    try {
-      const blob = execFileSync('secret-tool', [
-        'lookup', 'service', 'Claude Code-credentials',
-      ], { encoding: 'utf8', timeout: 2000, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-      if (blob) {
-        const token = JSON.parse(blob)?.claudeAiOauth?.accessToken;
-        if (token && token !== 'null') return token;
-      }
-    } catch (e) {}
-  }
-
-  return null;
-}
-
-// ── Rate Limit Usage (cached) ──
-
-function getCachedUsage() {
-  try {
-    const stat = fs.statSync(CACHE_FILE);
-    const age = (Date.now() - stat.mtimeMs) / 1000;
-    const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
-    return { data, fresh: age < CACHE_MAX_AGE };
-  } catch (e) {
-    return { data: null, fresh: false };
-  }
-}
-
-function fetchUsage(token) {
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'api.anthropic.com',
-      path: '/api/oauth/usage',
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'anthropic-beta': 'oauth-2025-04-20',
-      },
-      timeout: 3000,
-    }, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-    req.end();
-  });
-}
-
-async function getUsageData() {
-  const { data: cached, fresh } = getCachedUsage();
-  if (fresh && cached) return cached;
-
-  const token = getOAuthToken();
-  if (token) {
-    try {
-      const data = await fetchUsage(token);
-      if (data && typeof data === 'object') {
-        try {
-          fs.mkdirSync(CACHE_DIR, { recursive: true, mode: 0o700 });
-          writeFileAtomic(CACHE_FILE, JSON.stringify(data));
-        } catch (e) {}
-        return data;
-      }
-    } catch (e) {}
-  }
-
-  return cached; // fall back to stale cache
-}
-
-function formatUsageSegments(usage) {
-  if (!usage) return '';
-  const segments = [];
-
-  // 5-hour window
-  if (usage.five_hour) {
-    const pct = Math.round(usage.five_hour.utilization || 0);
-    const bar = rateBar(pct);
-    const reset = formatResetTime(usage.five_hour.resets_at);
-    let seg = `${C.white}5h${C.reset} ${bar} ${C.cyan}${pct}%${C.reset}`;
-    if (reset) seg += ` ${C.dim}@${reset}${C.reset}`;
-    segments.push(seg);
-  }
-
-  // 7-day window
-  if (usage.seven_day) {
-    const pct = Math.round(usage.seven_day.utilization || 0);
-    const bar = rateBar(pct);
-    const reset = formatResetTime(usage.seven_day.resets_at);
-    let seg = `${C.white}7d${C.reset} ${bar} ${C.cyan}${pct}%${C.reset}`;
-    if (reset) seg += ` ${C.dim}@${reset}${C.reset}`;
-    segments.push(seg);
-  }
-
-  // Extra usage credits
-  if (usage.extra_usage && usage.extra_usage.is_enabled) {
-    const pct = Math.round(usage.extra_usage.utilization || 0);
-    const spent = ((usage.extra_usage.used_credits || 0) / 100).toFixed(2);
-    const limit = ((usage.extra_usage.monthly_limit || 0) / 100).toFixed(2);
-    const bar = rateBar(pct);
-    segments.push(`${C.white}extra${C.reset} ${bar} ${C.cyan}$${spent}/$${limit}${C.reset}`);
-  }
-
-  return segments.join(SEP);
 }
 
 // ── Current Task (Ship-specific) ──
@@ -298,9 +150,38 @@ function writeContextBridge(session, remaining, usedPct) {
   } catch (e) {}
 }
 
+// ── Rate Limit Formatting ──
+
+function formatRateLimits(rateLimits) {
+  if (!rateLimits) return '';
+  const segments = [];
+
+  // 5-hour window
+  if (rateLimits.five_hour) {
+    const pct = Math.round(rateLimits.five_hour.used_percentage || 0);
+    const bar = rateBar(pct);
+    const reset = formatResetTime(rateLimits.five_hour.resets_at);
+    let seg = `${C.white}5h${C.reset} ${bar} ${C.cyan}${pct}%${C.reset}`;
+    if (reset) seg += ` ${C.dim}@${reset}${C.reset}`;
+    segments.push(seg);
+  }
+
+  // 7-day window
+  if (rateLimits.seven_day) {
+    const pct = Math.round(rateLimits.seven_day.used_percentage || 0);
+    const bar = rateBar(pct);
+    const reset = formatResetTime(rateLimits.seven_day.resets_at);
+    let seg = `${C.white}7d${C.reset} ${bar} ${C.cyan}${pct}%${C.reset}`;
+    if (reset) seg += ` ${C.dim}@${reset}${C.reset}`;
+    segments.push(seg);
+  }
+
+  return segments.join(SEP);
+}
+
 // ── Main ──
 
-async function main() {
+function main() {
   if (!input.trim()) {
     process.stdout.write('Claude');
     return;
@@ -319,10 +200,13 @@ async function main() {
   const cacheRead = data.context_window?.current_usage?.cache_read_input_tokens || 0;
   const totalUsed = inputTokens + cacheCreate + cacheRead;
 
-  // Context percentage (scaled to 80% limit like original Ship statusline)
-  const remaining = data.context_window?.remaining_percentage;
+  // Context percentage — prefer pre-calculated used_percentage from new schema
   let usedPct = 0;
-  if (remaining != null) {
+  const remaining = data.context_window?.remaining_percentage;
+  if (data.context_window?.used_percentage != null) {
+    usedPct = Math.round(data.context_window.used_percentage);
+    writeContextBridge(session, remaining, usedPct);
+  } else if (remaining != null) {
     const rawUsed = Math.max(0, Math.min(100, 100 - Math.round(remaining)));
     usedPct = Math.min(100, Math.round((rawUsed / 80) * 100));
     writeContextBridge(session, remaining, usedPct);
@@ -335,12 +219,8 @@ async function main() {
   const thinking = getThinkingEnabled();
   const task = getCurrentTask(session);
 
-  // Fetch rate limits (async, cached)
-  let usageSegment = '';
-  try {
-    const usage = await getUsageData();
-    usageSegment = formatUsageSegments(usage);
-  } catch (e) {}
+  // Rate limits — read directly from input (new schema provides these)
+  const rateLimitSegment = formatRateLimits(data.rate_limits);
 
   // ── Build output ──
   const parts = [];
@@ -366,7 +246,12 @@ async function main() {
   }
 
   // Rate limits
-  if (usageSegment) parts.push(usageSegment);
+  if (rateLimitSegment) parts.push(rateLimitSegment);
+
+  // Cost (if available)
+  if (data.cost?.total_cost_usd != null && data.cost.total_cost_usd > 0) {
+    parts.push(`${C.dim}$${C.reset}${C.yellow}${data.cost.total_cost_usd.toFixed(2)}${C.reset}`);
+  }
 
   process.stdout.write(parts.join(SEP));
 }
@@ -376,5 +261,5 @@ let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', () => {
-  main().catch(() => {});
+  try { main(); } catch (e) {}
 });
