@@ -1,5 +1,5 @@
 ---
-name: plan
+name: ship:plan
 description: Use when a feature has been brainstormed and needs a detailed implementation plan with tasks
 effort: high
 allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, AskUserQuestion
