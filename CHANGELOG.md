@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.0.2
+
+### Fixed
+
+- **Status line**: Rewrote statusline to use Claude Code's native `rate_limits` and `used_percentage` input schema fields. Removed OAuth token resolution and API fetch machinery (~100 lines). Rate limits and context percentage are now read directly from the input JSON.
+
+### Added
+
+- Session cost display in the status line (reads `cost.total_cost_usd` from input)
+
+### Note
+
+The plugin system does not support `statusLine` registration natively. After installing, add this to `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node ~/.claude/plugins/marketplaces/dilhanz-ship/hooks/statusline.cjs"
+  }
+}
+```
+
 ## 3.0.0
 
 Ship is now a Claude Code plugin. Install with `claude plugin install ship` or from the marketplace with `/plugin marketplace add dilhanz/ship`.
