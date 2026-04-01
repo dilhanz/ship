@@ -1,5 +1,5 @@
 ---
-name: resume
+name: ship:resume
 description: Use when returning to continue work on an in-progress feature — picks up where you left off based on feature status
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch

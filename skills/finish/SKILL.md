@@ -1,5 +1,5 @@
 ---
-name: finish
+name: ship:finish
 description: Use when a feature has been verified and needs to be completed — creates PR, merges locally, or keeps branch
 effort: medium
 allowed-tools: Read, Bash, Glob, AskUserQuestion
