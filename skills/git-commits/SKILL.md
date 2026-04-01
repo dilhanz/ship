@@ -1,5 +1,5 @@
 ---
-name: git-commits
+name: ship:git-commits
 description: Use when making git commits during Ship feature builds — provides atomic commit format and conventions
 effort: medium
 user-invocable: false
