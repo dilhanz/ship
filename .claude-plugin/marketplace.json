@@ -1,6 +1,20 @@
 {
-  "source": "github",
-  "repository": "dilhanz/ship",
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "dilhanz-ship",
   "description": "Feature-centric development framework — brainstorm, plan, build, and verify with structured workflows",
-  "tags": ["development", "workflow", "planning", "feature-management"]
+  "owner": {
+    "name": "dilhanz"
+  },
+  "plugins": [
+    {
+      "name": "ship",
+      "description": "Feature-centric development framework for Claude Code — brainstorm, plan, build, and verify with structured workflows",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/dilhanz/ship.git"
+      },
+      "category": "development",
+      "homepage": "https://github.com/dilhanz/ship"
+    }
+  ]
 }
