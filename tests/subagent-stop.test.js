@@ -39,8 +39,144 @@ function runHook(inputObj) {
   });
 }
 
-describe('subagent-stop hook', () => {
-  it('passes through valid COMPLETE result', async () => {
+/** Helper: build a fenced build_result JSON block */
+function buildResultJson(obj) {
+  return '```build_result\n' + JSON.stringify(obj, null, 2) + '\n```';
+}
+
+describe('subagent-stop hook — JSON format', () => {
+  it('passes through valid COMPLETE JSON result', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-builder',
+      last_assistant_message: buildResultJson({
+        feature: 'my-feature',
+        scope: 'all',
+        status: 'COMPLETE',
+        tasks_completed: 3,
+        tasks_total: 3,
+        commits: ['abc1234', 'def5678', 'ghi9012'],
+        deviations: [],
+        concerns: [],
+        missing: null,
+        stopped_at: null,
+        reason: null,
+        recommendation: null
+      }),
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'valid COMPLETE should not inject recovery');
+  });
+
+  it('passes through valid COMPLETE_WITH_CONCERNS JSON result', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-builder',
+      last_assistant_message: buildResultJson({
+        feature: 'my-feature',
+        scope: 'phase:1',
+        status: 'COMPLETE_WITH_CONCERNS',
+        tasks_completed: 3,
+        tasks_total: 3,
+        commits: ['abc1234'],
+        deviations: [],
+        concerns: ['fragile test in auth module'],
+        missing: null,
+        stopped_at: null,
+        reason: null,
+        recommendation: null
+      }),
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'valid COMPLETE_WITH_CONCERNS should not inject recovery');
+  });
+
+  it('passes through valid NEEDS_CONTEXT JSON result', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-builder',
+      last_assistant_message: buildResultJson({
+        feature: 'my-feature',
+        scope: 'phase:2',
+        status: 'NEEDS_CONTEXT',
+        tasks_completed: 1,
+        tasks_total: 3,
+        commits: ['abc1234'],
+        deviations: [],
+        concerns: [],
+        missing: 'need database URL for migration',
+        stopped_at: null,
+        reason: null,
+        recommendation: null
+      }),
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'valid NEEDS_CONTEXT should not inject recovery');
+  });
+
+  it('passes through valid CHECKPOINT JSON result', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-builder',
+      last_assistant_message: buildResultJson({
+        feature: 'my-feature',
+        scope: 'phase:1',
+        status: 'CHECKPOINT',
+        tasks_completed: 1,
+        tasks_total: 4,
+        commits: ['abc1234'],
+        deviations: ['Task 2 requires GraphQL but plan assumes REST'],
+        concerns: [],
+        missing: null,
+        stopped_at: '2 — add API endpoint',
+        reason: 'architectural conflict',
+        recommendation: 'replan with GraphQL approach'
+      }),
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'valid CHECKPOINT should not inject recovery');
+  });
+
+  it('handles JSON embedded in surrounding text', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-builder',
+      last_assistant_message:
+        'I have completed all tasks in the phase. Here is my result:\n\n' +
+        buildResultJson({
+          feature: 'my-feature',
+          scope: 'all',
+          status: 'COMPLETE',
+          tasks_completed: 2,
+          tasks_total: 2,
+          commits: ['abc1234'],
+          deviations: [],
+          concerns: [],
+          missing: null,
+          stopped_at: null,
+          reason: null,
+          recommendation: null
+        }) +
+        '\n\nAll done!',
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'JSON in surrounding text should be valid');
+  });
+
+  it('injects recovery for invalid JSON status', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-builder',
+      last_assistant_message: buildResultJson({
+        feature: 'my-feature',
+        status: 'UNKNOWN_STATUS',
+        tasks_completed: 0,
+        tasks_total: 3,
+      }),
+    });
+    assert.equal(code, 0);
+    assert.ok(output, 'should inject recovery for unknown status');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('BUILDER AGENT STOPPED WITHOUT VALID RESULT'));
+  });
+});
+
+describe('subagent-stop hook — legacy Markdown fallback', () => {
+  it('passes through legacy BUILD RESULT Markdown format', async () => {
     const { code, output } = await runHook({
       agent_name: 'ship-builder',
       last_assistant_message: [
@@ -52,56 +188,27 @@ describe('subagent-stop hook', () => {
       ].join('\n'),
     });
     assert.equal(code, 0);
-    assert.equal(output, null, 'valid COMPLETE should not inject recovery');
+    assert.equal(output, null, 'legacy Markdown format should still be accepted');
   });
 
-  it('passes through valid COMPLETE_WITH_CONCERNS result', async () => {
+  it('passes through legacy CHECKPOINT Markdown format', async () => {
     const { code, output } = await runHook({
       agent_name: 'ship-builder',
       last_assistant_message: [
         '## BUILD RESULT',
         '',
         'Feature: my-feature',
-        'Tasks completed: 3 / 3',
-        'Status: COMPLETE_WITH_CONCERNS',
-      ].join('\n'),
-    });
-    assert.equal(code, 0);
-    assert.equal(output, null, 'valid COMPLETE_WITH_CONCERNS should not inject recovery');
-  });
-
-  it('passes through valid NEEDS_CONTEXT result', async () => {
-    const { code, output } = await runHook({
-      agent_name: 'ship-builder',
-      last_assistant_message: [
-        '## BUILD RESULT',
-        '',
-        'Feature: my-feature',
-        'Tasks completed: 1 / 3',
-        'Missing: need database URL',
-        'Status: NEEDS_CONTEXT',
-      ].join('\n'),
-    });
-    assert.equal(code, 0);
-    assert.equal(output, null, 'valid NEEDS_CONTEXT should not inject recovery');
-  });
-
-  it('passes through valid CHECKPOINT result', async () => {
-    const { code, output } = await runHook({
-      agent_name: 'ship-builder',
-      last_assistant_message: [
-        '## BUILD RESULT',
-        '',
-        'Feature: my-feature',
-        'Stopped at: Task 2 — complex migration',
+        'Stopped at: Task 2',
         'Status: CHECKPOINT',
       ].join('\n'),
     });
     assert.equal(code, 0);
-    assert.equal(output, null, 'valid CHECKPOINT should not inject recovery');
+    assert.equal(output, null, 'legacy CHECKPOINT should still be accepted');
   });
+});
 
-  it('injects recovery for missing BUILD RESULT', async () => {
+describe('subagent-stop hook — failure cases', () => {
+  it('injects recovery for missing result', async () => {
     const { code, output } = await runHook({
       agent_name: 'ship-builder',
       last_assistant_message: 'I was working on task 3 but ran out of turns',
@@ -109,41 +216,11 @@ describe('subagent-stop hook', () => {
     assert.equal(code, 0);
     assert.ok(output, 'should inject recovery message');
     const msg = output.hookSpecificOutput.additionalContext;
-    assert.ok(
-      msg.includes('BUILDER AGENT STOPPED WITHOUT VALID RESULT'),
-      'should include main recovery header'
-    );
-    assert.ok(msg.includes('RECOVERY'), 'should include RECOVERY section');
+    assert.ok(msg.includes('BUILDER AGENT STOPPED WITHOUT VALID RESULT'));
+    assert.ok(msg.includes('RECOVERY'));
   });
 
-  it('injects recovery for malformed BUILD RESULT with unknown status', async () => {
-    const { code, output } = await runHook({
-      agent_name: 'ship-builder',
-      last_assistant_message: [
-        '## BUILD RESULT',
-        '',
-        'Status: UNKNOWN_STATUS',
-      ].join('\n'),
-    });
-    assert.equal(code, 0);
-    assert.ok(output, 'should inject recovery for malformed result');
-    const msg = output.hookSpecificOutput.additionalContext;
-    assert.ok(
-      msg.includes('BUILDER AGENT STOPPED WITHOUT VALID RESULT'),
-      'should include main recovery header for malformed status'
-    );
-  });
-
-  it('ignores non-builder agents', async () => {
-    const { code, output } = await runHook({
-      agent_name: 'ship-brainstormer',
-      last_assistant_message: 'No BUILD RESULT here at all',
-    });
-    assert.equal(code, 0);
-    assert.equal(output, null, 'non-builder agents should be ignored');
-  });
-
-  it('handles empty last_assistant_message', async () => {
+  it('injects recovery for empty last_assistant_message', async () => {
     const { code, output } = await runHook({
       agent_name: 'ship-builder',
       last_assistant_message: '',
@@ -151,10 +228,25 @@ describe('subagent-stop hook', () => {
     assert.equal(code, 0);
     assert.ok(output, 'should inject recovery for empty message');
     const msg = output.hookSpecificOutput.additionalContext;
-    assert.ok(
-      msg.includes('BUILDER AGENT STOPPED WITHOUT VALID RESULT'),
-      'should include recovery header for empty message'
-    );
+    assert.ok(msg.includes('BUILDER AGENT STOPPED WITHOUT VALID RESULT'));
+  });
+
+  it('injects recovery for malformed JSON in build_result block', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-builder',
+      last_assistant_message: '```build_result\n{not valid json\n```',
+    });
+    assert.equal(code, 0);
+    assert.ok(output, 'should inject recovery for malformed JSON');
+  });
+
+  it('ignores non-builder agents', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-brainstormer',
+      last_assistant_message: 'No build result here at all',
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'non-builder agents should be ignored');
   });
 
   it('handles missing agent_name', async () => {

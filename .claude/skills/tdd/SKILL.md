@@ -3,6 +3,7 @@ name: tdd
 description: Use when implementing tasks that have test-based verify commands — provides RED-GREEN-REFACTOR cycle guidance
 effort: medium
 user-invocable: false
+disable-model-invocation: true
 ---
 
 ## Active Feature State

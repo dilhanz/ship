@@ -1,8 +1,11 @@
 ---
 name: go
-description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
+description: Auto-run all remaining Ship steps for a feature end-to-end
+when_to_use: >-
+  TRIGGER when: user says "go", "run everything", or wants hands-off execution.
+  DO NOT TRIGGER when: user wants manual step-by-step control.
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, AskUserQuestion, Skill
+allowed-tools: Read, Glob, Skill
 argument-hint: "[feature-name]"
 ---
 

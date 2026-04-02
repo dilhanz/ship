@@ -1,6 +1,9 @@
 ---
 name: finish
-description: Use when a feature has been verified and needs to be completed — creates PR, merges locally, or keeps branch
+description: Complete verified feature — create PR, merge, or keep branch
+when_to_use: >-
+  TRIGGER when: user says "finish", "ship it", "create PR", or feature status is "verified".
+  DO NOT TRIGGER when: not yet verified.
 effort: medium
 allowed-tools: Read, Bash, Glob, AskUserQuestion
 argument-hint: "[feature-name]"

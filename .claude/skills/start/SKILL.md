@@ -1,8 +1,11 @@
 ---
 name: start
-description: Use when beginning new feature work, adding functionality, or fixing a bug — runs intensive brainstorming to capture requirements before planning
+description: Brainstorm and capture requirements for a new feature or bug fix
+when_to_use: >-
+  TRIGGER when: user says "start", "new feature", "build me", or describes new work.
+  DO NOT TRIGGER when: feature already exists in .planning/features/.
 effort: high
-allowed-tools: Read, Write, WebSearch, WebFetch, Glob, Bash
+allowed-tools: Read, Write, Glob, Grep, AskUserQuestion
 argument-hint: "[feature description]"
 ---
 

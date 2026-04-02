@@ -1,8 +1,11 @@
 ---
 name: plan-verify
-description: Use when a plan has been created and needs independent verification against codebase patterns before building
+description: Verify plan against codebase patterns before building
+when_to_use: >-
+  TRIGGER when: user says "verify plan" or feature status is "planned".
+  DO NOT TRIGGER when: no plan exists or already plan-verified.
 effort: high
-allowed-tools: Read, Write, Edit, Glob, Grep, Agent
+allowed-tools: Read, Write, Glob, Grep
 argument-hint: "[feature-name]"
 ---
 

@@ -1,8 +1,11 @@
 ---
 name: build
-description: Use when a feature plan has been verified and is ready for implementation — executes tasks with atomic commits
+description: Execute implementation plan with atomic commits per task
+when_to_use: >-
+  TRIGGER when: user says "build", "implement", "code it", or feature status is "plan-verified"/"building".
+  DO NOT TRIGGER when: still planning or already built.
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, SendMessage
+allowed-tools: Read, Agent, SendMessage
 argument-hint: "[feature-name]"
 ---
 
