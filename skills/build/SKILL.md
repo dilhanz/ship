@@ -6,20 +6,17 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, SendMessage
 argument-hint: "[feature-name]"
 ---
 
-## Active Feature State
-!`for f in .planning/features/*/CONTEXT.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d"): $(sed -n 's/^status: *//p' "$f")"; done 2>/dev/null; true`
-!`for f in .planning/features/*/PLAN.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d") plan: $(grep -c 'status="done"' "$f" 2>/dev/null || echo 0) done, $(grep -c 'status="pending"' "$f" 2>/dev/null || echo 0) pending"; done 2>/dev/null; true`
-
 Build the active feature by executing its plan phase by phase.
 
 ## Find Active Feature
 
-1. Look in `.planning/features/` for feature directories
-2. Read each `CONTEXT.md` and check the `status` field
-3. Find the feature with status `plan-verified` or `building` (resuming)
-4. If `$ARGUMENTS` is provided, use it as the feature name
-5. If multiple candidates exist, list them and pick the most recent
-6. If no candidates exist, report that no buildable features were found
+Feature state is injected by hooks at session start and after compaction — check conversation context for "SHIP ACTIVE FEATURES" or "SHIP FEATURE STATE" blocks first.
+
+1. If `$ARGUMENTS` is provided, use it as the feature name
+2. Otherwise, use injected feature state to identify the feature with status `plan-verified` or `building` (resuming)
+3. If no injected state is available, fall back to scanning `.planning/features/*/CONTEXT.md`
+4. If multiple candidates exist, list them and pick the most recent
+5. If no candidates exist, report that no buildable features were found
 
 ## Prerequisites
 
@@ -85,22 +82,22 @@ For flat plans, omit the Phase line.
 
 ### 2.5. Auto-Continue on Incomplete Result
 
-After the Agent tool returns, check whether the builder's output contains a valid `## BUILD RESULT` block with one of the four expected statuses (COMPLETE, COMPLETE_WITH_CONCERNS, NEEDS_CONTEXT, CHECKPOINT).
+After the Agent tool returns, extract the `build_result` JSON block from the builder's output. Look for a fenced code block tagged `build_result` and parse the JSON inside it.
 
-**If no valid BUILD RESULT is found** (likely turn exhaustion):
+**If no valid `build_result` JSON is found** (likely turn exhaustion):
 
 1. Use `SendMessage` to the builder agent with this message:
 
    ```
-   You were building feature "{name}" and stopped without emitting a BUILD RESULT.
+   You were building feature "{name}" and stopped without emitting a build_result JSON block.
    Continue where you left off. Read PLAN.md to check which tasks are done (status="done")
    and which are still pending. Resume from the first pending task.
-   When finished with all tasks in this phase, emit your ## BUILD RESULT block.
+   When finished with all tasks in this phase, emit your build_result JSON block.
    ```
 
-2. After `SendMessage` returns, check again for a valid `## BUILD RESULT`.
+2. After `SendMessage` returns, check again for a valid `build_result` JSON block.
 3. If still no valid result, retry `SendMessage` one more time (same message).
-4. After 2 retries (3 total attempts including the original Agent call), if still no valid BUILD RESULT:
+4. After 2 retries (3 total attempts including the original Agent call), if still no valid result:
    - Read PLAN.md to check actual progress (tasks marked done)
    - Report to the user:
 
@@ -120,76 +117,75 @@ After the Agent tool returns, check whether the builder's output contains a vali
    - Leave CONTEXT.md status as `building`
    - **Stop the loop** — do not continue to the next phase
 
-**If a valid BUILD RESULT is found** (either from original Agent call or after SendMessage):
+**If a valid `build_result` JSON is found** (either from original Agent call or after SendMessage):
 Proceed to the status handling below (### 3).
 
 ### 3. Handle Agent Result
 
-Parse the builder agent's `## BUILD RESULT` output.
+Parse the builder agent's `build_result` JSON block. Extract the `status` field.
 
-**If Status: COMPLETE:**
+**If status is "COMPLETE":**
 - If phased, mark the current phase `status="done"` in PLAN.md
-- Output to the user:
+- Output to the user (use values from the JSON fields):
 
 ```
 ## PHASE COMPLETE
 
-Feature: {name}
+Feature: {result.feature}
 Phase: [M] / [total] — [phase name]
-Tasks completed: [N] / [N] in this phase
+Tasks completed: {result.tasks_completed} / {result.tasks_total} in this phase
 Overall progress: [done_across_all_phases] / [total_across_all_phases] tasks
-Commits: [list short hashes]
+Commits: {result.commits joined with ", "}
 ```
 
 - Then **continue the loop** to the next pending phase
 
-**If Status: COMPLETE_WITH_CONCERNS:**
+**If status is "COMPLETE_WITH_CONCERNS":**
 - Same as COMPLETE (mark phase done, continue loop)
-- But also surface the concerns to the user:
+- But also surface the `concerns` array to the user:
 
 ```
 ## PHASE COMPLETE (with concerns)
 
-Feature: {name}
+Feature: {result.feature}
 Phase: [M] / [total] — [phase name]
-Tasks completed: [N] / [N] in this phase
-Commits: [list short hashes]
+Tasks completed: {result.tasks_completed} / {result.tasks_total} in this phase
+Commits: {result.commits joined with ", "}
 
 Concerns flagged by builder:
-- [concern 1]
-- [concern 2]
+- {each item from result.concerns}
 
 Continuing to next phase. Review concerns after build completes.
 ```
 
-**If Status: NEEDS_CONTEXT:**
+**If status is "NEEDS_CONTEXT":**
 - Leave CONTEXT.md status as `building`
-- Output to the user what information is missing
+- Output to the user the `missing` field value
 - **Stop the loop** — the user must provide the missing context before continuing
 
 ```
 ## CONTEXT NEEDED
 
-Feature: {name}
-Tasks completed: [N] / [M]
-Missing: [from agent result]
+Feature: {result.feature}
+Tasks completed: {result.tasks_completed} / {result.tasks_total}
+Missing: {result.missing}
 
 Provide the missing information, then run /ship:build to continue.
 ```
 
-**If Status: CHECKPOINT:**
+**If status is "CHECKPOINT":**
 - Leave CONTEXT.md status as `building`
-- Output to the user:
+- Output to the user using `stopped_at`, `reason`, and `recommendation` fields:
 
 ```
 ## CHECKPOINT REACHED
 
-Feature: {name}
-Tasks completed: [N] / [M]
-Stopped at: Task [id] — [task name]
-Reason: [from agent result]
+Feature: {result.feature}
+Tasks completed: {result.tasks_completed} / {result.tasks_total}
+Stopped at: {result.stopped_at}
+Reason: {result.reason}
 
-Recommendation: [from agent result]
+Recommendation: {result.recommendation}
 ```
 
 - **Stop the loop** — do not continue to the next phase

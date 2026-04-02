@@ -6,20 +6,17 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Agent
 argument-hint: "[feature-name]"
 ---
 
-## Active Feature State
-!`for f in .planning/features/*/CONTEXT.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d"): $(sed -n 's/^status: *//p' "$f")"; done 2>/dev/null; true`
-!`for f in .planning/features/*/PLAN.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d") plan: $(grep -c 'status="done"' "$f" 2>/dev/null || echo 0) done, $(grep -c 'status="pending"' "$f" 2>/dev/null || echo 0) pending"; done 2>/dev/null; true`
-
 Verify the implementation plan against the actual codebase.
 
 ## Find Active Feature
 
-1. Look in `.planning/features/` for feature directories
-2. Read each `CONTEXT.md` and check the `status` field
-3. Find the feature with status `planned` (ready for plan review)
-4. If `$ARGUMENTS` is provided, use it as the feature name
-5. If multiple candidates exist, list them and pick the most recent
-6. If no candidates exist, report that no verifiable plans were found
+Feature state is injected by hooks at session start and after compaction — check conversation context for "SHIP ACTIVE FEATURES" or "SHIP FEATURE STATE" blocks first.
+
+1. If `$ARGUMENTS` is provided, use it as the feature name
+2. Otherwise, use injected feature state to identify the feature with status `planned`
+3. If no injected state is available, fall back to scanning `.planning/features/*/CONTEXT.md`
+4. If multiple candidates exist, list them and pick the most recent
+5. If no candidates exist, report that no verifiable plans were found
 
 ## Read Inputs
 

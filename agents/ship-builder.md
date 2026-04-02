@@ -124,22 +124,30 @@ Only fix issues **directly caused by the current task's changes**. Pre-existing 
 
 ## Output
 
-When finished, return exactly this format:
+When finished, emit a `BUILD_RESULT` JSON block. The orchestrator and hooks parse this programmatically — **do not** use free-text Markdown for the result. Wrap the JSON in a fenced code block tagged `build_result`:
 
+````
+```build_result
+{
+  "feature": "{name}",
+  "scope": "phase:{id}" | "all",
+  "status": "COMPLETE" | "COMPLETE_WITH_CONCERNS" | "NEEDS_CONTEXT" | "CHECKPOINT",
+  "tasks_completed": {number},
+  "tasks_total": {number},
+  "commits": ["{short-hash}", ...],
+  "deviations": ["{description}", ...] | [],
+  "concerns": ["{description}", ...] | [],
+  "missing": "{what is needed}" | null,
+  "stopped_at": "{task id} — {task name}" | null,
+  "reason": "{why stopped}" | null,
+  "recommendation": "{what to do next}" | null
+}
 ```
-## BUILD RESULT
-
-Feature: {name}
-Scope: Phase {id} — {phase name} | All tasks (flat)
-Tasks completed: {completed} / {total}
-Commits: {list of short hashes}
-Deviations: {list or "None"}
-Status: COMPLETE | COMPLETE_WITH_CONCERNS | NEEDS_CONTEXT | CHECKPOINT
-```
+````
 
 **Status definitions:**
 
-- **COMPLETE** — All tasks in scope done, all verifications passing. Proceed to next phase or finish.
-- **COMPLETE_WITH_CONCERNS** — All tasks done and verified, but something feels off (e.g., fragile test, unusual pattern, potential edge case). Include a `Concerns:` section listing what to watch for. The orchestrator proceeds but surfaces concerns to the user.
-- **NEEDS_CONTEXT** — A task requires information not in the plan or codebase (e.g., API key, design decision, ambiguous requirement). Include `Missing:` section describing exactly what's needed. The orchestrator pauses and asks the user.
-- **CHECKPOINT** — Blocked by architectural conflict or persistent failure (3 verify attempts exhausted). Include `Stopped at:`, `Reason:`, and `Recommendation:` sections.
+- **COMPLETE** — All tasks in scope done, all verifications passing. `concerns`, `missing`, `stopped_at`, `reason`, `recommendation` should be `[]` or `null`.
+- **COMPLETE_WITH_CONCERNS** — All tasks done and verified, but something feels off (e.g., fragile test, unusual pattern, potential edge case). Populate `concerns` array with what to watch for.
+- **NEEDS_CONTEXT** — A task requires information not in the plan or codebase (e.g., API key, design decision, ambiguous requirement). Populate `missing` with exactly what's needed.
+- **CHECKPOINT** — Blocked by architectural conflict or persistent failure (3 verify attempts exhausted). Populate `stopped_at`, `reason`, and `recommendation`.
