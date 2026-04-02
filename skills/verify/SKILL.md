@@ -6,20 +6,17 @@ allowed-tools: Read, Agent, Glob, Edit, Bash, Skill
 argument-hint: "[feature-name]"
 ---
 
-## Active Feature State
-!`for f in .planning/features/*/CONTEXT.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d"): $(sed -n 's/^status: *//p' "$f")"; done 2>/dev/null; true`
-!`for f in .planning/features/*/PLAN.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d") plan: $(grep -c 'status="done"' "$f" 2>/dev/null || echo 0) done, $(grep -c 'status="pending"' "$f" 2>/dev/null || echo 0) pending"; done 2>/dev/null; true`
-
 Verify the active feature's implementation.
 
 ## Find Active Feature
 
-1. Look in `.planning/features/` for feature directories
-2. Read each `CONTEXT.md` and check the `status` field
-3. Find the feature with status `built`
-4. If `$ARGUMENTS` is provided, use it as the feature name
-5. If multiple candidates exist, list them and pick the most recent
-6. If no candidates exist, report that no verifiable features were found
+Feature state is injected by hooks at session start and after compaction — check conversation context for "SHIP ACTIVE FEATURES" or "SHIP FEATURE STATE" blocks first.
+
+1. If `$ARGUMENTS` is provided, use it as the feature name
+2. Otherwise, use injected feature state to identify the feature with status `built`
+3. If no injected state is available, fall back to scanning `.planning/features/*/CONTEXT.md`
+4. If multiple candidates exist, list them and pick the most recent
+5. If no candidates exist, report that no verifiable features were found
 
 ## Run Code Review
 
@@ -53,24 +50,33 @@ Stage 1 and Stage 2 remain fully independent — do not use review findings for 
 
 ## Display Results
 
-After the verifier agent completes, read `.planning/features/{name}/VERIFY.md` and display:
+After the verifier agent completes, extract the `verify_result` JSON block from its output. Look for a fenced code block tagged `verify_result` and parse the JSON inside it.
+
+Also read `.planning/features/{name}/VERIFY.md` for the full report.
+
+Display to the user using the JSON fields:
 
 ```
 ## VERIFICATION COMPLETE
 
-Feature: {name}
-Status: [PASS | PARTIAL | FAIL]
+Feature: {result.feature}
+Status: {result.status}
 
-[Acceptance criteria table from VERIFY.md]
+Criteria: {result.criteria_passed} / {result.criteria_total} passed
+Anti-patterns: {result.anti_patterns} found
+PR Review: {result.review_findings.critical} critical / {result.review_findings.warnings} warnings / {result.review_findings.suggestions} suggestions
+Human checks: {result.human_checks} items
 
-[If PARTIAL/FAIL:]
+[If result.gaps is non-empty:]
 Gaps:
-- [list gaps]
+- {each item from result.gaps}
 
-Recommendation: [from VERIFY.md]
+[If result.pr_findings has CRITICAL or WARNING entries:]
+PR Review Findings:
+- {each item: [severity] description}
 
-[If PASS:] Feature complete!
-[If PARTIAL/FAIL:] Next: /ship:build (fix tasks added to PLAN.md)
+[If result.status is "PASS":] Feature complete! Next: /ship:finish
+[If result.status is "PARTIAL" or "FAIL":] Next: /ship:build (fix tasks added to PLAN.md)
 ```
 
 $ARGUMENTS

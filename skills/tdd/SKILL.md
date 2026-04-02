@@ -5,9 +5,6 @@ effort: medium
 user-invocable: false
 ---
 
-## Active Feature State
-!`for f in .planning/features/*/CONTEXT.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d"): $(sed -n 's/^status: *//p' "$f")"; done 2>/dev/null; true`
-
 # Test-Driven Development
 
 When a task's `<verify>` command runs tests, follow this cycle.

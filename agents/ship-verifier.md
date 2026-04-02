@@ -210,27 +210,30 @@ Never output these — they indicate claiming success without evidence:
 
 ## Output
 
+After writing VERIFY.md, emit a `VERIFY_RESULT` JSON block. The orchestrator parses this programmatically — **do not** use free-text Markdown for the result. Wrap the JSON in a fenced code block tagged `verify_result`:
+
+````
+```verify_result
+{
+  "feature": "{name}",
+  "status": "PASS" | "PARTIAL" | "FAIL",
+  "criteria_passed": {number},
+  "criteria_total": {number},
+  "anti_patterns": {number},
+  "review_findings": {
+    "critical": {number},
+    "warnings": {number},
+    "suggestions": {number}
+  },
+  "human_checks": {number},
+  "gaps": ["{description}", ...] | [],
+  "pr_findings": [{"severity": "CRITICAL"|"WARNING", "description": "{text}"}, ...] | []
+}
 ```
-## VERIFICATION COMPLETE
+````
 
-Feature: {name}
-Status: PASS | PARTIAL | FAIL
+**Status definitions:**
 
-Criteria: [N passed] / [M total]
-Anti-patterns: [N found / None]
-PR Review: [N critical / N warnings / N suggestions]
-Human checks: [N items / None]
-
-[If PARTIAL/FAIL:]
-Gaps:
-- [Gap 1]
-- [Gap 2]
-
-[If critical/warning PR findings:]
-PR Review Findings:
-- [CRITICAL] [description]
-- [WARNING] [description]
-
-[If PASS:] Feature complete!
-[If PARTIAL/FAIL:] Next: /ship:build (fix tasks added to PLAN.md)
-```
+- **PASS** — All acceptance criteria verified AND no CRITICAL or WARNING /review findings. Suggestions noted as recommendations.
+- **PARTIAL** — Some criteria pass but some fail, OR all pass but WARNING /review findings exist.
+- **FAIL** — Multiple acceptance criteria fail OR CRITICAL /review findings.
