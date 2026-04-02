@@ -1,8 +1,11 @@
 ---
 name: verify
-description: Use when a feature build is complete and needs verification against acceptance criteria and independent code review
+description: Verify completed build against acceptance criteria with code review
+when_to_use: >-
+  TRIGGER when: user says "verify", "review", or feature status is "built".
+  DO NOT TRIGGER when: not yet built or already verified.
 effort: high
-allowed-tools: Read, Agent, Glob, Edit, Bash, Skill
+allowed-tools: Read, Agent, Glob, Skill
 argument-hint: "[feature-name]"
 ---
 

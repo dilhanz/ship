@@ -1,6 +1,9 @@
 ---
 name: help
-description: Use when the user asks about Ship commands, workflow, or how to use the framework
+description: Explain Ship commands, workflow, and framework usage
+when_to_use: >-
+  TRIGGER when: user says "help", "how does Ship work", or asks about the framework.
+  DO NOT TRIGGER when: asking about non-Ship topics.
 effort: low
 allowed-tools: []
 ---

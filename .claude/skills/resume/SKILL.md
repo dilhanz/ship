@@ -1,8 +1,11 @@
 ---
 name: resume
-description: Use when returning to continue work on an in-progress feature — picks up where you left off based on feature status
+description: Continue work on an in-progress feature from where you left off
+when_to_use: >-
+  TRIGGER when: user says "resume", "continue", "pick up", or returns to existing feature.
+  DO NOT TRIGGER when: no features are in-progress.
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch
+allowed-tools: Read, Glob, Skill
 argument-hint: "[feature-name]"
 ---
 

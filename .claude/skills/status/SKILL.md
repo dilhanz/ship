@@ -1,6 +1,9 @@
 ---
 name: status
-description: Use when checking feature progress or wanting to see what features exist and their current status
+description: Show feature progress and status across all features
+when_to_use: >-
+  TRIGGER when: user says "status", "progress", or asks about current state.
+  DO NOT TRIGGER when: asking about git status or non-Ship topics.
 effort: low
 allowed-tools: Read, Glob
 ---

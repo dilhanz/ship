@@ -1,8 +1,11 @@
 ---
 name: design
-description: Use when a brainstormed feature needs architectural decisions — presents 2-3 approaches for user to choose before planning
+description: Present 2-3 architectural approaches for user to choose before planning
+when_to_use: >-
+  TRIGGER when: user says "design", "architect", or feature needs architecture decisions.
+  DO NOT TRIGGER when: no brainstorm exists or already planned.
 effort: medium
-allowed-tools: Read, Write, Edit, Agent, Glob, Grep, AskUserQuestion
+allowed-tools: Read, Write, Agent, AskUserQuestion
 argument-hint: "[feature-name]"
 ---
 

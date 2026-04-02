@@ -3,6 +3,7 @@ name: deviation-rules
 description: Use when plan diverges from reality during build execution — provides 3 escalation levels for handling failures
 effort: medium
 user-invocable: false
+disable-model-invocation: true
 ---
 
 ## Active Feature State

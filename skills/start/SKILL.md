@@ -6,9 +6,6 @@ allowed-tools: Read, Write, WebSearch, WebFetch, Glob, Bash
 argument-hint: "[feature description]"
 ---
 
-## Active Feature State
-!`for f in .planning/features/*/CONTEXT.md; do [ -f "$f" ] && d=$(dirname "$f") && echo "$(basename "$d"): $(sed -n 's/^status: *//p' "$f")"; done 2>/dev/null; true`
-
 Start a new feature brainstorming session.
 
 ## Setup

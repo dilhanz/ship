@@ -1,8 +1,11 @@
 ---
 name: plan
-description: Use when a feature has been brainstormed and needs a detailed implementation plan with tasks
+description: Create detailed implementation plan with ordered tasks
+when_to_use: >-
+  TRIGGER when: user says "plan" or feature status is "brainstormed"/"design-complete".
+  DO NOT TRIGGER when: no feature exists or already planned.
 effort: high
-allowed-tools: Read, Write, Edit, Glob, Grep, Agent, WebFetch, AskUserQuestion
+allowed-tools: Read, Write, Glob, Grep, Agent, WebFetch, AskUserQuestion
 argument-hint: "[feature-name]"
 ---
 
