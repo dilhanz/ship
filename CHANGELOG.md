@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.2.0
+
+### Added
+
+- **Feature archiving**: `/ship:finish` now moves completed feature directories from `.planning/features/` to `.planning/archive/` after PR creation or local merge. Keeps the active features directory clean while preserving full history (CONTEXT.md, PLAN.md, VERIFY.md). Option 3 (keep as-is) skips archiving.
+
 ## 3.1.0
 
 ### Added

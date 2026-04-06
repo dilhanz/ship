@@ -88,6 +88,18 @@ Run tests again on the merged result. If tests pass, report success.
 ### Option 3: Keep As-Is
 
 Report: "Feature '{name}' kept on current branch. Run `/ship:finish` again when ready."
+Do NOT archive the feature directory for this option.
+
+## Archive Feature
+
+After Option 1 or Option 2 completes successfully, move the feature directory to the archive:
+
+```bash
+mkdir -p .planning/archive
+mv .planning/features/{feature-name} .planning/archive/{feature-name}
+```
+
+This preserves the full history (CONTEXT.md, PLAN.md, VERIFY.md) while keeping `.planning/features/` clean for active work.
 
 ## Report
 
@@ -98,6 +110,7 @@ Feature: {name}
 Action: {PR created / Merged to main / Kept as-is}
 {If PR:} PR: {url}
 {If merged:} Branch merged and tests passing
+Archived: .planning/archive/{name}
 ```
 
 $ARGUMENTS
