@@ -38,7 +38,7 @@ For each pending task in scope, in order:
 
 ### 1. Read the Task
 
-Read the `<task>` element. Understand the `<action>` instructions fully before writing any code.
+Read the `<task>` element. Understand the `<action>` instructions fully before writing any code. If the task has a `<reference>`, read the referenced file first — use it as a pattern template for your implementation.
 
 ### 2. Implement
 

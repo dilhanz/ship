@@ -112,9 +112,10 @@ Write 3-12 tasks. Each task must:
 
 **Task XML format:**
 ```xml
-<task id="1" status="pending">
+<task id="1" status="pending" depends="(optional: comma-separated task IDs when dependency isn't simply the previous task)">
   <name>Verb phrase describing what is built</name>
   <files>exact/path/to/file.ts, another/path.ts</files>
+  <reference>path/to/similar/existing_code.ts:functionName — closest existing pattern to follow</reference>
   <action>Specific implementation instructions. Include: function names, field names, schema shape, HTTP method + path, expected behavior. Be concrete enough that the builder can implement without guessing.</action>
   <verify>Runnable command that proves completion. Examples:
     - npm test -- --testPathPattern=auth
@@ -123,6 +124,10 @@ Write 3-12 tasks. Each task must:
   </verify>
 </task>
 ```
+
+**Reference field:** For each task, include a `<reference>` pointing to the closest existing code pattern found during exploration. The builder reads this file first and uses it as a template. Omit only if no analogous code exists in the project.
+
+**Task dependencies:** Use `depends` when a task's dependency isn't simply the previous task (e.g., task 5 depends on tasks 1 and 3 but not 4). Omit when tasks are naturally sequential.
 
 **Writing for the builder:** The build step follows instructions literally. Be unambiguous:
 - Include literal function signatures
@@ -137,6 +142,9 @@ Write 3-12 tasks. Each task must:
 | "Add authentication" | "Add JWT auth using jose library, store in httpOnly cookie, 15min expiry. POST /api/auth/login accepts {email, password}, validates with bcrypt against User table, returns 200 + Set-Cookie on success, 401 on failure." |
 | "Create the API" | "Create POST /api/projects endpoint in src/routes/projects.ts accepting {name: string, description: string}, validates name length 3-50 chars, inserts via db.projects.create(), returns 201 with project object." |
 | "Handle errors" | "Wrap API calls in try/catch in src/services/api.ts. On 4xx/5xx return {error: string}. In src/components/Form.tsx show error via toast notification using existing showToast() from src/utils/toast.ts." |
+| "Returns project object" | "Returns 201 with project. On validation: 400 with {error: string}. On duplicate name: 409. On DB error: 500 logged via existing logger." |
+
+**Error path rule:** For tasks at system boundaries (API endpoints, file I/O, DB operations, external APIs), specify error responses in `<action>`: what errors can occur, what status/shape is returned, and whether errors are logged.
 
 **Task ordering:** infrastructure before logic, models before services, services before routes.
 
@@ -154,6 +162,10 @@ Phase sizing is judgment-based. General target: 3-5 tasks per phase. Group by na
 ```
 
 Phase status: `pending` → `building` → `done`. Task IDs are globally unique across all phases.
+
+**Integration verify:** The last task's `<verify>` must exercise the complete feature path, not just its individual piece. If the feature spans multiple layers (API + UI, or CLI + service), the final verify should test the integrated flow.
+
+**Context-aware phasing:** Each phase should be completable within a single builder context window. If a phase requires reading >15 unique files or has >5 tasks with complex multi-file actions, split it. The builder runs with 40 maxTurns per phase — budget accordingly.
 
 ### Step 6 — Self-Check
 
@@ -198,6 +210,17 @@ No task depends on output from a later task.
 
 Each phase is self-contained — no half-finished features mid-phase.
 
+#### 6.8 — Adversarial Review
+
+For each task involving external boundaries (API endpoints, file I/O, DB operations, user input), ask:
+- What if this runs twice (idempotency)?
+- What if input is null, empty, or malformed?
+- What if a dependency (DB, API, file) is unavailable?
+- Are there race conditions with concurrent access?
+- Any security surface (injection, auth bypass, data exposure)?
+
+Add mitigations to the relevant task's `<action>` if issues are found.
+
 ### Step 7 — Write PLAN.md
 
 Write `.planning/features/{name}/PLAN.md`:
@@ -207,6 +230,12 @@ Write `.planning/features/{name}/PLAN.md`:
 feature: "{name}"
 goal: "[Goal derived from CONTEXT.md]"
 ---
+
+## Exploration Summary
+
+**Similar patterns:** [file:line references to closest existing implementations]
+**Architecture:** [module boundaries, layers, entry points relevant to this feature]
+**Conventions:** [naming, imports, error handling, test patterns]
 
 ## Research Notes
 
@@ -229,6 +258,7 @@ goal: "[Goal derived from CONTEXT.md]"
 <task id="1" status="pending">
   <name>...</name>
   <files>...</files>
+  <reference>...</reference>
   <action>...</action>
   <verify>...</verify>
 </task>

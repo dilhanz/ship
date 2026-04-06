@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.1.0
+
+### Added
+
+- **Reference field in tasks**: Plan tasks now include a `<reference>` pointing to the closest existing code pattern. The builder reads the referenced file first and uses it as a template, producing more consistent code.
+- **Adversarial self-review (Step 6.8)**: Plans are now stress-tested for idempotency, null inputs, unavailable dependencies, race conditions, and security surfaces before writing.
+- **Integration verify rule**: The last task's verify command must exercise the complete feature path end-to-end, not just an isolated unit.
+- **Exploration Summary in PLAN.md**: Key exploration findings (similar patterns, architecture, conventions) are now persisted in PLAN.md so the builder has codebase context without re-exploring.
+- **Error path specification**: Tasks at system boundaries must specify error responses (status codes, error shapes, logging) in their action instructions.
+- **Context-aware phasing**: Phases are now sized to fit within the builder's context window (40 maxTurns, ≤15 unique files per phase).
+- **Task dependencies**: Optional `depends` attribute on tasks for non-sequential dependency chains.
+- **Plan-verify enhanced checks (2.5)**: Verifier now validates reference file existence, dependency ordering, error path coverage, integration verify, and exploration summary presence.
+- **Builder reference awareness**: Builder reads `<reference>` files before implementing each task.
+
 ## 3.0.3
 
 ### Changed
