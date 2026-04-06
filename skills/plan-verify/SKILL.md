@@ -79,6 +79,14 @@ For each task's `<verify>` command:
 - Is the command syntactically valid for this project's setup?
 - Does it actually prove the task is done?
 
+#### 2.5 — Enhanced Field Checks
+
+- **Reference validity:** For each task with a `<reference>`, verify the referenced file and function/pattern exist via Glob/Grep
+- **Dependency ordering:** For tasks with a `depends` attribute, verify depended-on task IDs exist and appear earlier in execution order
+- **Error paths at boundaries:** For tasks targeting API endpoints, file I/O, or DB operations, check that `<action>` specifies error responses — flag missing error handling as WARNING
+- **Integration verify:** Check that the final task's `<verify>` tests the integrated feature flow, not just an isolated unit
+- **Exploration summary:** Verify PLAN.md contains an `## Exploration Summary` section with non-empty content
+
 ### Stage 3 — Feature Landscape Review
 
 Quick checks:
