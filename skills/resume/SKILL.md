@@ -22,7 +22,8 @@ Resume work on a feature.
 | `planned` | Run `/ship:plan-verify` |
 | `plan-verified` | Run `/ship:build` |
 | `building` | Run `/ship:build` (will resume from last completed task) |
-| `built` | Run `/ship:verify` |
+| `built` | Run `/ship:qa` |
+| `qa-passed` | Run `/ship:verify` |
 | `done` | Tell the user this feature is complete |
 
 5. Tell the user what you found and what the next step is, then invoke the appropriate command.
