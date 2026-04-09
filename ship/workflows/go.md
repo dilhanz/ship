@@ -22,16 +22,21 @@ Based on the feature's `status` in CONTEXT.md:
 | `planned` | Run plan-verify (invoke /ship:plan-verify skill) |
 | `plan-verified` | Run build (follow /ship:build skill instructions) |
 | `building` | Resume build (follow /ship:build skill instructions — skip completed tasks) |
-| `built` | Run verify (invoke /ship:verify skill) |
+| `built` | Run QA (invoke /ship:qa skill) |
+| `qa-passed` | Run verify (invoke /ship:verify skill) |
 | `done` | Run finish (invoke /ship:finish skill) |
 
 ### 3. Execute Remaining Steps
 
-Run each remaining step in sequence: **plan → plan-verify → build → verify → finish**
+Run each remaining step in sequence: **plan → plan-verify → build → qa → verify → finish**
 
 After each step completes successfully, check the output and continue to the next step.
 
 **Phase-aware building:** When build completes a phase but more phases remain (output shows PHASE COMPLETE instead of BUILD COMPLETE), loop back and continue building the next phase. Repeat until all phases are done or a stop condition is hit.
+
+**QA handling:** When QA completes, check the result:
+- If PASS (status set to `qa-passed`): continue to verify
+- If FAIL (status reset to `plan-verified`, fix tasks appended): stop and report — the user should review the fix tasks and run `/ship:build` to fix the bugs, then QA will run again
 
 **Plan verification:** When plan-verify completes, check the result:
 - If APPROVED: continue to the plan approval gate below
@@ -71,6 +76,7 @@ Plan review warnings: [N — or "None"]
 - Plan verification returns NEEDS-REVISION (critical issues found — replan needed)
 - Build returns CHECKPOINT (architectural blocker — needs replanning)
 - Build returns NEEDS_CONTEXT (missing information — user must provide it)
+- QA returns FAIL (critical/high bugs found — fix tasks written, needs rebuild)
 - Verification returns PARTIAL or FAIL (fix tasks were written — the user should review)
 - All steps complete (feature is finished)
 
