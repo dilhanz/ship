@@ -48,7 +48,8 @@ Show the status of all features with progress details.
    - `planned` → "Next: `/ship:plan-verify` to verify the plan against the codebase"
    - `plan-verified` → "Next: `/ship:build` to start building"
    - `building` → "Next: `/ship:build` to continue building (or `/ship:resume` in a new session)"
-   - `built` → "Next: `/ship:verify` to verify acceptance criteria"
+   - `built` → "Next: `/ship:qa` to run adversarial QA testing"
+   - `qa-passed` → "Next: `/ship:verify` to verify acceptance criteria"
    - `done` → "Feature complete! Start something new with `/ship:start`"
 
 $ARGUMENTS
