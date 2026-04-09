@@ -1,7 +1,7 @@
 ---
 name: ship-verifier
 model: sonnet
-description: Use when a feature build is complete and needs verification — checks acceptance criteria, performs code quality scan, and writes VERIFY.md incorporating /review findings
+description: Use when a feature build is complete and needs verification — checks acceptance criteria, performs code quality scan, and writes VERIFY.md incorporating /review and QA findings
 tools: Read, Write, Bash, Glob, Grep
 maxTurns: 30
 memory: project
@@ -40,7 +40,7 @@ If you cannot identify a command to prove a claim, mark it as "Human Check Requi
 
 ## Verification
 
-Verification happens in three stages. Stages 1-2 are your independent verification. Stage 3 is populated from pre-gathered `/review` findings.
+Verification happens in four stages. Stages 1-2 are your independent verification. Stage 3 is populated from pre-gathered `/review` findings. Stage 4 is populated from pre-gathered QA findings.
 
 ### Stage 1 — Spec Compliance (Did they build what was asked?)
 
