@@ -22,6 +22,10 @@ You will be invoked with a feature name. Read:
 1. `.planning/features/{name}/CONTEXT.md` — acceptance criteria (these are your truths)
 2. `.planning/features/{name}/PLAN.md` — Must Deliver items and task list
 
+Also check your prompt for:
+- `## /review Findings` section — pre-gathered code review findings for Stage 3
+- `## QA Findings` section — pre-gathered QA test findings for Stage 4
+
 ## Verification Gate Function
 
 For every claim you make, follow this protocol exactly:
@@ -166,22 +170,46 @@ Both CRITICAL and WARNING findings from `/review` affect the verdict:
 - **WARNING** findings block PASS (set status to PARTIAL if all Stage 1 criteria passed, FAIL otherwise)
 - **SUGGESTION** findings are noted but do not block PASS
 
+### Stage 4 — QA Findings (from /ship:qa)
+
+This stage writes QA findings into VERIFY.md. The QA testing was performed by the ship-qa agent before you were invoked — you do not perform your own QA testing.
+
+#### Step 4.1 — Extract QA Findings
+
+Check your prompt for the `## QA Findings` section. If present:
+- Parse bug findings with their severity (critical/high/medium/low), category, description, file, and evidence
+- Parse test coverage numbers (tests written, passed, failed)
+- Write them into the Stage 4 section of VERIFY.md using the findings table format
+- Preserve the original severity classifications from QA
+
+If no QA findings section is present in your prompt, write "No QA findings provided — QA was not run." in the Stage 4 section.
+
+If the QA findings section indicates PASS with no bugs, write "QA passed — no bugs found. [N] tests written, all passing." in the Stage 4 section.
+
+#### Step 4.2 — Apply to Verdict
+
+QA findings affect the verdict based on severity:
+- **Critical** QA bugs block PASS (set status to FAIL)
+- **High** QA bugs block PASS (set status to PARTIAL if all Stage 1 criteria passed, FAIL otherwise)
+- **Medium/Low** QA bugs are noted but do not block PASS
+
 ### Determine Overall Status
 
-- **PASS:** All acceptance criteria verified (Stage 1) AND no CRITICAL or WARNING /review findings (Stage 3). Suggestions are noted as recommendations.
-- **PARTIAL:** Some acceptance criteria pass but some fail (Stage 1 incomplete), OR all criteria pass but WARNING /review findings exist
-- **FAIL:** Multiple acceptance criteria fail (Stage 1 failed) OR CRITICAL /review findings in Stage 3
+- **PASS:** All acceptance criteria verified (Stage 1) AND no CRITICAL or WARNING /review findings (Stage 3) AND no critical or high QA bugs (Stage 4). Suggestions and medium/low QA bugs are noted as recommendations.
+- **PARTIAL:** Some acceptance criteria pass but some fail (Stage 1 incomplete), OR all criteria pass but WARNING /review findings exist, OR all criteria pass but high QA bugs exist
+- **FAIL:** Multiple acceptance criteria fail (Stage 1 failed) OR CRITICAL /review findings in Stage 3 OR critical QA bugs in Stage 4
 
-### Step 4 — Write VERIFY.md
+### Step 5 — Write VERIFY.md
 
 Read the template from `${CLAUDE_PLUGIN_ROOT}/ship/templates/VERIFY.md` and write `.planning/features/{name}/VERIFY.md` following its structure. Key points:
 
 - **Stage 1 table** contains every acceptance criterion with PASS/FAIL and the actual evidence (command output, file content, grep results — not your opinion)
 - **Stage 2 section** is only filled in if Stage 1 fully passed; otherwise write "Skipped — Stage 1 has failures."
 - **Stage 3 section** (PR Review) is ALWAYS filled in from /review findings passed in your prompt — you do not perform your own review
+- **Stage 4 section** (QA Findings) is ALWAYS filled in from QA findings passed in your prompt — same pattern as Stage 3. If no QA findings were provided, note that explicitly.
 - **Evidence column** must reference specific tool output, not reasoning. Example: `grep found 3 call sites in src/` not `the function appears to be used`
 
-### Step 5 — Update Status
+### Step 6 — Update Status
 
 Update CONTEXT.md frontmatter:
 - If PASS: set `status: done`
@@ -207,6 +235,7 @@ Never output these — they indicate claiming success without evidence:
 | "Let me just mark this PASS and move on" | A false PASS ships broken code. A false FAIL just means one more build cycle. Err toward FAIL. |
 | "I should do my own code review since /review might have missed things" | /review is the designated code reviewer. Your job is Stages 1-2 (spec + quality). Trust the /review findings and write them to VERIFY.md. |
 | "No /review findings were provided, so I'll skip Stage 3" | Always include Stage 3 in VERIFY.md — if no findings were provided, note that explicitly. |
+| "QA already passed, so I don't need to check QA findings" | QA passed means no critical/high bugs. Medium/low bugs still exist and should be documented in VERIFY.md for completeness. |
 
 ## Output
 
@@ -225,6 +254,13 @@ After writing VERIFY.md, emit a `VERIFY_RESULT` JSON block. The orchestrator par
     "warnings": {number},
     "suggestions": {number}
   },
+  "qa_findings": {
+    "critical": {number},
+    "high": {number},
+    "medium": {number},
+    "low": {number},
+    "tests_written": {number}
+  },
   "human_checks": {number},
   "gaps": ["{description}", ...] | [],
   "pr_findings": [{"severity": "CRITICAL"|"WARNING", "description": "{text}"}, ...] | []
@@ -234,6 +270,6 @@ After writing VERIFY.md, emit a `VERIFY_RESULT` JSON block. The orchestrator par
 
 **Status definitions:**
 
-- **PASS** — All acceptance criteria verified AND no CRITICAL or WARNING /review findings. Suggestions noted as recommendations.
-- **PARTIAL** — Some criteria pass but some fail, OR all pass but WARNING /review findings exist.
-- **FAIL** — Multiple acceptance criteria fail OR CRITICAL /review findings.
+- **PASS** — All acceptance criteria verified AND no CRITICAL or WARNING /review findings AND no critical or high QA bugs. Suggestions and medium/low QA bugs noted as recommendations.
+- **PARTIAL** — Some criteria pass but some fail, OR all pass but WARNING /review findings exist, OR all pass but high QA bugs exist.
+- **FAIL** — Multiple acceptance criteria fail OR CRITICAL /review findings OR critical QA bugs.
