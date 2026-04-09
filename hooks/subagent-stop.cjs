@@ -5,6 +5,7 @@
 // injects a recovery message so the orchestrator can handle the failure.
 
 const VALID_STATUSES = ['COMPLETE', 'COMPLETE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'CHECKPOINT'];
+const QA_VALID_STATUSES = ['PASS', 'FAIL'];
 
 /**
  * Extract and parse a fenced ```build_result JSON block from text.
@@ -54,6 +55,46 @@ function extractBuildResult(text) {
   return null;
 }
 
+/**
+ * Extract and parse a fenced ```qa_result JSON block from text.
+ * Returns the parsed object or null if not found/invalid.
+ */
+function extractQaResult(text) {
+  if (!text) return null;
+
+  // Match ```qa_result ... ``` fenced block
+  const fenceMatch = text.match(/```qa_result\s*\n([\s\S]*?)```/);
+  if (fenceMatch) {
+    try {
+      const parsed = JSON.parse(fenceMatch[1].trim());
+      if (parsed && QA_VALID_STATUSES.includes((parsed.status || '').toUpperCase())) {
+        return parsed;
+      }
+    } catch (e) { /* fall through */ }
+  }
+
+  // Fallback: try to find a raw JSON object with a "status" field matching QA statuses
+  const jsonMatch = text.match(/\{[\s\S]*?"status"\s*:\s*"([\w_]+)"[\s\S]*?\}/);
+  if (jsonMatch && QA_VALID_STATUSES.includes(jsonMatch[1].toUpperCase())) {
+    try {
+      const startIdx = text.indexOf(jsonMatch[0]);
+      let depth = 0;
+      let endIdx = startIdx;
+      for (let i = startIdx; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        if (text[i] === '}') depth--;
+        if (depth === 0) { endIdx = i + 1; break; }
+      }
+      const parsed = JSON.parse(text.slice(startIdx, endIdx));
+      if (parsed && QA_VALID_STATUSES.includes((parsed.status || '').toUpperCase())) {
+        return parsed;
+      }
+    } catch (e) { /* fall through */ }
+  }
+
+  return null;
+}
+
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => input += chunk);
@@ -61,12 +102,41 @@ process.stdin.on('end', () => {
   try {
     const data = JSON.parse(input);
 
-    // Only validate the ship-builder agent
-    if (!data.agent_name || data.agent_name !== 'ship-builder') {
+    // Only validate the ship-builder and ship-qa agents
+    if (!data.agent_name || !['ship-builder', 'ship-qa'].includes(data.agent_name)) {
       process.exit(0);
     }
 
     const lastMessage = data.last_assistant_message || '';
+
+    if (data.agent_name === 'ship-qa') {
+      const result = extractQaResult(lastMessage);
+
+      if (result) {
+        // Valid result — no intervention needed
+        process.exit(0);
+      }
+
+      // Invalid or missing result — inject recovery message
+      const lastLines = lastMessage.split('\n').filter(l => l.trim()).slice(-10).join('\n');
+      const truncated = lastLines.length > 500 ? lastLines.slice(-500) : lastLines;
+
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'SubagentStop',
+          additionalContext:
+            'QA AGENT STOPPED WITHOUT VALID RESULT. ' +
+            'The QA agent did not emit a valid qa_result JSON block with an expected status ' +
+            '(PASS, FAIL). ' +
+            'This likely means the QA agent hit its turn limit or encountered an error. ' +
+            'Last output fragment:\n' + truncated + '\n\n' +
+            'RECOVERY: Check if .planning/features/{name}/QA.md was written for partial results. ' +
+            'Consider re-invoking the QA agent.'
+        }
+      }));
+      return;
+    }
+
     const result = extractBuildResult(lastMessage);
 
     if (result) {
