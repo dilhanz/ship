@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.3.0
+
+### Added
+
+- **QA step**: New standalone QA step between build and verify. The `ship-qa` agent acts as an adversarial tester — auto-discovers the project's test framework, writes risk-based tests across 6 categories (happy path, boundary, negative input, error handling, concurrency, security), commits test files with `test(feature): ...` format, and produces a structured QA.md report with bug findings.
+- **`/ship:qa` skill**: Orchestrates QA execution, handles pass/fail status transitions, and appends fix tasks to PLAN.md on critical/high bugs.
+- **QA.md template**: Structured report format with risk assessment, test files written, bug findings table, exploratory analysis, and verdict.
+- **Verifier Stage 4**: Verifier agent now processes QA findings in a new Stage 4, affecting the verification verdict. Critical/high QA bugs block a PASS verdict.
+- **QA agent output validation**: `subagent-stop.cjs` hook validates `qa_result` JSON blocks from the `ship-qa` agent, with recovery message injection on missing/invalid output.
+- **New `qa-passed` status**: Status flow is now `brainstormed → planned → plan-verified → building → built → qa-passed → done`. QA gates verification — users cannot skip QA and go directly to verify.
+
+### Changed
+
+- **Go workflow**: Runs QA after build automatically. Stops on QA failure (fix tasks written, needs rebuild).
+- **Verify skill**: Now looks for features with status `qa-passed` (not `built`). Reads QA.md and passes findings to verifier agent.
+- **Resume, status, help skills**: Updated to reflect the new QA step in status tables, next-step suggestions, and command listings.
+
 ## 3.2.0
 
 ### Added

@@ -46,12 +46,13 @@ agents/*.md              3 specialized agents (brainstormer, builder, verifier)
 .planning/features/{feature-name}/
   CONTEXT.md    — brainstorm output (problem, decisions, acceptance criteria, scope)
   PLAN.md       — implementation plan with tasks (status tracked inline)
+  QA.md         — QA report (test plan, bugs, verdict)
   VERIFY.md     — verification report
 
 .planning/archive/{feature-name}/   — completed features moved here by /ship:finish
 ```
 
-Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `done`
+Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `qa-passed` → `done`
 
 ## Supporting Files
 
