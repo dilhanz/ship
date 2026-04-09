@@ -85,7 +85,7 @@ Each feature gets its own directory under `.planning/features/`:
 └── ...
 ```
 
-Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `done`
+Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `qa-passed` → `done`
 
 ## Core Principles
 
