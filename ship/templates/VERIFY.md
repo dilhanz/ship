@@ -45,6 +45,32 @@
 - **Warnings:** [N] (blocks PASS)
 - **Suggestions:** [N]
 
+## Stage 4 — QA Findings (from /ship:qa)
+
+[Always populated from the QA agent's QA.md report. QA testing was performed by the ship-qa agent before verification.]
+
+### Test Coverage
+
+- **Tests written:** [N]
+- **Tests passed:** [N] / [N]
+- **Categories tested:** [list of categories from QA.md]
+
+### Bug Findings
+
+| # | Severity | Category | Description | File | Status |
+|---|----------|----------|-------------|------|--------|
+| 1 | critical/high/medium/low | [category] | [description] | [file:line] | [Open/Fixed] |
+
+(If none: "No bugs found during QA.")
+
+### QA Summary
+
+- **Critical bugs:** [N]
+- **High bugs:** [N]
+- **Medium bugs:** [N] (noted, non-blocking)
+- **Low bugs:** [N] (noted, non-blocking)
+- **Verdict:** QA [PASS/FAIL]
+
 ## Human Checks Required
 
 [Items that cannot be verified programmatically:]
