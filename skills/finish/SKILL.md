@@ -3,10 +3,20 @@ name: ship:finish
 description: Use when a feature has been verified and needs to be completed — creates PR, merges locally, or keeps branch
 effort: medium
 allowed-tools: Read, Bash, Glob, AskUserQuestion
-argument-hint: "[feature-name]"
+argument-hint: "[feature-name] [--accept-inconclusive \"reason\"]"
 ---
 
 Finish the active feature after verification passes.
+
+## Parse Arguments
+
+Parse `$ARGUMENTS` (a single string) into two components:
+- `--accept-inconclusive "reason"` — if this flag appears anywhere in the string, set `ACCEPT_INCONCLUSIVE = true` and extract the quoted reason text (everything between the matching `"`s after the flag).
+- Remaining tokens (after removing the flag + reason) — treat as feature name.
+
+If `--accept-inconclusive` appears WITHOUT a quoted reason, abort and tell the user: `--accept-inconclusive requires a non-empty reason in quotes. Example: /ship:finish my-feature --accept-inconclusive "manually verified end-to-end on staging"`.
+
+If `ACCEPT_INCONCLUSIVE = false`, behave as before.
 
 ## Find Active Feature
 
@@ -16,6 +26,32 @@ Feature state is injected by hooks at session start and after compaction — che
 2. Otherwise, use injected feature state to identify the feature with status `done`
 3. If no injected state is available, fall back to scanning `.planning/features/*/CONTEXT.md`
 4. If no candidates, report that no finished features were found
+
+## Check INCONCLUSIVE Verdicts
+
+Read `.planning/features/{name}/VERIFY.md`. Search for any of:
+- `status: INCONCLUSIVE` in the frontmatter, OR
+- Any row in the Stage 1 table with verdict `INCONCLUSIVE`.
+
+If found:
+- **If `ACCEPT_INCONCLUSIVE = false`:** Display:
+  ```
+  Cannot finish — VERIFY.md contains INCONCLUSIVE verdicts:
+  {list each INCONCLUSIVE criterion}
+
+  Options:
+  1. Add runnable <verify> commands to PLAN.md for the inconclusive criteria, then re-run /ship:verify.
+  2. Override with: /ship:finish {name} --accept-inconclusive "reason for manual acceptance"
+  ```
+  Stop. Do not proceed to Prerequisites.
+- **If `ACCEPT_INCONCLUSIVE = true`:** Append the override record to VERIFY.md's `## Inconclusive Override` section:
+  - Set `Override applied: yes`
+  - Set `Reason: {the reason text}`
+  - Set `Operator: $(git config user.email || echo unknown)`
+  - Set `Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)`
+  Then continue to Prerequisites.
+
+If VERIFY.md has no INCONCLUSIVE markers, proceed directly to Prerequisites.
 
 ## Prerequisites
 
