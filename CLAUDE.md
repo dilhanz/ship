@@ -52,7 +52,7 @@ agents/*.md              3 specialized agents (brainstormer, builder, verifier)
 .planning/archive/{feature-name}/   — completed features moved here by /ship:finish
 ```
 
-Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `qa-passed` → `done`
+Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `qa-passed` → `done`. If QA fails: `built` → `qa-failed` → (rebuild via /ship:build) → `built` → /ship:qa retried.
 
 ## Supporting Files
 
