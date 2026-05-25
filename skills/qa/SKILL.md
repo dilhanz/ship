@@ -66,7 +66,7 @@ Bugs found:
 2. Display the success message above
 
 **If status is "FAIL":**
-1. Update CONTEXT.md frontmatter to `status: plan-verified`
+1. Update CONTEXT.md frontmatter to `status: qa-failed`. Do NOT clear any existing task done-marks in PLAN.md; only append the new "QA fixes" phase as already specified.
 2. Extract all bugs with severity "critical" or "high" from the `bugs` array
 3. For each critical/high bug, append a fix task to PLAN.md in this format:
 
