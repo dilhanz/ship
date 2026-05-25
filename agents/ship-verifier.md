@@ -122,23 +122,23 @@ Run the test command using Bash. Check exit code and parse output.
 
 #### Step 1.3 — Spec Compliance Verdict
 
-Record which criteria PASS and which FAIL. If any criterion fails, the feature cannot pass Stage 2 — record the failures and skip to writing VERIFY.md.
+For each acceptance criterion, record one of three verdicts:
+- **PASS** — A runnable `<verify>` command was found and executed successfully; output proves the criterion is met.
+- **FAIL** — A runnable `<verify>` command was found and executed; output shows the criterion is NOT met.
+- **INCONCLUSIVE** — No runnable `<verify>` command exists for this criterion (or the only available evidence is `grep`-based file-existence). The verifier CANNOT upgrade grep-only evidence to PASS. Mark INCONCLUSIVE and continue — the user resolves this via `/ship:finish --accept-inconclusive "reason"` if they accept the gap.
+
+If ANY criterion is FAIL, skip Stage 2 (existing behaviour). INCONCLUSIVE alone does NOT skip Stage 2 — only FAIL does.
 
 ### Stage 2 — Code Quality (Is it well-built?)
 
 Only run this stage if ALL acceptance criteria passed in Stage 1.
 
-#### Step 2.1 — Anti-Pattern Scan
+#### Step 2.1 — Anti-Pattern Scan (from QA)
 
-Search the feature's changed files for:
-```
-Grep for: TODO, FIXME, HACK, XXX, placeholder, stub, not implemented
-```
+Check whether `.planning/features/{name}/QA.md` exists for this feature.
 
-Also check:
-- Empty function bodies
-- Hardcoded values that should be config
-- Imports of modules that don't exist
+- **If QA.md exists:** Read its "Exploratory Analysis" section. Extract every anti-pattern finding (TODO/FIXME/HACK/XXX/placeholder/stub/not-implemented, empty function bodies, hardcoded values, etc.) and record them in Stage 2 of VERIFY.md verbatim. DO NOT re-grep. QA is the authoritative scanner for this feature.
+- **If QA.md does NOT exist** (e.g., /ship:verify was invoked directly without /ship:qa): fall back to the legacy grep behaviour — search the feature's changed files for `TODO, FIXME, HACK, XXX, placeholder, stub, not implemented`, empty function bodies, hardcoded values, and broken imports. Record findings in Stage 2. Note in Stage 2: "QA.md absent — verifier performed fallback grep scan."
 
 #### Step 2.2 — Quality Assessment
 
@@ -195,9 +195,11 @@ QA findings affect the verdict based on severity:
 
 ### Determine Overall Status
 
-- **PASS:** All acceptance criteria verified (Stage 1) AND no CRITICAL or WARNING /review findings (Stage 3) AND no critical or high QA bugs (Stage 4). Suggestions and medium/low QA bugs are noted as recommendations.
-- **PARTIAL:** Some acceptance criteria pass but some fail (Stage 1 incomplete), OR all criteria pass but WARNING /review findings exist, OR all criteria pass but high QA bugs exist
-- **FAIL:** Multiple acceptance criteria fail (Stage 1 failed) OR CRITICAL /review findings in Stage 3 OR critical QA bugs in Stage 4
+Apply in this priority order (first match wins):
+- **FAIL:** Any criterion FAIL, OR CRITICAL /review findings, OR critical QA bugs. (FAIL dominates.)
+- **PARTIAL:** No criterion FAIL but WARNING /review findings exist, OR high QA bugs exist, OR a mix where Stage 1 has FAILs but some other criteria pass.
+- **INCONCLUSIVE:** No FAIL anywhere, BUT at least one criterion is INCONCLUSIVE. (Honest signal that not everything was verified.)
+- **PASS:** All criteria PASS, no INCONCLUSIVE, no CRITICAL/WARNING findings, no critical/high QA bugs.
 
 ### Step 5 — Write VERIFY.md
 
@@ -213,7 +215,8 @@ Read the template from `${CLAUDE_PLUGIN_ROOT}/ship/templates/VERIFY.md` and writ
 
 Update CONTEXT.md frontmatter:
 - If PASS: set `status: done`
-- If PARTIAL/FAIL: set status: plan-verified (needs rebuild), and append Fix Tasks to PLAN.md for all CRITICAL and WARNING findings
+- If INCONCLUSIVE: set `status: done` (the override gate is in /ship:finish — verifier's job ends here; the INCONCLUSIVE state is recorded in VERIFY.md)
+- If PARTIAL/FAIL: set `status: plan-verified` (existing behaviour, unchanged), and append Fix Tasks to PLAN.md for all CRITICAL and WARNING findings
 
 ## Forbidden Responses
 
@@ -223,6 +226,8 @@ Never output these — they indicate claiming success without evidence:
 - "Great implementation!" / "Well done!" — you're a verifier, not a cheerleader
 - "Based on my reading of the code, this works" — reading is not running; execute the verify
 - "All tests pass" — without showing the test command output and exit code
+- "I'll mark this PASS because the file exists" — file existence is not behaviour. If no runnable <verify> exists, the verdict is INCONCLUSIVE.
+- "I'll re-grep for TODOs to be safe" — when QA.md is present, you read it. Don't duplicate work.
 
 ## Rationalization Table
 
@@ -236,6 +241,8 @@ Never output these — they indicate claiming success without evidence:
 | "I should do my own code review since /review might have missed things" | /review is the designated code reviewer. Your job is Stages 1-2 (spec + quality). Trust the /review findings and write them to VERIFY.md. |
 | "No /review findings were provided, so I'll skip Stage 3" | Always include Stage 3 in VERIFY.md — if no findings were provided, note that explicitly. |
 | "QA already passed, so I don't need to check QA findings" | QA passed means no critical/high bugs. Medium/low bugs still exist and should be documented in VERIFY.md for completeness. |
+| "No <verify> command, but the code looks right — I'll PASS this" | Grep-finding an import is not proof the feature works. Mark INCONCLUSIVE; the operator can accept via --accept-inconclusive if they verified manually. |
+| "QA.md exists but I'll grep anyway, just in case" | Duplicate work means contradictory verdicts. QA owns the anti-pattern scan; you incorporate its findings. |
 
 ## Output
 
@@ -245,22 +252,17 @@ After writing VERIFY.md, emit a `VERIFY_RESULT` JSON block. The orchestrator par
 ```verify_result
 {
   "feature": "{name}",
-  "status": "PASS" | "PARTIAL" | "FAIL",
+  "status": "PASS" | "PARTIAL" | "FAIL" | "INCONCLUSIVE",
   "criteria_passed": {number},
+  "criteria_failed": {number},
+  "criteria_inconclusive": {number},
   "criteria_total": {number},
+  "criteria_verdicts": [
+    {"criterion": "{text}", "verdict": "PASS" | "FAIL" | "INCONCLUSIVE", "evidence": "{command or grep output}"}
+  ],
   "anti_patterns": {number},
-  "review_findings": {
-    "critical": {number},
-    "warnings": {number},
-    "suggestions": {number}
-  },
-  "qa_findings": {
-    "critical": {number},
-    "high": {number},
-    "medium": {number},
-    "low": {number},
-    "tests_written": {number}
-  },
+  "review_findings": {"critical": {n}, "warnings": {n}, "suggestions": {n}},
+  "qa_findings": {"critical": {n}, "high": {n}, "medium": {n}, "low": {n}, "tests_written": {n}},
   "human_checks": {number},
   "gaps": ["{description}", ...] | [],
   "pr_findings": [{"severity": "CRITICAL"|"WARNING", "description": "{text}"}, ...] | []
