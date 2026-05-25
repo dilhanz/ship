@@ -1,6 +1,6 @@
 ---
 feature: "pipeline-rigor"
-status: built
+status: done
 created: "2026-05-25"
 ---
 
