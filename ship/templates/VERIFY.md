@@ -2,13 +2,15 @@
 
 **Feature:** {feature-name}
 **Verified:** {date}
-**Overall Status:** PASS | PARTIAL | FAIL
+**Overall Status:** PASS | PARTIAL | FAIL | INCONCLUSIVE
 
 ## Stage 1 — Spec Compliance
 
-| Criterion | Status | Evidence |
-|-----------|--------|----------|
-| [Criterion from CONTEXT.md] | PASS / FAIL / NEEDS-HUMAN | [Command run, output observed, or file path checked] |
+Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runnable verify command was available.
+
+| Criterion | Verdict | Evidence |
+|-----------|---------|----------|
+| [Criterion from CONTEXT.md] | PASS / FAIL / INCONCLUSIVE | [Command run, output observed, or file path checked] |
 
 ## Stage 2 — Code Quality
 
@@ -103,3 +105,13 @@
 **Done** | **Needs fixes** | **Needs human review**
 
 [1-2 sentences explaining the recommendation]
+
+## Inconclusive Override
+
+<!-- This section is populated by /ship:finish --accept-inconclusive "reason".
+     It is empty if no override was applied. -->
+
+- **Override applied:** {yes | no}
+- **Reason:** {operator-supplied reason if applied, otherwise N/A}
+- **Operator:** {git config user.email at time of override}
+- **Timestamp:** {ISO 8601 timestamp}
