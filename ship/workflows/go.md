@@ -24,6 +24,7 @@ Based on the feature's `status` in CONTEXT.md:
 | `building` | Resume build (follow /ship:build skill instructions — skip completed tasks) |
 | `built` | Run QA (invoke /ship:qa skill) |
 | `qa-passed` | Run verify (invoke /ship:verify skill) |
+| `qa-failed` | Resume build (invoke /ship:build skill), then re-run /ship:qa |
 | `done` | Run finish (invoke /ship:finish skill) |
 
 ### 3. Execute Remaining Steps
@@ -36,7 +37,7 @@ After each step completes successfully, check the output and continue to the nex
 
 **QA handling:** When QA completes, check the result:
 - If PASS (status set to `qa-passed`): continue to verify
-- If FAIL (status reset to `plan-verified`, fix tasks appended): stop and report — the user should review the fix tasks and run `/ship:build` to fix the bugs, then QA will run again
+- If FAIL (status set to `qa-failed`, fix tasks appended): the user should review the fix tasks and run `/ship:build` to implement them; QA will run again automatically when /ship:go resumes.
 
 **Plan verification:** When plan-verify completes, check the result:
 - If APPROVED: continue to the plan approval gate below
