@@ -1,6 +1,6 @@
 ---
 feature: "pipeline-rigor"
-status: plan-verified
+status: built
 created: "2026-05-25"
 ---
 

@@ -84,9 +84,9 @@ Domain familiar — no additional research needed. The internal audit and extern
 
 ---
 
-<phase id="1" name="Status plumbing (qa-failed surface)" status="pending">
+<phase id="1" name="Status plumbing (qa-failed surface)" status="done">
 
-<task id="1" status="pending">
+<task id="1" status="done" commit="a361549">
   <name>Update CLAUDE.md status flow to include qa-failed</name>
   <files>CLAUDE.md</files>
   <reference>CLAUDE.md:55 — current status flow line</reference>
@@ -94,7 +94,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>grep -q "qa-failed" CLAUDE.md && grep -q "rebuild via /ship:build" CLAUDE.md</verify>
 </task>
 
-<task id="2" status="pending">
+<task id="2" status="done" commit="84824cc">
   <name>Set qa-failed status on QA FAIL in /ship:qa skill</name>
   <files>skills/qa/SKILL.md</files>
   <reference>skills/qa/SKILL.md:62-92 — current "Handle Result" section</reference>
@@ -102,7 +102,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>grep -q "status: qa-failed" skills/qa/SKILL.md && ! grep -q "status: plan-verified" skills/qa/SKILL.md</verify>
 </task>
 
-<task id="3" status="pending">
+<task id="3" status="done" commit="d40a23e">
   <name>Add qa-failed routing to /ship:resume skill</name>
   <files>skills/resume/SKILL.md</files>
   <reference>skills/resume/SKILL.md:19-27 — current Status → Action table</reference>
@@ -110,7 +110,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>grep -q "qa-failed" skills/resume/SKILL.md && grep -q "skips plan-verify" skills/resume/SKILL.md</verify>
 </task>
 
-<task id="4" status="pending">
+<task id="4" status="done" commit="8b8f31e">
   <name>Add qa-failed display + next-step to /ship:status skill</name>
   <files>skills/status/SKILL.md</files>
   <reference>skills/status/SKILL.md:46-53 — current "Next step" list</reference>
@@ -118,7 +118,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>grep -q "qa-failed" skills/status/SKILL.md && grep -q "fix bugs found by QA" skills/status/SKILL.md</verify>
 </task>
 
-<task id="5" status="pending">
+<task id="5" status="done" commit="a790c5a">
   <name>Update /ship:go workflow to handle qa-failed</name>
   <files>ship/workflows/go.md</files>
   <reference>ship/workflows/go.md:19-27 (status table), 37-39 (QA handling block)</reference>
@@ -130,9 +130,9 @@ Domain familiar — no additional research needed. The internal audit and extern
 
 </phase>
 
-<phase id="2" name="Agent behaviour upgrades" status="pending">
+<phase id="2" name="Agent behaviour upgrades" status="done">
 
-<task id="6" status="pending">
+<task id="6" status="done" commit="b230ae7">
   <name>Add adaptive NFR probe to ship-brainstormer agent</name>
   <files>agents/ship-brainstormer.md</files>
   <reference>agents/ship-brainstormer.md:38-58 — Phase 1 (Read the Codebase) + Phase 2 (Understand the Problem). Signal-detection pattern modelled on agents/ship-qa.md:24-31 (test framework auto-discovery).</reference>
@@ -180,7 +180,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>grep -q "NFR Probing" agents/ship-brainstormer.md && grep -q "INFRA_DETECTED" agents/ship-brainstormer.md && grep -q "Dockerfile" agents/ship-brainstormer.md</verify>
 </task>
 
-<task id="7" status="pending">
+<task id="7" status="done" commit="b25b047">
   <name>Make ship-qa agent use git diff as source of truth + own scan</name>
   <files>agents/ship-qa.md</files>
   <reference>agents/ship-qa.md:90-97 — current Step 6 (Exploratory Analysis) reads `PLAN.md's <files> elements`. Pattern for git command execution: existing `git status` / `git commit` usage elsewhere in the file.</reference>
@@ -225,7 +225,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>grep -q "merge-base HEAD main" agents/ship-qa.md && grep -q "Reviewed files (from git diff)" agents/ship-qa.md && grep -q "fall back to" agents/ship-qa.md</verify>
 </task>
 
-<task id="8" status="pending">
+<task id="8" status="done" commit="2b3d873">
   <name>Add INCONCLUSIVE verdict + read-QA.md to ship-verifier agent</name>
   <files>agents/ship-verifier.md</files>
   <reference>agents/ship-verifier.md:120-141 (Step 1.3 + Stage 2.1), 196-216 (Determine Overall Status + Step 6), 240-269 (verify_result JSON schema), 218-238 (Forbidden Responses + Rationalization Table)</reference>
@@ -314,9 +314,9 @@ Domain familiar — no additional research needed. The internal audit and extern
 
 </phase>
 
-<phase id="3" name="Template + skill UX (override flow)" status="pending">
+<phase id="3" name="Template + skill UX (override flow)" status="done">
 
-<task id="9" status="pending">
+<task id="9" status="done" commit="aaa2457">
   <name>Update VERIFY.md template for per-criterion verdicts and override section</name>
   <files>ship/templates/VERIFY.md</files>
   <reference>ship/templates/VERIFY.md:1-105 (entire template — touches frontmatter, Stage 1 table, end-of-file structure)</reference>
@@ -342,7 +342,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>grep -q "INCONCLUSIVE" ship/templates/VERIFY.md && grep -q "Inconclusive Override" ship/templates/VERIFY.md && grep -q "| Verdict |" ship/templates/VERIFY.md</verify>
 </task>
 
-<task id="10" status="pending">
+<task id="10" status="done" commit="b006bb5">
   <name>Add --accept-inconclusive flag handling to /ship:finish skill</name>
   <files>skills/finish/SKILL.md</files>
   <reference>skills/finish/SKILL.md:1-7 (frontmatter), 9-19 (Find Active Feature), 20-29 (Prerequisites). Argument parsing pattern: existing `$ARGUMENTS` handling at line 15.</reference>
@@ -397,7 +397,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>grep -q "ACCEPT_INCONCLUSIVE" skills/finish/SKILL.md && grep -q -- "--accept-inconclusive" skills/finish/SKILL.md && grep -q "git config user.email" skills/finish/SKILL.md</verify>
 </task>
 
-<task id="11" status="pending">
+<task id="11" status="done" commit="eb8f97c">
   <name>Document INCONCLUSIVE + override + qa-failed in /ship:help</name>
   <files>skills/help/SKILL.md</files>
   <reference>skills/help/SKILL.md:1-40 — current command-reference body. Format pattern: section headed by `Commands:` with one-line-per-command descriptions, then a `Flow:` block.</reference>
@@ -422,9 +422,9 @@ Domain familiar — no additional research needed. The internal audit and extern
 
 </phase>
 
-<phase id="4" name="Dogfood fixture + regression tests" status="pending">
+<phase id="4" name="Dogfood fixture + regression tests" status="done">
 
-<task id="12" status="pending">
+<task id="12" status="done" commit="595caac">
   <name>Create regression tests for all pipeline-rigor surface changes</name>
   <files>tests/pipeline-rigor.test.js</files>
   <reference>tests/subagent-stop.test.js — structure for node:test + node:assert/strict; file-content assertion style used throughout the existing Ship tests.</reference>
@@ -447,7 +447,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>node --test tests/pipeline-rigor.test.js</verify>
 </task>
 
-<task id="13" status="pending">
+<task id="13" status="done" commit="c4ffb6e">
   <name>Create test-rigor exemplar fixture</name>
   <files>.planning/features/test-rigor/CONTEXT.md, .planning/features/test-rigor/README.md</files>
   <reference>.planning/features/qa-step/CONTEXT.md (structure of a real Ship CONTEXT.md). For deliberate INCONCLUSIVE: include criteria with no runnable verify (a manual UX check).</reference>
@@ -526,7 +526,7 @@ Domain familiar — no additional research needed. The internal audit and extern
   <verify>test -f .planning/features/test-rigor/CONTEXT.md && test -f .planning/features/test-rigor/README.md && grep -q "exemplar: true" .planning/features/test-rigor/CONTEXT.md && grep -q "DO NOT BUILD" .planning/features/test-rigor/README.md</verify>
 </task>
 
-<task id="14" status="pending" depends="1,2,3,4,5,6,7,8,9,10,11">
+<task id="14" status="done" depends="1,2,3,4,5,6,7,8,9,10,11">
   <name>Final integration grep — confirm qa-failed routings are consistent and no stale plan-verified rollback references remain</name>
   <files>(no file edits — verification only; if drift detected, fix on the spot in the relevant file)</files>
   <reference>All status-routing files modified in phase 1 + the verifier agent from task 8.</reference>
