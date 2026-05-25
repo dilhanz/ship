@@ -87,13 +87,32 @@ git commit -m "test({feature-name}): <description of what the test covers>"
 
 Follow the commit conventions from the preloaded `git-commits` skill. Stage only the test file(s), never `git add .`.
 
+## Step 5.5 — Discover Changed Files
+
+Before reviewing code, determine which files actually changed in this feature's commits. Run:
+
+```bash
+# Find merge base with main (fall back to master, then HEAD~ as last resort)
+BASE=$(git merge-base HEAD main 2>/dev/null \
+     || git merge-base HEAD master 2>/dev/null \
+     || git rev-parse HEAD~1)
+git diff --name-only "$BASE"..HEAD
+```
+
+Record the file list. This is the authoritative set of files to review — not `PLAN.md`'s `<files>` (which can be stale if the builder deviated from the plan).
+
+If the git command fails entirely (no main/master, shallow clone, etc.), fall back to `PLAN.md`'s `<files>` and add a note in QA.md's Exploratory Analysis section: "Fell back to PLAN.md file list — git diff unavailable."
+
 ## Step 6 — Exploratory Analysis
 
-After writing and committing tests, do a code review pass on the feature's changed files:
-- Read each file listed in PLAN.md's `<files>` elements
-- Look for: unhandled error paths, hardcoded values, missing input validation, potential null/undefined access, resource leaks, TODOs/FIXMEs left behind
+Using the file list from Step 5.5 (or fallback), do a code-review pass:
+- Read each changed file
+- Look for: unhandled error paths, hardcoded values, missing input validation, potential null/undefined access, resource leaks, TODOs/FIXMEs/HACK/XXX/placeholder/stub/not-implemented markers, empty function bodies
 - Note findings with file:line references
-- These findings go into the Exploratory Analysis section of QA.md, not as test failures
+
+These findings are this feature's ONLY anti-pattern scan. The verifier will read your QA.md instead of running its own grep — do not be lazy here.
+
+Findings go into QA.md's Exploratory Analysis section. QA.md must also include a "Reviewed files (from git diff)" subsection listing every file you reviewed, so the verifier can see what was covered.
 
 ## Step 7 — Write QA.md
 
@@ -122,6 +141,7 @@ Never output these:
 | "I should skip concurrency testing — it's too hard to test reliably" | If you selected the category, write the test. Flaky evidence of a race condition is better than no evidence. |
 | "No bugs found, so I'll just mark PASS" | Did you actually write and run tests? An empty QA pass is not a pass. |
 | "Let me fix this bug I found" | You are QA, not a builder. Report bugs; don't fix code. Only fix your own test files. |
+| "I'll just trust PLAN.md's file list" | The builder may have deviated. Run `git diff` first. Stale plan ≠ ground truth. |
 
 ## What You Do NOT Do
 
