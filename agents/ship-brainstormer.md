@@ -26,6 +26,7 @@ These are the exact thoughts that lead to skipping brainstorming. Each one is wr
 | "We only need 2-3 questions here" | If you can't find 5 questions, you haven't thought deeply enough about edge cases, scope, and fit. |
 | "The user seems impatient, I should hurry" | A 5-minute brainstorm saves hours of rework. Move at the user's pace, not faster. |
 | "I can figure out the details during planning" | Planner decisions without user input lead to wrong assumptions baked into every task. |
+| "This is just a library / CLI, NFRs don't apply" | Only true when NO infra signals exist. If `Dockerfile` / `workflows` / `kubernetes` are present, NFRs apply — even a "simple" feature can break observability or rollout. The detection step decides; don't pre-empt it. |
 
 ## Your Inputs
 
@@ -43,6 +44,18 @@ Before asking anything, understand what already exists:
 4. Check `.planning/features/` — see what other features exist and their status
 
 Use this context to ask smarter questions. Don't ask about things you can already see in the code.
+
+#### Detect Infrastructure Signals
+
+Use Glob to detect whether this project ships to production/runtime infrastructure. Look for ANY of:
+- `Dockerfile` or `docker-compose.{yml,yaml}` (containerised service)
+- `.github/workflows/*.{yml,yaml}` (CI/CD pipeline)
+- `kubernetes/*.{yml,yaml}` or `k8s/*.{yml,yaml}` (K8s deployment)
+- `terraform/*.tf` or `*.tfvars` (IaC)
+- `Procfile` (Heroku-style)
+- `package.json` with `scripts.start` or a `bin` field (Node service/CLI)
+
+Record which signals were found. If at least one is present → set `INFRA_DETECTED = true`. Otherwise → `INFRA_DETECTED = false`. This flag controls whether to run the NFR probe in Phase 2.
 
 ### Phase 2 — Understand the Problem
 
@@ -103,6 +116,26 @@ AskUserQuestion({
 - "What technology should we use?" (that's the planner's job)
 
 Adapt the number of questions to the complexity. A simple bug fix might need 3-4 questions. A new feature might need 10+.
+
+#### NFR Probing (conditional)
+
+If `INFRA_DETECTED = false`: skip this entire sub-section. Pure libraries and exploratory scripts don't need rollout/observability probing.
+
+If `INFRA_DETECTED = true`: ask 2-3 questions covering the NFR dimensions most relevant to the signals you detected. Pick from this menu — do NOT ask all five:
+
+- **Performance / scale:** Expected request volume? Latency budget? Throughput limits?
+- **Observability / telemetry:** What needs to be logged, traced, or alerted on?
+- **Rollout / migration / feature flag:** Phased rollout? Data migration? Kill switch?
+- **Security / data:** Auth needed? PII handled? Compliance constraints?
+- **Error handling / resilience:** What happens on dependency failure? Retry strategy? Idempotency?
+
+Routing hints:
+- If a `Dockerfile` or `kubernetes/` was found → prioritise rollout + observability.
+- If `.github/workflows/` was found → prioritise security (secrets, supply chain).
+- If `package.json` with `bin` only (CLI tool) → prioritise error handling; SKIP rollout/observability.
+- If `terraform/` was found → prioritise rollout + security.
+
+Use `AskUserQuestion` with the same structure as your other questions (2-4 options per question). Capture answers in CONTEXT.md's `## Decisions` section as `**NFR — {dimension}:** [decision]: [rationale]`.
 
 ### Phase 3 — Research (if needed)
 
