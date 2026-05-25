@@ -1,5 +1,30 @@
 # Changelog
 
+## 3.4.0
+
+Pipeline rigor — five interlocking changes that tighten the brainstorm → plan → build → QA → verify pipeline.
+
+### Added
+
+- **Adaptive NFR probe in brainstormer**: Detects project signals (`package.json`, `Dockerfile`, `.github/workflows/`, prior CONTEXTs) and asks only the non-functional requirement questions that apply — perf/scale, observability, rollout/flag/migration, security/data, error handling. Skips irrelevant NFRs (e.g., no rollout questions for a CLI tool) to avoid "N/A spam."
+- **INCONCLUSIVE verify verdict**: Verifier now emits per-criterion verdicts ∈ {PASS, FAIL, INCONCLUSIVE}. Criteria with no runnable `<verify>` command that would otherwise have been judged via grep-only evidence are marked INCONCLUSIVE instead of being rubber-stamped as PASS.
+- **`qa-failed` status**: New first-class status replaces the broken `plan-verified` rollback on QA failure. Distinct from `plan-verified`; signals "plan was valid, implementation was buggy, fix tasks appended." Original task completion marks are preserved; new fix tasks append to PLAN.md under `## Fix Tasks (from QA)`. Status flow is now `brainstormed → planned → plan-verified → building → built → qa-passed → done`, with `qa-failed` as a side branch from `built`.
+- **`--accept-inconclusive` override for `/ship:finish`**: When VERIFY.md contains any INCONCLUSIVE verdict, `/ship:finish` refuses to proceed unless `--accept-inconclusive` is passed. The override and reason are written into VERIFY.md for audit trail.
+- **`test-rigor` exemplar fixture**: Synthetic dogfood feature preserved in the repo at `.planning/features/test-rigor/` as a reference exemplar of a feature walked through the upgraded pipeline end-to-end.
+
+### Changed
+
+- **QA agent uses git diff as source of truth**: QA now reads `git diff $(git merge-base HEAD main)..HEAD` instead of trusting `PLAN.md`'s `<files>` list. Catches builder deviations (Rule 1) that the static plan misses. QA.md cites files from the diff.
+- **QA owns the anti-pattern scan**: TODO/FIXME/HACK/XXX/placeholder/stub/not-implemented scanning moved entirely into QA. The verifier now reads `QA.md` instead of re-scanning, eliminating duplicated grep work and contradictory verdicts.
+- **VERIFY.md template**: Updated for per-criterion verdicts and override recording.
+- **`/ship:resume`, `/ship:status`, `/ship:go` skills**: Recognize `qa-failed` as a first-class status. Resume routes from `qa-failed` to `/ship:build` then `/ship:qa`, skipping plan-verify.
+- **`/ship:help` skill**: Documents the INCONCLUSIVE concept, `--accept-inconclusive` override, and `qa-failed` status.
+- **CLAUDE.md**: Status-flow section updated to include `qa-failed`.
+
+### Compatibility
+
+In-flight features keep their original semantics; no auto-migration. New rules apply only to features started after 3.4.0.
+
 ## 3.3.0
 
 ### Added
