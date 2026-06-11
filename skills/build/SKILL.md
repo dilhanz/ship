@@ -2,7 +2,7 @@
 name: ship:build
 description: Use when a feature plan has been verified and is ready for implementation — executes tasks with atomic commits
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, SendMessage
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, SendMessage, AskUserQuestion
 argument-hint: "[feature-name]"
 ---
 
@@ -125,6 +125,99 @@ Proceed to the status handling below (### 3).
 Parse the builder agent's `build_result` JSON block. Extract the `status` field.
 
 **If status is "COMPLETE":**
+Run the Trust-But-Verify gate (3.1), then the Review Gate (3.2), then mark the phase done.
+
+**If status is "COMPLETE_WITH_CONCERNS":**
+Run the Trust-But-Verify gate (3.1), then the Review Gate (3.2), then mark the phase done.
+
+### 3.1 Trust-But-Verify
+
+The builder self-reports COMPLETE — independently confirm it before reviewing or marking the phase done.
+
+1. From PLAN.md, collect the `<verify>` command of every task in the just-completed phase (tasks now marked status="done"). Re-run each command via Bash, in task order. Capture output and exit codes.
+2. **All pass:** proceed to the Review Gate (3.2).
+3. **Any fail:** SendMessage to the builder agent:
+
+```
+The orchestrator re-ran this phase's verify commands and task {id} ({task name}) failed:
+
+Command: {verify command}
+Exit code: {code}
+Output:
+{output, truncated to last 50 lines}
+
+The task is not actually complete. Diagnose and fix the issue, re-run the verify command
+until it passes, commit the fix with "fix({feature-name}): {short description}",
+and emit an updated build_result JSON block.
+```
+
+   If multiple verifies failed, include all of them in one message.
+4. After the builder returns, re-run ONLY the previously-failing verify commands.
+5. **Still failing:** stop the build with CHECKPOINT semantics — leave CONTEXT.md status as `building`, do NOT mark the phase done, and output:
+
+```
+## CHECKPOINT REACHED
+
+Feature: {name}
+Phase: {phase-id} — {phase-name}
+Reason: verify command for task {id} fails even after a fix round — builder reported COMPLETE but the work does not verify.
+Failing command: {command}
+
+Recommendation: investigate manually or replan this phase with /ship:plan {name}.
+```
+
+   **Stop the loop** — do not continue to the next phase, do not run the Review Gate.
+6. **Now passing:** proceed to the Review Gate (3.2). Fix commits made here are included in the review diff range.
+
+Edge rule: if a verify command cannot run at all in the orchestrator environment (missing tool, environment-specific path) and the failure output clearly shows an environment error rather than a code failure, record "verify {id} not re-runnable by orchestrator" as a phase concern and treat that single verify as passed — do not send environment problems to the builder.
+
+### 3.2 Review Gate
+
+1. Compute the phase diff range: take the first commit hash from `result.commits` (plus any fix-round commits from 3.1) and run `git rev-parse {first-commit}~1` to get the base. The range is `{base}..HEAD`. If `result.commits` is empty or git rev-parse fails, skip the review with a "review skipped: no diff range" concern and proceed to mark the phase done.
+2. Invoke the `ship-reviewer` agent via the Agent tool:
+
+```
+Review feature: {name}
+Phase: {phase-id} — {phase-name}
+Diff range: {base}..HEAD
+
+Review the phase diff per your instructions. Read:
+- .planning/features/{name}/PLAN.md
+- .planning/features/{name}/CONTEXT.md
+
+Emit your review_result JSON block when done.
+```
+
+3. Parse the fenced `review_result` JSON block from the reviewer's output. **If the Agent call errors, or no valid review_result block is found:** do NOT retry. Append to REVIEW.md (format below) a "Review skipped — reviewer failed or returned no parseable result" line for this phase, add "review skipped for phase {id}" to the phase's concerns, and proceed to mark the phase done. A broken reviewer must never block a working build.
+4. **If status is "APPROVED":** append all findings (if any) to REVIEW.md marked `recorded`. Proceed to mark the phase done.
+5. **If status is "NEEDS_FIXES":** append all findings to REVIEW.md, then run exactly one fix round:
+   a. SendMessage to the **builder** agent (the same agent from step 2 of the phase loop):
+
+```
+The phase reviewer found issues that must be fixed before this phase can complete.
+Fix ONLY these findings — do not refactor beyond them:
+
+{numbered list of critical and high findings: severity, file, description, recommendation}
+
+For each fix: implement it, re-run the affected task's <verify> command, and commit
+with "fix({feature-name}): {short description}". Then emit an updated build_result JSON block.
+```
+
+   b. After the builder returns, SendMessage to the **reviewer** agent: "The builder applied fixes for your critical/high findings. New diff range: {base}..HEAD. Re-review ONLY whether each critical/high finding from your previous review is now resolved. Emit an updated review_result JSON block listing any still-unresolved findings." If this SendMessage fails or returns no parseable review_result, treat all findings from round 1 as unresolved concerns (do not loop).
+   c. **One round only.** If the re-review still reports critical/high findings, record them in REVIEW.md as `unresolved`, add each to the phase's concerns list, and proceed to mark the phase done. Surface unresolved findings in the PHASE COMPLETE output under "Concerns".
+6. Update REVIEW.md outcome markers: findings fixed in round 5a get `fixed in {commit-hash}`; medium/low get `recorded`; leftover critical/high get `unresolved`.
+
+**REVIEW.md format** (orchestrator-owned; create `.planning/features/{name}/REVIEW.md` on first append):
+
+```markdown
+# Review Log — {feature-name}
+
+## Phase {id} — {phase-name} (round {1|2})
+Status: {APPROVED | NEEDS_FIXES | SKIPPED}
+- [{severity}] {file}: {description} — {fixed in {hash} | unresolved | recorded}
+```
+
+After gates complete (both 3.1 and 3.2):
 - If phased, mark the current phase `status="done"` in PLAN.md
 - Output to the user (use values from the JSON fields):
 
@@ -136,13 +229,10 @@ Phase: [M] / [total] — [phase name]
 Tasks completed: {result.tasks_completed} / {result.tasks_total} in this phase
 Overall progress: [done_across_all_phases] / [total_across_all_phases] tasks
 Commits: {result.commits joined with ", "}
+Review: {APPROVED | {N} findings ({M} fixed, {K} unresolved) | skipped}
 ```
 
-- Then **continue the loop** to the next pending phase
-
-**If status is "COMPLETE_WITH_CONCERNS":**
-- Same as COMPLETE (mark phase done, continue loop)
-- But also surface the `concerns` array to the user:
+- For COMPLETE_WITH_CONCERNS, also surface the `concerns` array plus any review concerns:
 
 ```
 ## PHASE COMPLETE (with concerns)
@@ -151,6 +241,7 @@ Feature: {result.feature}
 Phase: [M] / [total] — [phase name]
 Tasks completed: {result.tasks_completed} / {result.tasks_total} in this phase
 Commits: {result.commits joined with ", "}
+Review: {APPROVED | {N} findings ({M} fixed, {K} unresolved) | skipped}
 
 Concerns flagged by builder:
 - {each item from result.concerns}
@@ -158,10 +249,26 @@ Concerns flagged by builder:
 Continuing to next phase. Review concerns after build completes.
 ```
 
+- Then **continue the loop** to the next pending phase
+
 **If status is "NEEDS_CONTEXT":**
-- Leave CONTEXT.md status as `building`
-- Output to the user the `missing` field value
-- **Stop the loop** — the user must provide the missing context before continuing
+- Do NOT stop. The builder agent is still alive and holds warm context — collect the missing information and send it back.
+- Track how many NEEDS_CONTEXT rounds have occurred for this phase (start at 0, increment each time).
+
+a. Use AskUserQuestion with one question built from `result.missing`: question text "The builder needs missing context to continue: {result.missing} — how should it proceed?", header "Context". Offer 2-4 plausible answer options when `result.missing` implies a choice (e.g. naming, approach, config value); when it is open-ended (e.g. an API key or URL), offer your best-guess options anyway — the user can always select "Other" and type a free-form answer.
+b. SendMessage to the builder agent:
+
+```
+The user provided the missing context you asked for:
+
+Question: {result.missing}
+Answer: {user's answer}
+
+Continue with the remaining tasks in this phase and emit an updated build_result JSON block when done.
+```
+
+c. Parse the new build_result from the SendMessage response and route it back through section 3's status handling (COMPLETE → gates 3.1/3.2; another NEEDS_CONTEXT → repeat this flow).
+d. **Cap: 2 NEEDS_CONTEXT rounds per phase.** On a third NEEDS_CONTEXT in the same phase, stop the loop, leave CONTEXT.md status as `building`, and output:
 
 ```
 ## CONTEXT NEEDED
@@ -172,6 +279,8 @@ Missing: {result.missing}
 
 Provide the missing information, then run /ship:build to continue.
 ```
+
+   Also append: "The builder asked for context 3 times in this phase — the plan likely has a gap. Consider /ship:plan {name} to replan."
 
 **If status is "CHECKPOINT":**
 - Leave CONTEXT.md status as `building`

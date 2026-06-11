@@ -257,3 +257,156 @@ describe('subagent-stop hook — failure cases', () => {
     assert.equal(output, null, 'missing agent_name should exit silently');
   });
 });
+
+/** Helper: build a fenced review_result JSON block */
+function reviewResultJson(obj) {
+  return '```review_result\n' + JSON.stringify(obj, null, 2) + '\n```';
+}
+
+describe('subagent-stop hook — review_result', () => {
+  it('passes through valid APPROVED result with empty findings', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-reviewer',
+      last_assistant_message: reviewResultJson({
+        feature: 'my-feature',
+        scope: 'phase:1',
+        status: 'APPROVED',
+        findings: []
+      }),
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'valid APPROVED with empty findings should not inject recovery');
+  });
+
+  it('passes through valid NEEDS_FIXES result with a critical finding', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-reviewer',
+      last_assistant_message: reviewResultJson({
+        feature: 'my-feature',
+        scope: 'phase:2',
+        status: 'NEEDS_FIXES',
+        findings: [
+          {
+            id: 1,
+            severity: 'critical',
+            file: 'src/x.js:10',
+            description: 'null dereference on missing config key',
+            recommendation: 'add null check before accessing config.value'
+          }
+        ]
+      }),
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'valid NEEDS_FIXES with critical finding should not inject recovery');
+  });
+
+  it('passes through APPROVED with medium/low findings present', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-reviewer',
+      last_assistant_message: reviewResultJson({
+        feature: 'my-feature',
+        scope: 'phase:1',
+        status: 'APPROVED',
+        findings: [
+          {
+            id: 1,
+            severity: 'medium',
+            file: 'hooks/foo.cjs:42',
+            description: 'misleading variable name may confuse future editors',
+            recommendation: 'rename result to parsedResult'
+          },
+          {
+            id: 2,
+            severity: 'low',
+            file: 'hooks/foo.cjs:55',
+            description: 'missing trailing newline in output',
+            recommendation: 'append newline for POSIX compliance'
+          }
+        ]
+      }),
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'APPROVED with medium/low findings should not inject recovery');
+  });
+
+  it('handles review_result JSON embedded in surrounding prose text', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-reviewer',
+      last_assistant_message:
+        'I have reviewed the phase diff. Here is my result:\n\n' +
+        reviewResultJson({
+          feature: 'my-feature',
+          scope: 'phase:1',
+          status: 'APPROVED',
+          findings: []
+        }) +
+        '\n\nReview complete.',
+    });
+    assert.equal(code, 0);
+    assert.equal(output, null, 'review_result in surrounding text should be valid');
+  });
+
+  it('injects recovery for an unknown status (e.g. LGTM)', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-reviewer',
+      last_assistant_message: reviewResultJson({
+        feature: 'my-feature',
+        scope: 'phase:1',
+        status: 'LGTM',
+        findings: []
+      }),
+    });
+    assert.equal(code, 0);
+    assert.ok(output, 'should inject recovery for unknown status');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('REVIEWER AGENT STOPPED WITHOUT VALID RESULT'));
+    assert.ok(msg.includes('review skipped'));
+  });
+
+  it('injects recovery for missing result (plain prose from ship-reviewer)', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-reviewer',
+      last_assistant_message: 'I reviewed the diff and everything looks fine to me.',
+    });
+    assert.equal(code, 0);
+    assert.ok(output, 'should inject recovery for missing result');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('REVIEWER AGENT STOPPED WITHOUT VALID RESULT'));
+    assert.ok(msg.includes('review skipped'));
+  });
+
+  it('injects recovery for malformed JSON inside a review_result fence', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-reviewer',
+      last_assistant_message: '```review_result\n{not valid json\n```',
+    });
+    assert.equal(code, 0);
+    assert.ok(output, 'should inject recovery for malformed JSON in review_result block');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('REVIEWER AGENT STOPPED WITHOUT VALID RESULT'));
+  });
+
+  it('does NOT pass a build_result block from ship-reviewer (wrong block type → recovery injected)', async () => {
+    const { code, output } = await runHook({
+      agent_name: 'ship-reviewer',
+      last_assistant_message: buildResultJson({
+        feature: 'my-feature',
+        scope: 'phase:1',
+        status: 'COMPLETE',
+        tasks_completed: 3,
+        tasks_total: 3,
+        commits: ['abc1234'],
+        deviations: [],
+        concerns: [],
+        missing: null,
+        stopped_at: null,
+        reason: null,
+        recommendation: null
+      }),
+    });
+    assert.equal(code, 0);
+    assert.ok(output, 'build_result from ship-reviewer should trigger recovery (wrong block type)');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('REVIEWER AGENT STOPPED WITHOUT VALID RESULT'));
+  });
+});
