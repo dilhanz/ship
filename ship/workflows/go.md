@@ -70,13 +70,13 @@ Plan review warnings: [N — or "None"]
 
 **Build status handling:** When a build phase returns, check the status:
 - **COMPLETE / COMPLETE_WITH_CONCERNS:** Continue to the next phase. If COMPLETE_WITH_CONCERNS, surface the concerns to the user but keep going.
-- **NEEDS_CONTEXT:** Stop and ask the user for the missing information. Do not continue until they provide it.
+- **NEEDS_CONTEXT:** Do not stop. The build skill collects the missing information from the user via AskUserQuestion and sends the answer to the still-alive builder via SendMessage (capped at 2 rounds per phase — a third NEEDS_CONTEXT stops the build). Follow the build skill's interactive NEEDS_CONTEXT flow.
 - **CHECKPOINT:** Stop. The builder hit an architectural blocker.
 
 **Stop conditions:**
 - Plan verification returns NEEDS-REVISION (critical issues found — replan needed)
 - Build returns CHECKPOINT (architectural blocker — needs replanning)
-- Build returns NEEDS_CONTEXT (missing information — user must provide it)
+- Build hits the NEEDS_CONTEXT round cap (builder asked 3 times in one phase — plan likely has a gap)
 - QA returns FAIL (critical/high bugs found — fix tasks written, needs rebuild)
 - Verification returns PARTIAL or FAIL (fix tasks were written — the user should review)
 - All steps complete (feature is finished)
