@@ -1,6 +1,6 @@
 ---
 feature: "build-quality"
-status: plan-verified
+status: done
 created: "2026-06-11"
 ---
 

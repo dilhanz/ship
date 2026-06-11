@@ -58,9 +58,9 @@ Criterion: "CLAUDE.md and README reflect new flow"                     → Task 
 
 ---
 
-<phase id="1" name="Reviewer agent and hook validation" status="pending">
+<phase id="1" name="Reviewer agent and hook validation" status="done">
 
-<task id="1" status="pending">
+<task id="1" status="done" commit="7a344b3">
   <name>Create ship-reviewer agent with review_result JSON contract</name>
   <files>agents/ship-reviewer.md</files>
   <reference>agents/ship-qa.md — closest agent structure: frontmatter shape, HARD-GATE, severity definitions, findings array in fenced JSON result, Forbidden Responses, "What You Do NOT Do"</reference>
@@ -111,7 +111,7 @@ Status definitions: NEEDS_FIXES — one or more critical or high severity findin
   <verify>grep -q "name: ship-reviewer" agents/ship-reviewer.md && grep -q "review_result" agents/ship-reviewer.md && grep -q "NEEDS_FIXES" agents/ship-reviewer.md</verify>
 </task>
 
-<task id="2" status="pending">
+<task id="2" status="done" commit="7303496">
   <name>Validate review_result in subagent-stop hook</name>
   <files>hooks/subagent-stop.cjs</files>
   <reference>hooks/subagent-stop.cjs:62-96 extractQaResult — mirror this exact extraction shape (fenced block, then raw-JSON balanced-brace fallback, no legacy Markdown fallback)</reference>
@@ -126,7 +126,7 @@ Status definitions: NEEDS_FIXES — one or more critical or high severity findin
   <verify>node -e "const t=require('fs').readFileSync('hooks/subagent-stop.cjs','utf8'); if(!t.includes('REVIEW_VALID_STATUSES')||!t.includes('ship-reviewer')||!t.includes('review_result')) process.exit(1)" && node --test tests/subagent-stop.test.js</verify>
 </task>
 
-<task id="3" status="pending" depends="2">
+<task id="3" status="done" commit="f00f8c9">
   <name>Add reviewer validation tests to subagent-stop suite</name>
   <files>tests/subagent-stop.test.js</files>
   <reference>tests/subagent-stop.test.js:47-176 — per-status pass-through tests and failure-case recovery tests for build_result; mirror structure for review_result</reference>
@@ -147,9 +147,9 @@ Use the existing runHook helper unchanged.</action>
 
 </phase>
 
-<phase id="2" name="Build skill orchestration" status="pending">
+<phase id="2" name="Build skill orchestration" status="done">
 
-<task id="4" status="pending">
+<task id="4" status="done" commit="b6d4dd1">
   <name>Remove pinned model from ship-builder agent</name>
   <files>agents/ship-builder.md</files>
   <reference>agents/ship-builder.md:1-12 — frontmatter block</reference>
@@ -157,7 +157,7 @@ Use the existing runHook helper unchanged.</action>
   <verify>node -e "const t=require('fs').readFileSync('agents/ship-builder.md','utf8'); if(/^model:/m.test(t)) {console.error('model still pinned'); process.exit(1)}; if(!/^name: ship-builder$/m.test(t)) process.exit(1)"</verify>
 </task>
 
-<task id="5" status="pending" depends="1,2">
+<task id="5" status="done" commit="ea58c05" depends="1,2">
   <name>Add per-phase review gate to build skill</name>
   <files>skills/build/SKILL.md</files>
   <reference>skills/build/SKILL.md:83-121 — auto-continue SendMessage machinery; follow its step-numbered imperative style</reference>
@@ -213,7 +213,7 @@ Also update the PHASE COMPLETE output templates in section 3 to include a `Revie
   <verify>grep -q "Review Gate" skills/build/SKILL.md && grep -q "ship-reviewer" skills/build/SKILL.md && grep -q "REVIEW.md" skills/build/SKILL.md && grep -q "review_result" skills/build/SKILL.md</verify>
 </task>
 
-<task id="6" status="pending" depends="5">
+<task id="6" status="done" commit="af3887b" depends="5">
   <name>Add trust-but-verify gate to build skill</name>
   <files>skills/build/SKILL.md</files>
   <reference>skills/build/SKILL.md:83-121 — SendMessage continuation pattern; same imperative step style</reference>
@@ -262,7 +262,7 @@ Edge rule: if a verify command cannot run at all in the orchestrator environment
   <verify>grep -q "Trust-But-Verify" skills/build/SKILL.md && grep -qi "re-ran this phase's verify commands" skills/build/SKILL.md</verify>
 </task>
 
-<task id="7" status="pending" depends="5">
+<task id="7" status="done" commit="eceb3ef" depends="5">
   <name>Make NEEDS_CONTEXT interactive in build skill</name>
   <files>skills/build/SKILL.md</files>
   <reference>skills/build/SKILL.md:161-174 — current NEEDS_CONTEXT dead-stop branch to replace</reference>
@@ -293,9 +293,9 @@ Continue with the remaining tasks in this phase and emit an updated build_result
 
 </phase>
 
-<phase id="3" name="Go workflow and documentation" status="pending">
+<phase id="3" name="Go workflow and documentation" status="done">
 
-<task id="8" status="pending" depends="7">
+<task id="8" status="done" commit="3a0a249" depends="7">
   <name>Adopt interactive NEEDS_CONTEXT in go workflow</name>
   <files>ship/workflows/go.md</files>
   <reference>ship/workflows/go.md:71-82 — "Build status handling" and "Stop conditions" blocks to update</reference>
@@ -308,7 +308,7 @@ Continue with the remaining tasks in this phase and emit an updated build_result
   <verify>grep -q "AskUserQuestion" ship/workflows/go.md && node -e "const t=require('fs').readFileSync('ship/workflows/go.md','utf8'); if(t.includes('user must provide it')) process.exit(1)"</verify>
 </task>
 
-<task id="9" status="pending" depends="1,5,6,7,8">
+<task id="9" status="done" commit="718d781" depends="1,5,6,7,8">
   <name>Update CLAUDE.md and README for new build flow</name>
   <files>CLAUDE.md, README.md</files>
   <reference>CLAUDE.md — Architecture, Flow, Feature Directory Structure, and Key Concepts sections</reference>
