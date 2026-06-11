@@ -12,7 +12,7 @@ skills/deviation-rules/  Reference skill preloaded into builder agent
 skills/git-commits/      Reference skill preloaded into builder agent
 skills/tdd/              Reference skill preloaded into builder agent (test-driven development)
 ship/workflows/*.md      1 orchestration workflow (go)
-agents/*.md              3 specialized agents (brainstormer, builder, verifier)
+agents/*.md              5 specialized agents (brainstormer, builder, qa, reviewer, verifier)
 ```
 
 **Skills** define frontmatter fields like `model` and `allowed-tools`. Some skills delegate to agents via the Agent tool; others run inline with full instructions embedded in the skill body.
@@ -22,6 +22,8 @@ agents/*.md              3 specialized agents (brainstormer, builder, verifier)
 **Agents** define `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, and `skills` in frontmatter. Each agent has a single responsibility:
 - `ship-brainstormer` — intensive questioning → CONTEXT.md
 - `ship-builder` — task execution with atomic commits
+- `ship-qa` — adversarial testing → QA.md
+- `ship-reviewer` — per-phase diff review → review_result findings
 - `ship-verifier` — acceptance criteria checking → VERIFY.md
 
 **Inline skills** (run in the main conversation for unlimited turns):
@@ -47,6 +49,7 @@ agents/*.md              3 specialized agents (brainstormer, builder, verifier)
   CONTEXT.md    — brainstorm output (problem, decisions, acceptance criteria, scope)
   PLAN.md       — implementation plan with tasks (status tracked inline)
   QA.md         — QA report (test plan, bugs, verdict)
+  REVIEW.md     — per-phase review findings (fixed and unresolved)
   VERIFY.md     — verification report
 
 .planning/archive/{feature-name}/   — completed features moved here by /ship:finish
@@ -63,7 +66,7 @@ hooks/                 6 Node.js hooks (stdin->stdout, zero dependencies)
   context-monitor.cjs    PostToolUse event — injects warnings when context is high (matcher: Write|Edit|Bash|Agent)
   safety-gate.cjs        PreToolUse event — blocks git add . to enforce atomic commits (matcher: Bash)
   post-compact.cjs       PostCompact event — re-injects feature state after context compaction
-  subagent-stop.cjs      SubagentStop event — validates builder BUILD RESULT format
+  subagent-stop.cjs      SubagentStop event — validates builder BUILD RESULT, QA, and reviewer REVIEW RESULT formats
   hooks.json             Declarative hook registration for the plugin system
 
 ship/templates/*.md    1 planning file template (VERIFY)
@@ -79,7 +82,10 @@ install.js             Deprecated legacy installer — use claude plugin install
 - **Test-driven development:** Builder follows RED-GREEN-REFACTOR when tasks have test-based verify commands
 - **Context bridge:** The statusline hook writes context metrics to `${CLAUDE_PLUGIN_DATA}/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
 - **Auto-discovery:** The guide SessionStart hook injects Ship awareness into every conversation, so Claude proactively suggests commands when it detects feature work. Skill descriptions use "Use when..." trigger-condition format for semantic matching (inspired by superpowers CSO pattern).
-- **Builder continuation:** When the builder hits maxTurns without a valid BUILD RESULT, the build skill uses SendMessage to auto-continue up to 2 times (effective 120-turn max per phase)
+- **Per-phase review gate:** after each build phase, a read-only ship-reviewer agent reviews the phase diff; critical/high findings trigger one builder fix round; all findings persist to REVIEW.md
+- **Trust-but-verify:** the build orchestrator re-runs every task's verify command after the builder claims COMPLETE; persistent failure stops the build with CHECKPOINT
+- **Interactive NEEDS_CONTEXT:** when the builder asks for missing information, the orchestrator collects it via AskUserQuestion and SendMessages the answer back to the still-alive builder (capped at 2 rounds per phase); a third NEEDS_CONTEXT in one phase stops the build
+- **Builder continuation:** when the builder hits maxTurns without a valid BUILD RESULT, the build skill uses SendMessage to auto-continue up to 2 times (effective 120-turn max per phase)
 
 ## Plugin Structure
 
