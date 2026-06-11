@@ -125,6 +125,62 @@ Proceed to the status handling below (### 3).
 Parse the builder agent's `build_result` JSON block. Extract the `status` field.
 
 **If status is "COMPLETE":**
+Run the Trust-But-Verify gate (3.1), then the Review Gate (3.2), then mark the phase done.
+
+**If status is "COMPLETE_WITH_CONCERNS":**
+Run the Trust-But-Verify gate (3.1), then the Review Gate (3.2), then mark the phase done.
+
+### 3.1 Trust-But-Verify
+
+*(Written by task 6 — reserved)*
+
+### 3.2 Review Gate
+
+1. Compute the phase diff range: take the first commit hash from `result.commits` (plus any fix-round commits from 3.1) and run `git rev-parse {first-commit}~1` to get the base. The range is `{base}..HEAD`. If `result.commits` is empty or git rev-parse fails, skip the review with a "review skipped: no diff range" concern and proceed to mark the phase done.
+2. Invoke the `ship-reviewer` agent via the Agent tool:
+
+```
+Review feature: {name}
+Phase: {phase-id} — {phase-name}
+Diff range: {base}..HEAD
+
+Review the phase diff per your instructions. Read:
+- .planning/features/{name}/PLAN.md
+- .planning/features/{name}/CONTEXT.md
+
+Emit your review_result JSON block when done.
+```
+
+3. Parse the fenced `review_result` JSON block from the reviewer's output. **If the Agent call errors, or no valid review_result block is found:** do NOT retry. Append to REVIEW.md (format below) a "Review skipped — reviewer failed or returned no parseable result" line for this phase, add "review skipped for phase {id}" to the phase's concerns, and proceed to mark the phase done. A broken reviewer must never block a working build.
+4. **If status is "APPROVED":** append all findings (if any) to REVIEW.md marked `recorded`. Proceed to mark the phase done.
+5. **If status is "NEEDS_FIXES":** append all findings to REVIEW.md, then run exactly one fix round:
+   a. SendMessage to the **builder** agent (the same agent from step 2 of the phase loop):
+
+```
+The phase reviewer found issues that must be fixed before this phase can complete.
+Fix ONLY these findings — do not refactor beyond them:
+
+{numbered list of critical and high findings: severity, file, description, recommendation}
+
+For each fix: implement it, re-run the affected task's <verify> command, and commit
+with "fix({feature-name}): {short description}". Then emit an updated build_result JSON block.
+```
+
+   b. After the builder returns, SendMessage to the **reviewer** agent: "The builder applied fixes for your critical/high findings. New diff range: {base}..HEAD. Re-review ONLY whether each critical/high finding from your previous review is now resolved. Emit an updated review_result JSON block listing any still-unresolved findings." If this SendMessage fails or returns no parseable review_result, treat all findings from round 1 as unresolved concerns (do not loop).
+   c. **One round only.** If the re-review still reports critical/high findings, record them in REVIEW.md as `unresolved`, add each to the phase's concerns list, and proceed to mark the phase done. Surface unresolved findings in the PHASE COMPLETE output under "Concerns".
+6. Update REVIEW.md outcome markers: findings fixed in round 5a get `fixed in {commit-hash}`; medium/low get `recorded`; leftover critical/high get `unresolved`.
+
+**REVIEW.md format** (orchestrator-owned; create `.planning/features/{name}/REVIEW.md` on first append):
+
+```markdown
+# Review Log — {feature-name}
+
+## Phase {id} — {phase-name} (round {1|2})
+Status: {APPROVED | NEEDS_FIXES | SKIPPED}
+- [{severity}] {file}: {description} — {fixed in {hash} | unresolved | recorded}
+```
+
+After gates complete (both 3.1 and 3.2):
 - If phased, mark the current phase `status="done"` in PLAN.md
 - Output to the user (use values from the JSON fields):
 
@@ -136,13 +192,10 @@ Phase: [M] / [total] — [phase name]
 Tasks completed: {result.tasks_completed} / {result.tasks_total} in this phase
 Overall progress: [done_across_all_phases] / [total_across_all_phases] tasks
 Commits: {result.commits joined with ", "}
+Review: {APPROVED | {N} findings ({M} fixed, {K} unresolved) | skipped}
 ```
 
-- Then **continue the loop** to the next pending phase
-
-**If status is "COMPLETE_WITH_CONCERNS":**
-- Same as COMPLETE (mark phase done, continue loop)
-- But also surface the `concerns` array to the user:
+- For COMPLETE_WITH_CONCERNS, also surface the `concerns` array plus any review concerns:
 
 ```
 ## PHASE COMPLETE (with concerns)
@@ -151,12 +204,15 @@ Feature: {result.feature}
 Phase: [M] / [total] — [phase name]
 Tasks completed: {result.tasks_completed} / {result.tasks_total} in this phase
 Commits: {result.commits joined with ", "}
+Review: {APPROVED | {N} findings ({M} fixed, {K} unresolved) | skipped}
 
 Concerns flagged by builder:
 - {each item from result.concerns}
 
 Continuing to next phase. Review concerns after build completes.
 ```
+
+- Then **continue the loop** to the next pending phase
 
 **If status is "NEEDS_CONTEXT":**
 - Leave CONTEXT.md status as `building`
