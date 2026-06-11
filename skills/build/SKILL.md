@@ -2,7 +2,7 @@
 name: ship:build
 description: Use when a feature plan has been verified and is ready for implementation — executes tasks with atomic commits
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, SendMessage
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent, SendMessage, AskUserQuestion
 argument-hint: "[feature-name]"
 ---
 
@@ -252,9 +252,23 @@ Continuing to next phase. Review concerns after build completes.
 - Then **continue the loop** to the next pending phase
 
 **If status is "NEEDS_CONTEXT":**
-- Leave CONTEXT.md status as `building`
-- Output to the user the `missing` field value
-- **Stop the loop** — the user must provide the missing context before continuing
+- Do NOT stop. The builder agent is still alive and holds warm context — collect the missing information and send it back.
+- Track how many NEEDS_CONTEXT rounds have occurred for this phase (start at 0, increment each time).
+
+a. Use AskUserQuestion with one question built from `result.missing`: question text "The builder needs missing context to continue: {result.missing} — how should it proceed?", header "Context". Offer 2-4 plausible answer options when `result.missing` implies a choice (e.g. naming, approach, config value); when it is open-ended (e.g. an API key or URL), offer your best-guess options anyway — the user can always select "Other" and type a free-form answer.
+b. SendMessage to the builder agent:
+
+```
+The user provided the missing context you asked for:
+
+Question: {result.missing}
+Answer: {user's answer}
+
+Continue with the remaining tasks in this phase and emit an updated build_result JSON block when done.
+```
+
+c. Parse the new build_result from the SendMessage response and route it back through section 3's status handling (COMPLETE → gates 3.1/3.2; another NEEDS_CONTEXT → repeat this flow).
+d. **Cap: 2 NEEDS_CONTEXT rounds per phase.** On a third NEEDS_CONTEXT in the same phase, stop the loop, leave CONTEXT.md status as `building`, and output:
 
 ```
 ## CONTEXT NEEDED
@@ -265,6 +279,8 @@ Missing: {result.missing}
 
 Provide the missing information, then run /ship:build to continue.
 ```
+
+   Also append: "The builder asked for context 3 times in this phase — the plan likely has a gap. Consider /ship:plan {name} to replan."
 
 **If status is "CHECKPOINT":**
 - Leave CONTEXT.md status as `building`
