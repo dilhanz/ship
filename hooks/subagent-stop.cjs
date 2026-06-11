@@ -6,6 +6,7 @@
 
 const VALID_STATUSES = ['COMPLETE', 'COMPLETE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'CHECKPOINT'];
 const QA_VALID_STATUSES = ['PASS', 'FAIL'];
+const REVIEW_VALID_STATUSES = ['APPROVED', 'NEEDS_FIXES'];
 
 /**
  * Extract and parse a fenced ```build_result JSON block from text.
@@ -95,6 +96,46 @@ function extractQaResult(text) {
   return null;
 }
 
+/**
+ * Extract and parse a fenced ```review_result JSON block from text.
+ * Returns the parsed object or null if not found/invalid.
+ */
+function extractReviewResult(text) {
+  if (!text) return null;
+
+  // Match ```review_result ... ``` fenced block
+  const fenceMatch = text.match(/```review_result\s*\n([\s\S]*?)```/);
+  if (fenceMatch) {
+    try {
+      const parsed = JSON.parse(fenceMatch[1].trim());
+      if (parsed && REVIEW_VALID_STATUSES.includes((parsed.status || '').toUpperCase())) {
+        return parsed;
+      }
+    } catch (e) { /* fall through */ }
+  }
+
+  // Fallback: try to find a raw JSON object with a "status" field matching review statuses
+  const jsonMatch = text.match(/\{[\s\S]*?"status"\s*:\s*"([\w_]+)"[\s\S]*?\}/);
+  if (jsonMatch && REVIEW_VALID_STATUSES.includes(jsonMatch[1].toUpperCase())) {
+    try {
+      const startIdx = text.indexOf(jsonMatch[0]);
+      let depth = 0;
+      let endIdx = startIdx;
+      for (let i = startIdx; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        if (text[i] === '}') depth--;
+        if (depth === 0) { endIdx = i + 1; break; }
+      }
+      const parsed = JSON.parse(text.slice(startIdx, endIdx));
+      if (parsed && REVIEW_VALID_STATUSES.includes((parsed.status || '').toUpperCase())) {
+        return parsed;
+      }
+    } catch (e) { /* fall through */ }
+  }
+
+  return null;
+}
+
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => input += chunk);
@@ -102,12 +143,39 @@ process.stdin.on('end', () => {
   try {
     const data = JSON.parse(input);
 
-    // Only validate the ship-builder and ship-qa agents
-    if (!data.agent_name || !['ship-builder', 'ship-qa'].includes(data.agent_name)) {
+    // Only validate the ship-builder, ship-qa, and ship-reviewer agents
+    if (!data.agent_name || !['ship-builder', 'ship-qa', 'ship-reviewer'].includes(data.agent_name)) {
       process.exit(0);
     }
 
     const lastMessage = data.last_assistant_message || '';
+
+    if (data.agent_name === 'ship-reviewer') {
+      const result = extractReviewResult(lastMessage);
+
+      if (result) {
+        // Valid result — no intervention needed
+        process.exit(0);
+      }
+
+      // Invalid or missing result — inject recovery message
+      const lastLines = lastMessage.split('\n').filter(l => l.trim()).slice(-10).join('\n');
+      const truncated = lastLines.length > 500 ? lastLines.slice(-500) : lastLines;
+
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'SubagentStop',
+          additionalContext:
+            'REVIEWER AGENT STOPPED WITHOUT VALID RESULT. ' +
+            'The reviewer agent did not emit a valid review_result JSON block with an expected status ' +
+            '(APPROVED, NEEDS_FIXES). ' +
+            'This likely means the reviewer hit its turn limit or encountered an error. ' +
+            'Last output fragment:\n' + truncated + '\n\n' +
+            'RECOVERY: Treat this phase\'s review as skipped — record a \'review skipped\' concern and proceed with the build. Do NOT retry the reviewer or block the phase.'
+        }
+      }));
+      return;
+    }
 
     if (data.agent_name === 'ship-qa') {
       const result = extractQaResult(lastMessage);
