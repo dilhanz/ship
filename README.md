@@ -65,7 +65,7 @@ Or let Ship run everything automatically:
 
 **Plan:** Launches 3 parallel exploration sub-agents to map similar features, architecture, and conventions. Asks targeted follow-up questions informed by what the explorers found. Then writes a concrete task list with specific file paths and runnable verify commands. Self-validates plan quality (acceptance coverage, task completeness, verify command quality, scope). Plan is independently verified against the codebase before building.
 
-**Build:** Reads key files from the plan to build rich context before starting. Implements tasks sequentially with test-driven development (RED-GREEN-REFACTOR) when tasks have test-based verify commands. Runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Larger plans (>4 tasks) are automatically grouped into phases — build executes one phase at a time. If the builder exhausts its turn limit mid-phase, Ship auto-continues it up to 2 times via SendMessage (preserving full context), for an effective 120-turn maximum per phase. Applies 3 deviation rules when reality diverges from plan, with structured debugging (read error → trace cause → one fix at a time) before each retry. The builder reports 4 statuses: COMPLETE, COMPLETE_WITH_CONCERNS (done but flagging doubts), NEEDS_CONTEXT (pauses to ask user for missing info), and CHECKPOINT (hard block).
+**Build:** Reads key files from the plan to build rich context before starting. Implements tasks sequentially with test-driven development (RED-GREEN-REFACTOR) when tasks have test-based verify commands. Runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Larger plans (>4 tasks) are automatically grouped into phases — build executes one phase at a time. If the builder exhausts its turn limit mid-phase, Ship auto-continues it up to 2 times via SendMessage (preserving full context), for an effective 120-turn maximum per phase. Applies 3 deviation rules when reality diverges from plan, with structured debugging (read error → trace cause → one fix at a time) before each retry. The builder reports 4 statuses: COMPLETE, COMPLETE_WITH_CONCERNS (done but flagging doubts), NEEDS_CONTEXT (triggers AskUserQuestion — the orchestrator collects the missing info and SendMessages it back to the still-alive builder, capped at 2 rounds per phase), and CHECKPOINT (hard block). After the builder claims COMPLETE, the orchestrator runs a **trust-but-verify** pass (re-runs every task's verify command) and then a **per-phase review gate** (a read-only `ship-reviewer` agent reviews the phase diff; critical/high findings go back to the builder for one fix round; all findings persist to `REVIEW.md`).
 
 **QA:** Adversarial testing pass between build and verify. Auto-discovers the test framework, picks relevant risk categories (boundary, negative, error handling, concurrency, security — skips categories that don't apply), writes and commits test files, and runs them. Reviews the **actual git diff** (`git merge-base HEAD main..HEAD`) for anti-patterns — not just the planned files, so builder deviations don't escape scrutiny. Produces `QA.md` with bug findings; critical/high bugs roll the feature back to `qa-failed` with fix tasks appended to PLAN.md.
 
@@ -83,6 +83,7 @@ Each feature gets its own directory under `.planning/features/`:
 │   ├── CONTEXT.md    Problem, decisions, acceptance criteria, scope
 │   ├── PLAN.md       Tasks with inline status tracking
 │   ├── QA.md         QA report (test plan, bugs, verdict)
+│   ├── REVIEW.md     Per-phase review findings (fixed and unresolved)
 │   └── VERIFY.md     Verification report
 ├── fix-login-bug/
 │   ├── CONTEXT.md
@@ -135,7 +136,7 @@ This path is stable across plugin updates.
 | `context-monitor` | PostToolUse | Injects warnings into the agent's context when usage exceeds thresholds |
 | `safety-gate` | PreToolUse | Blocks `git add .` and `git add -A` to enforce atomic commits |
 | `post-compact` | PostCompact | Re-injects feature state after context compaction so progress isn't lost |
-| `subagent-stop` | SubagentStop | Validates the builder and QA agents emitted valid result blocks (`build_result` / `qa_result`); injects recovery if not |
+| `subagent-stop` | SubagentStop | Validates the builder, QA, and reviewer agents emitted valid result blocks (`build_result` / `qa_result` / `review_result`); injects recovery if not |
 
 Hooks use `matcher` fields (e.g., `Bash`, `Write|Edit|Bash|Agent`) to only fire on relevant tool calls. The context monitor warns the agent to save state before the context window fills up, preventing lost progress.
 
