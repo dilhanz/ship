@@ -1,6 +1,5 @@
 ---
 name: ship-builder
-model: sonnet
 description: Use when executing a verified implementation plan — reads PLAN.md, implements tasks sequentially, applies deviation rules on failure, and makes atomic commits
 tools: Read, Write, Edit, Bash, Glob, Grep
 maxTurns: 40
