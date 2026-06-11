@@ -132,7 +132,44 @@ Run the Trust-But-Verify gate (3.1), then the Review Gate (3.2), then mark the p
 
 ### 3.1 Trust-But-Verify
 
-*(Written by task 6 — reserved)*
+The builder self-reports COMPLETE — independently confirm it before reviewing or marking the phase done.
+
+1. From PLAN.md, collect the `<verify>` command of every task in the just-completed phase (tasks now marked status="done"). Re-run each command via Bash, in task order. Capture output and exit codes.
+2. **All pass:** proceed to the Review Gate (3.2).
+3. **Any fail:** SendMessage to the builder agent:
+
+```
+The orchestrator re-ran this phase's verify commands and task {id} ({task name}) failed:
+
+Command: {verify command}
+Exit code: {code}
+Output:
+{output, truncated to last 50 lines}
+
+The task is not actually complete. Diagnose and fix the issue, re-run the verify command
+until it passes, commit the fix with "fix({feature-name}): {short description}",
+and emit an updated build_result JSON block.
+```
+
+   If multiple verifies failed, include all of them in one message.
+4. After the builder returns, re-run ONLY the previously-failing verify commands.
+5. **Still failing:** stop the build with CHECKPOINT semantics — leave CONTEXT.md status as `building`, do NOT mark the phase done, and output:
+
+```
+## CHECKPOINT REACHED
+
+Feature: {name}
+Phase: {phase-id} — {phase-name}
+Reason: verify command for task {id} fails even after a fix round — builder reported COMPLETE but the work does not verify.
+Failing command: {command}
+
+Recommendation: investigate manually or replan this phase with /ship:plan {name}.
+```
+
+   **Stop the loop** — do not continue to the next phase, do not run the Review Gate.
+6. **Now passing:** proceed to the Review Gate (3.2). Fix commits made here are included in the review diff range.
+
+Edge rule: if a verify command cannot run at all in the orchestrator environment (missing tool, environment-specific path) and the failure output clearly shows an environment error rather than a code failure, record "verify {id} not re-runnable by orchestrator" as a phase concern and treat that single verify as passed — do not send environment problems to the builder.
 
 ### 3.2 Review Gate
 
