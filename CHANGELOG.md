@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.5.0
+
+Build quality — four orchestrator-level improvements that move quality checking into the build loop instead of deferring it all to `/ship:qa` and `/ship:verify`, plus a new read-only reviewer agent.
+
+### Added
+
+- **Per-phase review gate**: A new `ship-reviewer` agent reviews each completed phase's `git diff` before the phase is marked done. Critical/high findings are sent back to the same builder via SendMessage for exactly one fix round and re-reviewed; medium/low findings are recorded but don't burn builder turns. All findings (fixed and unresolved) append per-phase to `.planning/features/{name}/REVIEW.md` so `/ship:qa` and `/ship:verify` can cross-check and they survive compaction. A reviewer failure (error, turn exhaustion, unparseable output) degrades gracefully — the phase proceeds with a "review skipped" concern and the build is never blocked.
+- **`ship-reviewer` agent**: New read-only agent in `agents/ship-reviewer.md` that emits a `review_result` JSON block. Ship now ships 5 agents (brainstormer, builder, qa, reviewer, verifier).
+- **Trust-but-verify gate**: After the builder claims COMPLETE, the build orchestrator re-runs every task's `<verify>` command before marking the phase done. A failure is sent back to the builder with the command output; a repeat failure after the fix round stops the build with a CHECKPOINT.
+- **Interactive NEEDS_CONTEXT**: A NEEDS_CONTEXT result now triggers AskUserQuestion in the orchestrator, and the answer is SendMessaged back to the still-alive builder instead of dead-stopping the loop and discarding warm context. Applies in both `/ship:build` and `/ship:go` (capped at 2 rounds per phase; a third stops the build).
+- **`review_result` validation**: `hooks/subagent-stop.cjs` validates the `ship-reviewer` agent's `review_result` block, with recovery-message injection on missing/invalid output and tests under `node --test`.
+
+### Changed
+
+- **Builder inherits the session model**: Dropped the pinned `model: sonnet` from `agents/ship-builder.md` so the builder runs on the session model instead of silently downgrading Opus or Fable sessions. Other agents (brainstormer, qa, verifier) are unchanged.
+- **`/ship:go` workflow**: Removed NEEDS_CONTEXT from its stop conditions and adopted the same ask-then-resume flow as the build skill.
+- **CLAUDE.md and README**: Updated for the new build flow — reviewer agent, REVIEW.md artifact, per-phase review gate, trust-but-verify, interactive NEEDS_CONTEXT, and the updated agent count.
+
 ## 3.4.0
 
 Pipeline rigor — five interlocking changes that tighten the brainstorm → plan → build → QA → verify pipeline.
