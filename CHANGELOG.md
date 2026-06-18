@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.5.0
+
+Build context isolation — three changes that push the build orchestrator's context window back toward its floor by keeping raw file bodies out of the orchestrator and bounding verify capture.
+
+### Changed
+
+- **Delegated pre-build digest**: the build orchestrator now spawns the read-only `Explore` agent to produce `## Key File Context`, keeping raw file bodies out of the orchestrator window (graceful-degrades to empty context on failure).
+- **Bounded trust-but-verify capture**: verify pass/fail is decided on exit code; only a 5-line tail is kept on success, full output re-pulled only on failure.
+- **JSON-only builder/reviewer handoffs**: `ship-builder` and `ship-reviewer` final messages are the fenced JSON block only, with no trailing prose.
+
 ## 3.4.0
 
 Pipeline rigor — five interlocking changes that tighten the brainstorm → plan → build → QA → verify pipeline.
