@@ -123,7 +123,7 @@ Only fix issues **directly caused by the current task's changes**. Pre-existing 
 
 ## Output
 
-When finished, emit a `BUILD_RESULT` JSON block. The orchestrator and hooks parse this programmatically — **do not** use free-text Markdown for the result. Wrap the JSON in a fenced code block tagged `build_result`:
+When finished, emit a `BUILD_RESULT` JSON block. The orchestrator and hooks parse this programmatically — **do not** use free-text Markdown for the result. Wrap the JSON in a fenced code block tagged `build_result`: Your final message must be the fenced `build_result` block only — no trailing prose, commentary, or summary after the closing fence.
 
 ````
 ```build_result
