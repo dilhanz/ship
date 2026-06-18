@@ -28,15 +28,24 @@ If prerequisites fail, stop and tell the user what's missing.
 
 ## Pre-Build Context Loading
 
-Before executing any phase, load key file context into the main conversation to enrich the builder agent's understanding.
+Before executing any phase, delegate the file read to a disposable `Explore` subagent to keep raw file bodies out of the orchestrator window.
 
-1. Read `.planning/features/{name}/PLAN.md` in full
+1. Read `.planning/features/{name}/PLAN.md` in full.
 2. Extract all `<files>` elements across all pending tasks. Deduplicate the paths.
-3. Filter to files that already exist (skip files the plan creates from scratch — use Glob to check existence)
-4. Read up to 8 of those existing files (prioritize files modified by early tasks, skip binary/lock/generated files)
-5. Build a `## Key File Context` block summarizing what you observed:
-   - For each file read: one sentence describing its structure and relevant patterns
-   - Note any conventions or patterns the builder should preserve
+3. Filter to files that already exist (skip files the plan creates from scratch — use Glob to check existence; also skip binary, lock, and generated files).
+4. **Do NOT Read the candidate file bodies into this conversation.**
+5. If the deduped existing-file list is empty, skip the digest and use an empty Key File Context block.
+6. Otherwise, delegate the read to the built-in `Explore` agent via the Agent tool. Use "medium" search breadth and send it this prompt:
+
+   ```
+   Read these files and return ONLY a `## Key File Context` block: {deduped existing file list}.
+   For each file: one sentence on its structure and the patterns/conventions a builder should preserve.
+   Do not return file bodies — only the summary block.
+   ```
+
+7. Consume ONLY the returned `## Key File Context` summary from the Explore agent. Do not re-read or expand the files.
+
+If the Explore agent errors or returns no usable `## Key File Context`, proceed with an empty Key File Context block and record a "Key File Context unavailable — digest subagent failed" concern; never stop the build. The digest is an optimization, never a gate.
 
 This context block is embedded into each builder agent invocation below.
 
@@ -67,7 +76,7 @@ Use the Agent tool to invoke the `ship-builder` agent with this prompt:
 Build feature: {name}
 Phase: {phase-id} — {phase-name}
 
-## Key File Context (pre-read by orchestrator)
+## Key File Context (from Explore digest)
 
 {paste the Key File Context block from Pre-Build Context Loading here}
 
@@ -134,7 +143,7 @@ Run the Trust-But-Verify gate (3.1), then the Review Gate (3.2), then mark the p
 
 The builder self-reports COMPLETE — independently confirm it before reviewing or marking the phase done.
 
-1. From PLAN.md, collect the `<verify>` command of every task in the just-completed phase (tasks now marked status="done"). Re-run each command via Bash, in task order. Capture output and exit codes.
+1. From PLAN.md, collect the `<verify>` command of every task in the just-completed phase (tasks now marked status="done"). Re-run each command via Bash, in task order. Decide pass/fail on the exit code alone; on success retain only the last 5 lines of output, and re-pull full output only when a verify fails.
 2. **All pass:** proceed to the Review Gate (3.2).
 3. **Any fail:** SendMessage to the builder agent:
 
@@ -144,7 +153,7 @@ The orchestrator re-ran this phase's verify commands and task {id} ({task name})
 Command: {verify command}
 Exit code: {code}
 Output:
-{output, truncated to last 50 lines}
+{full output (re-pulled because this verify failed)}
 
 The task is not actually complete. Diagnose and fix the issue, re-run the verify command
 until it passes, commit the fix with "fix({feature-name}): {short description}",

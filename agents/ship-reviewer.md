@@ -63,7 +63,7 @@ State explicitly: only critical and high trigger a fix round — be honest about
 
 ## Output
 
-Emit a fenced code block tagged `review_result`:
+Emit a fenced code block tagged `review_result`: Your final message must be the fenced `review_result` block only — no trailing prose, commentary, or summary after the closing fence.
 
 ````
 ```review_result
