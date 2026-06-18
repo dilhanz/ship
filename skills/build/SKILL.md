@@ -143,7 +143,7 @@ Run the Trust-But-Verify gate (3.1), then the Review Gate (3.2), then mark the p
 
 The builder self-reports COMPLETE — independently confirm it before reviewing or marking the phase done.
 
-1. From PLAN.md, collect the `<verify>` command of every task in the just-completed phase (tasks now marked status="done"). Re-run each command via Bash, in task order. Capture output and exit codes.
+1. From PLAN.md, collect the `<verify>` command of every task in the just-completed phase (tasks now marked status="done"). Re-run each command via Bash, in task order. Decide pass/fail on the exit code alone; on success retain only the last 5 lines of output, and re-pull full output only when a verify fails.
 2. **All pass:** proceed to the Review Gate (3.2).
 3. **Any fail:** SendMessage to the builder agent:
 
@@ -153,7 +153,7 @@ The orchestrator re-ran this phase's verify commands and task {id} ({task name})
 Command: {verify command}
 Exit code: {code}
 Output:
-{output, truncated to last 50 lines}
+{full output (re-pulled because this verify failed)}
 
 The task is not actually complete. Diagnose and fix the issue, re-run the verify command
 until it passes, commit the fix with "fix({feature-name}): {short description}",
