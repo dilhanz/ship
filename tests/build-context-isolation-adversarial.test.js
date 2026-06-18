@@ -364,32 +364,32 @@ describe('build-context-isolation adversarial — F: CLAUDE.md coherence', () =>
     );
   });
 
-  it('F3: CLAUDE.md version in Key Concepts or architecture is consistent (3.5.0 referenced in CHANGELOG)', () => {
+  it('F3: CLAUDE.md version in Key Concepts or architecture is consistent (3.6.0 referenced in CHANGELOG)', () => {
     const changelog = readSrc('CHANGELOG.md');
     assert.ok(
-      changelog.includes('3.5.0'),
-      'CHANGELOG.md must include a 3.5.0 entry'
+      changelog.includes('3.6.0'),
+      'CHANGELOG.md must include a 3.6.0 entry'
     );
   });
 
-  it('F4: CHANGELOG.md 3.5.0 entry mentions all three changes (delegated digest, bounded capture, JSON-only)', () => {
+  it('F4: CHANGELOG.md 3.6.0 entry mentions all three changes (delegated digest, bounded capture, JSON-only)', () => {
     const content = readSrc('CHANGELOG.md');
-    // Find the 3.5.0 section
-    const idx = content.indexOf('## 3.5.0');
-    assert.ok(idx >= 0, 'CHANGELOG.md must have a ## 3.5.0 section');
-    // Extract from 3.5.0 header to the next ## header
-    const section35 = content.slice(idx, content.indexOf('\n## ', idx + 1));
+    // Find the 3.6.0 section
+    const idx = content.indexOf('## 3.6.0');
+    assert.ok(idx >= 0, 'CHANGELOG.md must have a ## 3.6.0 section');
+    // Extract from 3.6.0 header to the next ## header
+    const section36 = content.slice(idx, content.indexOf('\n## ', idx + 1));
     assert.ok(
-      section35.includes('Delegated pre-build digest') || section35.includes('delegated'),
-      'CHANGELOG 3.5.0 must document the delegated digest change'
+      section36.includes('Delegated pre-build digest') || section36.includes('delegated'),
+      'CHANGELOG 3.6.0 must document the delegated digest change'
     );
     assert.ok(
-      section35.includes('Bounded trust-but-verify') || section35.includes('bounded'),
-      'CHANGELOG 3.5.0 must document the bounded capture change'
+      section36.includes('Bounded trust-but-verify') || section36.includes('bounded'),
+      'CHANGELOG 3.6.0 must document the bounded capture change'
     );
     assert.ok(
-      section35.includes('JSON-only') || section35.includes('trailing prose'),
-      'CHANGELOG 3.5.0 must document the JSON-only handoff change'
+      section36.includes('JSON-only') || section36.includes('trailing prose'),
+      'CHANGELOG 3.6.0 must document the JSON-only handoff change'
     );
   });
 
