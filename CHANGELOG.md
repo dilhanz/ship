@@ -11,6 +11,7 @@ Re-architecture for modern Claude Code capabilities — cut token waste in `/shi
 - **Reviewer absorbs trust-but-verify**: `ship-reviewer` now re-runs each phase's `<verify>` command before reviewing the diff (a failing verify is a critical finding), so the workflow doesn't need a separate orchestrator-level re-run.
 - **Agents slimmed ~50%**: removed the rationalization tables, forbidden-responses sections, and analysis-paralysis guards that were scaffolding for weaker models. Net ~960 → ~400 lines across the agents, reducing input tokens on every agent invocation.
 - **Structured output replaces text-JSON parsing**: the go workflow validates agent output via JSON Schema (`StructuredOutput`) rather than parsing fenced `build_result`/`review_result`/`verify_result` blocks. The agents still emit those blocks for the manual skill paths.
+- **`VERIFY.md` template collapsed from 4 stages to 2**: a Stage 1 acceptance-criteria table and a Stage 2 "Bug Hunt & Quality" section (adversarial tests, bug findings, anti-pattern scan, quality notes). The separate Stage 3 (`/review`) and Stage 4 (QA) sections are gone.
 
 ### Removed
 
