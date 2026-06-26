@@ -7,7 +7,7 @@ Ship is a feature-centric development framework for Claude Code. Every piece of 
 Three-layer design, all Markdown with YAML frontmatter:
 
 ```
-skills/*/SKILL.md          13 skills (10 user-invocable commands + 3 reference skills)
+skills/*/SKILL.md          14 skills (11 user-invocable commands + 3 reference skills)
 skills/deviation-rules/    Reference skill preloaded into builder agent
 skills/git-commits/        Reference skill preloaded into builder + verifier agents
 skills/tdd/                Reference skill preloaded into builder agent (test-driven development)

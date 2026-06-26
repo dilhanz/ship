@@ -58,8 +58,9 @@ The workflow builds each phase (builder → reviewer re-verify+review → one fi
 From the returned result:
 
 1. For each phase in `completed`, mark its `<phase>` `status="done"` in PLAN.md (skip the `all` pseudo-phase).
-2. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, or no result): leave CONTEXT.md `status: building` and report the blocker. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run).
-3. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE, `plan-verified` + fix tasks on FAIL). Report it.
+2. Collect any per-phase `unresolved` review findings (critical/high that survived the fix round) and builder `concerns` across `completed`. These must be surfaced in the report below — a phase is marked `done` even when it carries unresolved findings (one fix round only, the verifier is the backstop), so the user needs to see them.
+3. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, or no result): leave CONTEXT.md `status: building` and report the blocker. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run).
+4. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE, `plan-verified` + fix tasks on FAIL). Report it.
 
 ```
 ## GO COMPLETE
@@ -68,6 +69,11 @@ Feature: {name}
 Final status: {status}
 Phases built: {N} / {total}   Review fixes applied: {count}
 Verify: {PASS | FAIL | INCONCLUSIVE — criteria_passed/criteria_total, bugs by severity}
+
+[If any unresolved review findings:] Unresolved review findings (marked done anyway, one fix round only):
+- {phase id}: [{severity}] {file} — {description}
+[If any builder concerns:] Build concerns:
+- {phase id}: {concern}
 
 [If verdict PASS/INCONCLUSIVE:] Ready to finish — run /ship:finish (or I can run it now).
 [If FAIL:] Fix tasks were appended to PLAN.md. Review them, then /ship:build and /ship:go to continue.
