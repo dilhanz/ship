@@ -2,7 +2,7 @@
 
 A feature-centric development framework for Claude Code.
 
-**Ship** guides every piece of work — feature or fix — through a structured flow: brainstorm → plan → build → QA → verify. Each feature gets its own directory with full context.
+**Ship** guides every piece of work — feature or fix — through a structured flow: brainstorm → plan → build → verify. Each feature gets its own directory with full context.
 
 ## Install
 
@@ -35,8 +35,7 @@ npx github:dilhanz/ship
 /ship:plan                  Plan tasks → PLAN.md
 /ship:plan-verify           Verify plan against codebase patterns
 /ship:build                 Implement with atomic commits
-/ship:qa                    Adversarial QA — writes tests, finds bugs → QA.md
-/ship:verify                Check against acceptance criteria → VERIFY.md
+/ship:verify                Check acceptance criteria + adversarial bug hunt → VERIFY.md
 /ship:finish                Complete feature (create PR, merge, or keep branch)
                             Use --accept-inconclusive "reason" to override INCONCLUSIVE verdicts
 ```
@@ -45,9 +44,11 @@ Or let Ship run everything automatically:
 
 ```
 /ship:start "your idea"     Brainstorm first (interactive)
-/ship:go                    Then auto-run: plan → plan-verify → build → qa → verify
+/ship:go                    Then auto-run: plan → plan-verify → build → verify
 /ship:finish                Complete the feature
 ```
+
+`/ship:go` runs the build→verify spine in a background Workflow so per-agent output stays out of the main conversation context; plan, plan-verify, the plan-approval gate, and finish run interactively.
 
 ## Utility Commands
 
@@ -67,9 +68,7 @@ Or let Ship run everything automatically:
 
 **Build:** Reads key files from the plan to build rich context before starting. Implements tasks sequentially with test-driven development (RED-GREEN-REFACTOR) when tasks have test-based verify commands. Runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Larger plans (>4 tasks) are automatically grouped into phases — build executes one phase at a time. If the builder exhausts its turn limit mid-phase, Ship auto-continues it up to 2 times via SendMessage (preserving full context), for an effective 120-turn maximum per phase. Applies 3 deviation rules when reality diverges from plan, with structured debugging (read error → trace cause → one fix at a time) before each retry. The builder reports 4 statuses: COMPLETE, COMPLETE_WITH_CONCERNS (done but flagging doubts), NEEDS_CONTEXT (triggers AskUserQuestion — the orchestrator collects the missing info and SendMessages it back to the still-alive builder, capped at 2 rounds per phase), and CHECKPOINT (hard block). After the builder claims COMPLETE, the orchestrator runs a **trust-but-verify** pass (re-runs every task's verify command) and then a **per-phase review gate** (a read-only `ship-reviewer` agent reviews the phase diff; critical/high findings go back to the builder for one fix round; all findings persist to `REVIEW.md`).
 
-**QA:** Adversarial testing pass between build and verify. Auto-discovers the test framework, picks relevant risk categories (boundary, negative, error handling, concurrency, security — skips categories that don't apply), writes and commits test files, and runs them. Reviews the **actual git diff** (`git merge-base HEAD main..HEAD`) for anti-patterns — not just the planned files, so builder deviations don't escape scrutiny. Produces `QA.md` with bug findings; critical/high bugs roll the feature back to `qa-failed` with fix tasks appended to PLAN.md.
-
-**Verify:** Launches 3 parallel reviewer sub-agents (simplicity/DRY, bugs/correctness, conventions/security) then runs the full verifier. Reads acceptance criteria from CONTEXT.md as truths and emits **per-criterion verdicts** of PASS, FAIL, or **INCONCLUSIVE** (when no runnable `<verify>` command exists — grep-only evidence cannot upgrade to PASS). Reads QA's findings instead of re-scanning for TODOs. PR review findings use confidence scoring (0-100, only ≥80 reported). If gaps exist, writes fix tasks back to PLAN.md.
+**Verify:** The single post-build quality gate. Reads acceptance criteria from CONTEXT.md as truths and emits **per-criterion verdicts** of PASS, FAIL, or **INCONCLUSIVE** (when no runnable `<verify>` command exists — grep-only evidence cannot upgrade to PASS) using a gate function that runs commands rather than reasoning about correctness. In the same pass it hunts bugs: auto-discovers the test framework, picks relevant risk categories (boundary, negative, error handling, concurrency, security — skips categories that don't apply), writes and commits adversarial test files against the **actual git diff**, runs them, and scans the changed files for anti-patterns. Critical/high bugs or any failing criterion block a PASS; if gaps exist, writes fix tasks back to PLAN.md and reverts status to `plan-verified`.
 
 **Finish:** Runs after verification passes. Presents 3 options: create a pull request (push + `gh pr create`), merge locally to the base branch, or keep the branch as-is for manual handling. Runs tests before proceeding. If VERIFY.md contains any INCONCLUSIVE verdict, `/ship:finish` blocks until you pass `--accept-inconclusive "reason"`; the override and operator email are recorded in VERIFY.md.
 
@@ -82,16 +81,15 @@ Each feature gets its own directory under `.planning/features/`:
 ├── user-auth/
 │   ├── CONTEXT.md    Problem, decisions, acceptance criteria, scope
 │   ├── PLAN.md       Tasks with inline status tracking
-│   ├── QA.md         QA report (test plan, bugs, verdict)
 │   ├── REVIEW.md     Per-phase review findings (fixed and unresolved)
-│   └── VERIFY.md     Verification report
+│   └── VERIFY.md     Verification report (criteria + bug hunt)
 ├── fix-login-bug/
 │   ├── CONTEXT.md
 │   └── ...
 └── ...
 ```
 
-Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `qa-passed` → `done`. If QA finds critical/high bugs, status rolls back to `qa-failed`; `/ship:resume` then routes to `/ship:build` (skipping plan-verify) to implement the fix tasks, after which QA runs again.
+Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `done`. If verify finds critical/high bugs or a failing criterion, it writes fix tasks to PLAN.md and rolls status back to `plan-verified`; `/ship:resume` then routes to `/ship:build`, after which `/ship:verify` runs again.
 
 ## Core Principles
 
@@ -128,7 +126,7 @@ This path is stable across plugin updates.
 
 ## Hooks
 
-5 hooks are declared in `hooks/hooks.json` for automatic registration by the plugin system:
+4 event hooks (plus the statusline) are declared in `hooks/hooks.json` for automatic registration by the plugin system:
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
@@ -136,7 +134,6 @@ This path is stable across plugin updates.
 | `context-monitor` | PostToolUse | Injects warnings into the agent's context when usage exceeds thresholds |
 | `safety-gate` | PreToolUse | Blocks `git add .` and `git add -A` to enforce atomic commits |
 | `post-compact` | PostCompact | Re-injects feature state after context compaction so progress isn't lost |
-| `subagent-stop` | SubagentStop | Validates the builder, QA, and reviewer agents emitted valid result blocks (`build_result` / `qa_result` / `review_result`); injects recovery if not |
 
 Hooks use `matcher` fields (e.g., `Bash`, `Write|Edit|Bash|Agent`) to only fire on relevant tool calls. The context monitor warns the agent to save state before the context window fills up, preventing lost progress.
 
