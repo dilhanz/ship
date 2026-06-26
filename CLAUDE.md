@@ -7,24 +7,23 @@ Ship is a feature-centric development framework for Claude Code. Every piece of 
 Three-layer design, all Markdown with YAML frontmatter:
 
 ```
-skills/*/SKILL.md        14 skills (user-invocable commands + reference skills)
-skills/deviation-rules/  Reference skill preloaded into builder agent
-skills/git-commits/      Reference skill preloaded into builder agent
-skills/tdd/              Reference skill preloaded into builder agent (test-driven development)
-ship/workflows/*.md      1 orchestration workflow (go)
-agents/*.md              5 specialized agents (brainstormer, builder, qa, reviewer, verifier)
+skills/*/SKILL.md          14 skills (11 user-invocable commands + 3 reference skills)
+skills/deviation-rules/    Reference skill preloaded into builder agent
+skills/git-commits/        Reference skill preloaded into builder + verifier agents
+skills/tdd/                Reference skill preloaded into builder agent (test-driven development)
+ship/workflows/go.workflow.js   Workflow-engine script for the /ship:go build→verify spine
+agents/*.md                4 specialized agents (brainstormer, builder, reviewer, verifier)
 ```
 
 **Skills** define frontmatter fields like `model` and `allowed-tools`. Some skills delegate to agents via the Agent tool; others run inline with full instructions embedded in the skill body.
 
-**Workflows** define multi-step processes: `go` (auto-run remaining steps).
+**Workflow:** `/ship:go` runs the non-interactive build→verify spine through the Claude Code Workflow engine (`ship/workflows/go.workflow.js`) — schema-validated `agent()` calls keep per-agent output out of the main conversation context. The interactive steps (plan, plan-verify, plan-approval gate, finish) run inline in the `go` skill.
 
 **Agents** define `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, and `skills` in frontmatter. Each agent has a single responsibility:
 - `ship-brainstormer` — intensive questioning → CONTEXT.md
 - `ship-builder` — task execution with atomic commits
-- `ship-qa` — adversarial testing → QA.md
-- `ship-reviewer` — per-phase diff review → review_result findings
-- `ship-verifier` — acceptance criteria checking → VERIFY.md
+- `ship-reviewer` — re-runs phase verify commands + reviews the phase diff → review_result findings
+- `ship-verifier` — acceptance criteria + adversarial bug hunt + anti-pattern scan → VERIFY.md (single post-build gate)
 
 **Inline skills** (run in the main conversation for unlimited turns):
 - `plan` — codebase exploration → PLAN.md (uses parallel Explore agents for pre-planning, then plans inline)
@@ -37,9 +36,9 @@ agents/*.md              5 specialized agents (brainstormer, builder, qa, review
 /ship:plan               → explore code, design tasks    → PLAN.md
 /ship:plan-verify        → verify plan against codebase  → PLAN.md (review appended)
 /ship:build              → implement, verify, commit     → tasks marked done
-/ship:verify             → check acceptance criteria      → VERIFY.md
+/ship:verify             → check acceptance criteria + hunt bugs → VERIFY.md
 /ship:finish             → complete feature (PR, merge, or keep)
-/ship:go                 → auto-run remaining steps
+/ship:go                 → auto-run remaining steps (build→verify via Workflow engine)
 ```
 
 ## Feature Directory Structure
@@ -48,25 +47,24 @@ agents/*.md              5 specialized agents (brainstormer, builder, qa, review
 .planning/features/{feature-name}/
   CONTEXT.md    — brainstorm output (problem, decisions, acceptance criteria, scope)
   PLAN.md       — implementation plan with tasks (status tracked inline)
-  QA.md         — QA report (test plan, bugs, verdict)
   REVIEW.md     — per-phase review findings (fixed and unresolved)
-  VERIFY.md     — verification report
+  VERIFY.md     — verification report (criteria + bug hunt)
 
 .planning/archive/{feature-name}/   — completed features moved here by /ship:finish
 ```
 
-Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `qa-passed` → `done`. If QA fails: `built` → `qa-failed` → (rebuild via /ship:build) → `built` → /ship:qa retried.
+Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `done`. If verify fails: `built` → (verifier writes fix tasks, reverts to `plan-verified`) → rebuild via /ship:build → `built` → /ship:verify retried.
 
 ## Supporting Files
 
 ```
-hooks/                 6 Node.js hooks (stdin->stdout, zero dependencies)
+hooks/                 5 Node.js hooks (stdin->stdout, zero dependencies)
   guide.cjs              SessionStart event — injects Ship awareness so Claude proactively suggests commands
   statusline.cjs         StatusLine event — displays model, task, dir, context %
   context-monitor.cjs    PostToolUse event — injects warnings when context is high (matcher: Write|Edit|Bash|Agent)
   safety-gate.cjs        PreToolUse event — blocks git add . to enforce atomic commits (matcher: Bash)
   post-compact.cjs       PostCompact event — re-injects feature state after context compaction
-  subagent-stop.cjs      SubagentStop event — validates builder BUILD RESULT, QA, and reviewer REVIEW RESULT formats
+  scan-features.cjs      Helper — scans .planning/features for state injected by guide/post-compact
   hooks.json             Declarative hook registration for the plugin system
 
 ship/templates/*.md    1 planning file template (VERIFY)
@@ -82,15 +80,15 @@ install.js             Deprecated legacy installer — use claude plugin install
 - **Test-driven development:** Builder follows RED-GREEN-REFACTOR when tasks have test-based verify commands
 - **Context bridge:** The statusline hook writes context metrics to `${CLAUDE_PLUGIN_DATA}/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
 - **Auto-discovery:** The guide SessionStart hook injects Ship awareness into every conversation, so Claude proactively suggests commands when it detects feature work. Skill descriptions use "Use when..." trigger-condition format for semantic matching (inspired by superpowers CSO pattern).
-- **Per-phase review gate:** after each build phase, a read-only ship-reviewer agent reviews the phase diff; critical/high findings trigger one builder fix round; all findings persist to REVIEW.md
-- **Trust-but-verify:** the build orchestrator re-runs every task's verify command after the builder claims COMPLETE; verify capture is bounded to exit code + 5-line tail on success (full output re-pulled on failure); persistent failure stops the build with CHECKPOINT
-- **Delegated context digest:** the build orchestrator delegates the pre-build file read to the `Explore` agent (read-only, disposable window) and consumes only the returned Key File Context summary; raw file bodies never enter the orchestrator window. Degrades gracefully to an empty Key File Context if the digest fails.
-- **Interactive NEEDS_CONTEXT:** when the builder asks for missing information, the orchestrator collects it via AskUserQuestion and SendMessages the answer back to the still-alive builder (capped at 2 rounds per phase); a third NEEDS_CONTEXT in one phase stops the build
-- **Builder continuation:** when the builder hits maxTurns without a valid BUILD RESULT, the build skill uses SendMessage to auto-continue up to 2 times (effective 120-turn max per phase)
+- **Workflow-engine `/ship:go`:** the build→verify spine runs in `ship/workflows/go.workflow.js` via schema-validated `agent()` calls, so per-phase builder/reviewer/verifier output never enters the main conversation context. The interactive steps (plan, plan-verify, plan-approval, finish) stay inline in the `go` skill. Trade-off: the workflow cannot prompt mid-run, so a builder NEEDS_CONTEXT stops it and is surfaced to the manual `/ship:build`.
+- **Per-phase review gate:** after each build phase, the read-only ship-reviewer agent re-runs the phase's verify commands (trust-but-verify, a failing verify is a critical finding) and reviews the phase diff; critical/high findings trigger one builder fix round; all findings persist to REVIEW.md
+- **Single post-build gate:** ship-verifier checks every acceptance criterion against running code AND hunts bugs with adversarial tests AND scans for anti-patterns, producing one VERIFY.md — there is no separate QA layer
+- **Structured output:** the go workflow validates agent results via JSON Schema (`StructuredOutput`) rather than parsing fenced text-JSON blocks; agents still emit `build_result`/`review_result`/`verify_result` blocks for the manual skill paths
+- **Builder continuation:** when the builder hits maxTurns without a valid result, the manual build skill uses SendMessage to auto-continue up to 2 times (effective 120-turn max per phase)
 
 ## Plugin Structure
 
-Ship is distributed as a Claude Code plugin. The `.claude-plugin/plugin.json` manifest declares the plugin name, version, and hooks reference. `hooks/hooks.json` declaratively registers all 6 hooks with `${CLAUDE_PLUGIN_ROOT}` paths. Skills are auto-discovered from `skills/*/SKILL.md` and auto-namespaced as `ship:skill-name`. Plugin data (session metrics, context bridge files) is stored under `${CLAUDE_PLUGIN_DATA}` which persists across updates at `~/.claude/plugins/data/ship/`.
+Ship is distributed as a Claude Code plugin. The `.claude-plugin/plugin.json` manifest declares the plugin name, version, and hooks reference. `hooks/hooks.json` declaratively registers the hooks with `${CLAUDE_PLUGIN_ROOT}` paths. Skills are auto-discovered from `skills/*/SKILL.md` and auto-namespaced as `ship:skill-name`. Plugin data (session metrics, context bridge files) is stored under `${CLAUDE_PLUGIN_DATA}` which persists across updates at `~/.claude/plugins/data/ship/`.
 
 Install via:
 ```bash
@@ -117,7 +115,7 @@ Hooks are stdin->stdout Node.js scripts. They receive JSON on stdin and (optiona
 
 ### Skills
 
-Skills live in `skills/*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `model`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and plan-verify skills run inline in the main conversation (full instructions in the skill body, no agent delegation) for unlimited turns. Start and go also run inline. Build runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress. Skills are auto-namespaced as `ship:skill-name` by the plugin system (e.g., `/ship:start`).
+Skills live in `skills/*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `model`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and plan-verify skills run inline in the main conversation (full instructions in the skill body, no agent delegation) for unlimited turns. Start runs inline. The manual `build` skill runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress. The `go` skill runs the interactive steps inline but delegates the build→verify spine to the Workflow engine (`ship/workflows/go.workflow.js`), keeping per-agent output out of the main context. Skills are auto-namespaced as `ship:skill-name` by the plugin system (e.g., `/ship:start`).
 
 ### Agents
 

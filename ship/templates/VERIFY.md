@@ -2,60 +2,23 @@
 
 **Feature:** {feature-name}
 **Verified:** {date}
-**Overall Status:** PASS | PARTIAL | FAIL | INCONCLUSIVE
+**Overall Status:** PASS | FAIL | INCONCLUSIVE
 
-## Stage 1 — Spec Compliance
+## Stage 1 — Acceptance Criteria
 
-Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runnable verify command was available.
+Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runnable verify command was available; grep-only file existence does not upgrade to PASS.
 
 | Criterion | Verdict | Evidence |
 |-----------|---------|----------|
 | [Criterion from CONTEXT.md] | PASS / FAIL / INCONCLUSIVE | [Command run, output observed, or file path checked] |
 
-## Stage 2 — Code Quality
+## Stage 2 — Bug Hunt & Quality
 
-[Only completed if all Stage 1 criteria passed. Otherwise: "Skipped — Stage 1 has failures."]
+### Adversarial Tests
 
-### Anti-Pattern Scan
-
-- TODO/FIXME/placeholder strings found: [list files, or "None"]
-- Stub implementations: [list, or "None"]
-- Hardcoded values that should be config: [list, or "None"]
-
-### Quality Notes
-
-- [Convention adherence, unnecessary abstractions, error handling — observations only]
-
-(If clean: "No quality issues found.")
-
-## Stage 3 — PR Review (powered by /review)
-
-[Always populated from Claude Code's `/review` skill findings. The review is context-aware — aligned with the feature's goals and acceptance criteria from CONTEXT.md and PLAN.md.]
-
-### Findings
-
-| # | Confidence | Severity | File | Line(s) | Finding | Evidence |
-|---|------------|----------|------|---------|---------|----------|
-| 1 | [80-100] | CRITICAL / WARNING / SUGGESTION | [file] | [lines] | [description] | [tool output proving the issue] |
-
-(If none: "No issues found — code is clean.")
-
-### PR Review Summary
-
-- **Source:** Claude Code `/review` skill with Ship context
-- **Critical:** [N] (blocks PASS)
-- **Warnings:** [N] (blocks PASS)
-- **Suggestions:** [N]
-
-## Stage 4 — QA Findings (from /ship:qa)
-
-[Always populated from the QA agent's QA.md report. QA testing was performed by the ship-qa agent before verification.]
-
-### Test Coverage
-
-- **Tests written:** [N]
-- **Tests passed:** [N] / [N]
-- **Categories tested:** [list of categories from QA.md]
+- **Categories tested:** [e.g. boundary, negative-input, error-handling]
+- **Tests written:** [N]  **Passed:** [N] / [N]
+- **Test files committed:** [list, or "None"]
 
 ### Bug Findings
 
@@ -63,15 +26,19 @@ Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runn
 |---|----------|----------|-------------|------|--------|
 | 1 | critical/high/medium/low | [category] | [description] | [file:line] | [Open/Fixed] |
 
-(If none: "No bugs found during QA.")
+(If none: "No bugs found.")
 
-### QA Summary
+### Anti-Pattern Scan
 
-- **Critical bugs:** [N]
-- **High bugs:** [N]
-- **Medium bugs:** [N] (noted, non-blocking)
-- **Low bugs:** [N] (noted, non-blocking)
-- **Verdict:** QA [PASS/FAIL]
+- TODO/FIXME/placeholder/stub markers: [list files, or "None"]
+- Empty function bodies / hardcoded values: [list, or "None"]
+- Broken imports / convention violations: [list, or "None"]
+
+### Quality Notes
+
+- [Convention adherence, unnecessary abstractions, error handling — observations only]
+
+(If clean: "No quality issues found.")
 
 ## Human Checks Required
 
@@ -83,13 +50,13 @@ Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runn
 
 ## Gaps
 
-[If PARTIAL or FAIL:]
+[If FAIL or INCONCLUSIVE:]
 
 - [Gap description] — [Recommended fix]
 
 ## Fix Tasks
 
-[If PARTIAL or FAIL, write specific fix tasks in the same XML format as PLAN.md. These will be appended to PLAN.md for the next build run.]
+[If FAIL, write specific fix tasks in the same XML format as PLAN.md. These will be appended to PLAN.md for the next build run.]
 
 <task id="N" status="pending">
   <name>Fix: [description]</name>
