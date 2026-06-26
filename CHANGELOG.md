@@ -1,5 +1,28 @@
 # Changelog
 
+## 4.0.0
+
+Re-architecture for modern Claude Code capabilities — cut token waste in `/ship:go` by moving orchestration onto the Workflow engine, collapsing the verification stack, and stripping defensive prose the agents no longer need. **Breaking:** `/ship:qa` is removed and the status flow changes.
+
+### Changed
+
+- **`/ship:go` runs on the Workflow engine**: the repetitive, non-interactive build→verify spine now executes in `ship/workflows/go.workflow.js` via schema-validated `agent()` calls, so per-phase builder/reviewer/verifier output stays out of the main conversation context instead of being collected into it. The interactive steps (plan, plan-verify, plan-approval gate, finish) still run inline in the `go` skill. The old `ship/workflows/go.md` markdown state-machine is removed.
+- **Verification collapsed from 4 layers to 2**: a pre-build plan check (`/ship:plan-verify`) and a single post-build gate (`/ship:verify`). The verifier now does its own adversarial testing and anti-pattern scan instead of re-synthesizing pre-gathered `/review` + QA findings, eliminating the findings-shuttling that double-handled text through the main window.
+- **Reviewer absorbs trust-but-verify**: `ship-reviewer` now re-runs each phase's `<verify>` command before reviewing the diff (a failing verify is a critical finding), so the workflow doesn't need a separate orchestrator-level re-run.
+- **Agents slimmed ~50%**: removed the rationalization tables, forbidden-responses sections, and analysis-paralysis guards that were scaffolding for weaker models. Net ~960 → ~400 lines across the agents, reducing input tokens on every agent invocation.
+- **Structured output replaces text-JSON parsing**: the go workflow validates agent output via JSON Schema (`StructuredOutput`) rather than parsing fenced `build_result`/`review_result`/`verify_result` blocks. The agents still emit those blocks for the manual skill paths.
+- **`VERIFY.md` template collapsed from 4 stages to 2**: a Stage 1 acceptance-criteria table and a Stage 2 "Bug Hunt & Quality" section (adversarial tests, bug findings, anti-pattern scan, quality notes). The separate Stage 3 (`/review`) and Stage 4 (QA) sections are gone.
+
+### Removed
+
+- **`/ship:qa` skill and `ship-qa` agent**: adversarial testing and the anti-pattern scan are now part of `ship-verifier` (single post-build gate). `QA.md` and its template are gone.
+- **`hooks/subagent-stop.cjs`**: schema validation replaces text-JSON format validation; the manual build skill retains its own auto-continue recovery. Ship now ships 5 hooks.
+- **Status states `qa-passed` / `qa-failed`**: the flow is now `built → done` via `/ship:verify` (FAIL appends fix tasks and reverts to `plan-verified`).
+
+### Migration
+
+- `claude plugin update ship` (or re-sync a legacy `.claude/` install). Any feature sitting at `qa-passed` should be advanced with `/ship:verify`; `qa-failed` features should run `/ship:build` then `/ship:verify`.
+
 ## 3.6.0
 
 Build context isolation — three changes that push the build orchestrator's context window back toward its floor by keeping raw file bodies out of the orchestrator and bounding verify capture.
