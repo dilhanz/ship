@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.0.1
+
+Patch release — fix `/ship:go` failing on a clean run.
+
+### Fixed
+
+- **`/ship:go` workflow tolerates string-encoded `args`**: the Workflow runtime can deliver the `args` payload to `ship/workflows/go.workflow.js` as a JSON-encoded string (sometimes double-encoded) instead of the parsed object the docs promise, so `args.feature` read `undefined` and the workflow threw `go.workflow: args.feature is required` immediately. The workflow now unwraps up to a couple of layers of string encoding before reading `feature`/`phases`/`keyFileContext`, and still fails with the clear required-field error on genuinely malformed input. The fix is pure JavaScript (no shell, paths, or platform calls), so it runs identically on macOS and Windows.
+
 ## 4.0.0
 
 Re-architecture for modern Claude Code capabilities — cut token waste in `/ship:go` by moving orchestration onto the Workflow engine, collapsing the verification stack, and stripping defensive prose the agents no longer need. **Breaking:** `/ship:qa` is removed and the status flow changes.
