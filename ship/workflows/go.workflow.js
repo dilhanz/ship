@@ -10,9 +10,18 @@ export const meta = {
 // args: { feature: string, phases: [{ id, name }], keyFileContext?: string }
 // `phases` is the list of pending phases the go skill extracted from PLAN.md, in order.
 // A flat (unphased) plan is passed as a single pseudo-phase { id: 'all', name: 'all' }.
-const feature = args && args.feature
-const phases = (args && args.phases) || []
-const keyFileContext = (args && args.keyFileContext) || 'No key file context provided.'
+//
+// Defensive: the Workflow runtime may deliver `args` as a JSON-encoded string
+// (sometimes double-encoded) instead of the parsed object the docs promise.
+// Unwrap up to a couple of layers of string-encoding before reading fields.
+let parsedArgs = args
+for (let i = 0; i < 3 && typeof parsedArgs === 'string'; i++) {
+  try { parsedArgs = JSON.parse(parsedArgs) } catch { break }
+}
+
+const feature = parsedArgs && parsedArgs.feature
+const phases = (parsedArgs && parsedArgs.phases) || []
+const keyFileContext = (parsedArgs && parsedArgs.keyFileContext) || 'No key file context provided.'
 
 if (!feature) throw new Error('go.workflow: args.feature is required')
 
