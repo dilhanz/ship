@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.0.2
+
+Patch release — `/ship:go` survives flaky agent crashes instead of dying after the work is already committed.
+
+### Fixed
+
+- **go workflow retries agent crashes, then degrades gracefully**: the Workflow harness's final-JSON schema wrapper (`StructuredOutput`) has flaked and thrown even when the agent's underlying work was already committed and green, killing the whole run and losing only orchestration state. Every `agent()` call in `ship/workflows/go.workflow.js` now goes through a `safeAgent` wrapper — one retry, then degrade to a `null` result that the existing null-paths handle (build → `stoppedAt: NO_RESULT`, review → `SKIPPED`, verify → null verdict). Retrying is safe because PLAN.md tracks task status and commits are atomic, so a retried builder sees done tasks and returns quickly.
+- **Unconfirmed re-reviews surface as unresolved**: if critical/high findings triggered a fix round but the re-review produced no result, the findings are now reported as `unresolved` instead of the phase silently reading as clean.
+- **go skill handles a null verdict**: when all phases build but the verifier produces no result, the skill sets `status: built`, confirms the build commits landed, and directs the user to manual `/ship:verify` (previously this case had no defined handling).
+- **Version test derives from `ship/VERSION`**: `tests/rearchitecture-v4.test.js` asserted a hardcoded `4.0.0` and broke on every release; it now reads the expected version from `ship/VERSION` so the three version files just have to agree.
+
 ## 4.0.1
 
 Patch release — fix `/ship:go` failing on a clean run.
