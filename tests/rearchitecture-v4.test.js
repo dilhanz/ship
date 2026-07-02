@@ -140,8 +140,8 @@ describe('v4 — surviving behaviours', () => {
   it('version files agree with ship/VERSION', () => {
     const version = readSrc('ship/VERSION').trim();
     assert.ok(version.startsWith('4.'), 'ship/VERSION on the 4.x line');
-    assert.ok(readSrc('.claude-plugin/plugin.json').includes(`"${version}"`), `plugin.json at ${version}`);
-    assert.ok(readSrc('package.json').includes(`"${version}"`), `package.json at ${version}`);
+    assert.equal(JSON.parse(readSrc('.claude-plugin/plugin.json')).version, version, `plugin.json at ${version}`);
+    assert.equal(JSON.parse(readSrc('package.json')).version, version, `package.json at ${version}`);
   });
 });
 
