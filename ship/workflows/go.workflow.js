@@ -106,6 +106,26 @@ const VERIFY_SCHEMA = {
 
 const phaseLine = (ph) => (ph.id === 'all' ? '' : `Phase: ${ph.id} — ${ph.name}\n`)
 
+// Defensive: the harness's final-JSON schema wrapper (StructuredOutput) has
+// flaked and thrown even when the agent's underlying work was already
+// committed and green. Retry once, then degrade to null — every call site
+// below already handles a null result gracefully. Retrying an agent is safe:
+// PLAN.md tracks task status and commits are atomic, so a retried builder
+// sees done tasks and returns quickly.
+const safeAgent = async (prompt, opts) => {
+  const baseOpts = opts && typeof opts === 'object' ? opts : {}
+  const label = typeof baseOpts.label === 'string' ? baseOpts.label : ''
+  const labelDisplay = label || '<no-label>'
+  try { return await agent(prompt, baseOpts) } catch (e) {
+    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once`)
+  }
+  const retryOpts = { ...baseOpts, label: label ? `${label}:retry` : 'retry' }
+  try { return await agent(prompt, retryOpts) } catch (e) {
+    log(`${labelDisplay} threw again (${e && e.message ? e.message : e}) — treating as no result`)
+    return null
+  }
+}
+
 const buildPrompt = (ph) => `Build feature: ${feature}
 ${phaseLine(ph)}
 ## Key File Context (from Explore digest)
@@ -135,7 +155,7 @@ for (let i = 0; i < phases.length; i++) {
   const ph = phases[i]
   const label = ph.id === 'all' ? 'all' : ph.id
 
-  const build = await agent(buildPrompt(ph), {
+  const build = await safeAgent(buildPrompt(ph), {
     agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, label: `build:${label}`, phase: 'Build',
   })
 
@@ -145,7 +165,7 @@ for (let i = 0; i < phases.length; i++) {
     break
   }
 
-  const review = await agent(reviewPrompt(ph, build.commits || []), {
+  const review = await safeAgent(reviewPrompt(ph, build.commits || []), {
     agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `review:${label}`, phase: 'Build',
   })
 
@@ -156,18 +176,23 @@ for (let i = 0; i < phases.length; i++) {
     : []
 
   if (blocking.length) {
-    fixRound = await agent(fixPrompt(ph, blocking), {
+    fixRound = await safeAgent(fixPrompt(ph, blocking), {
       agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, label: `fix:${label}`, phase: 'Build',
     })
-    rereview = await agent(
+    rereview = await safeAgent(
       `Re-review feature: ${feature}\n${phaseLine(ph)}The builder applied fixes for your critical/high findings. Re-run the affected verify commands and re-review ONLY whether each critical/high finding is now resolved. Emit an updated review_result.`,
       { agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build' },
     )
   }
 
-  const unresolved = rereview && rereview.status === 'NEEDS_FIXES'
-    ? rereview.findings.filter((f) => f.severity === 'critical' || f.severity === 'high')
-    : []
+  // If blocking findings existed but the re-review produced no result, we
+  // could not confirm resolution — report them as unresolved rather than
+  // silently claiming a clean phase.
+  const unresolved = blocking.length && !rereview
+    ? blocking
+    : rereview && rereview.status === 'NEEDS_FIXES'
+      ? rereview.findings.filter((f) => f.severity === 'critical' || f.severity === 'high')
+      : []
 
   completed.push({
     phaseId: ph.id, phaseName: ph.name,
@@ -182,7 +207,7 @@ for (let i = 0; i < phases.length; i++) {
 let verdict = null
 if (!stoppedAt) {
   phase('Verify')
-  verdict = await agent(
+  verdict = await safeAgent(
     `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.`,
     { agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify' },
   )
