@@ -137,9 +137,11 @@ describe('v4 — surviving behaviours', () => {
     assert.ok(/NFR prob/i.test(c), 'brainstormer keeps the NFR probe');
   });
 
-  it('version bumped to 4.0.0', () => {
-    assert.ok(readSrc('.claude-plugin/plugin.json').includes('"4.0.0"'), 'plugin.json at 4.0.0');
-    assert.ok(readSrc('package.json').includes('"4.0.0"'), 'package.json at 4.0.0');
+  it('version files agree with ship/VERSION', () => {
+    const version = readSrc('ship/VERSION').trim();
+    assert.ok(version.startsWith('4.'), 'ship/VERSION on the 4.x line');
+    assert.ok(readSrc('.claude-plugin/plugin.json').includes(`"${version}"`), `plugin.json at ${version}`);
+    assert.ok(readSrc('package.json').includes(`"${version}"`), `package.json at ${version}`);
   });
 });
 
@@ -154,11 +156,15 @@ describe('v4 — go workflow control flow', () => {
 
   function runWorkflow(args, scenario) {
     const calls = [];
+    // A scenario value may be a function (called with the label) so tests can
+    // simulate throwing agents — e.g. the flaky final-JSON schema wrapper.
     const agent = async (prompt, opts = {}) => {
       const label = opts.label || '';
       calls.push(label);
       for (const k of Object.keys(scenario)) {
-        if (k !== '__default' && label.startsWith(k)) return scenario[k];
+        if (k !== '__default' && label.startsWith(k)) {
+          return typeof scenario[k] === 'function' ? scenario[k](label) : scenario[k];
+        }
       }
       return scenario.__default;
     };
@@ -220,6 +226,36 @@ describe('v4 — go workflow control flow', () => {
       { 'build:': null, __default: APPROVED });
     assert.ok(result.stoppedAt, 'a null build result must stop the workflow');
     assert.equal(result.verdict, null);
+  });
+
+  it('agent throw is retried once, then the run continues', async () => {
+    let verifyAttempts = 0;
+    const { result, calls } = await runWorkflow(
+      { feature: 'f', phases: [{ id: 'p1', name: 'A' }] },
+      { 'build': COMPLETE, 'review': APPROVED, __default: APPROVED,
+        'verify': () => { if (++verifyAttempts === 1) throw new Error('schema wrapper flake'); return VERDICT; } });
+    assert.deepEqual(calls, ['build:p1', 'review:p1', 'verify', 'verify:retry']);
+    assert.equal(result.verdict.status, 'PASS');
+  });
+
+  it('agent that throws twice degrades to null instead of killing the run', async () => {
+    const { result } = await runWorkflow(
+      { feature: 'f', phases: [{ id: 'p1', name: 'A' }] },
+      { 'build': COMPLETE, 'review': APPROVED, __default: APPROVED,
+        'verify': () => { throw new Error('schema wrapper flake'); } });
+    assert.equal(result.stoppedAt, null);
+    assert.equal(result.verdict, null, 'verify degrades to a null verdict, not a crash');
+    assert.equal(result.completed.length, 1, 'built phases are still reported');
+  });
+
+  it('blocking findings stay unresolved when the re-review produces no result', async () => {
+    const { result } = await runWorkflow(
+      { feature: 'f', phases: [{ id: 'p1', name: 'A' }] },
+      { 'build:': COMPLETE, 'review:': NEEDS, 'fix:': COMPLETE, 'verify': VERDICT, __default: APPROVED,
+        'rereview:': () => { throw new Error('schema wrapper flake'); } });
+    assert.equal(result.completed[0].fixApplied, true);
+    assert.equal(result.completed[0].unresolved.length, 1, 'unconfirmed fixes must surface as unresolved');
+    assert.equal(result.completed[0].unresolved[0].severity, 'high');
   });
 
   it('throws when args.feature is missing', async () => {
