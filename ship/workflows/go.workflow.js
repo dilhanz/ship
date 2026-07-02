@@ -113,11 +113,15 @@ const phaseLine = (ph) => (ph.id === 'all' ? '' : `Phase: ${ph.id} — ${ph.name
 // PLAN.md tracks task status and commits are atomic, so a retried builder
 // sees done tasks and returns quickly.
 const safeAgent = async (prompt, opts) => {
-  try { return await agent(prompt, opts) } catch (e) {
-    log(`${opts.label} threw (${e && e.message ? e.message : e}) — retrying once`)
+  const baseOpts = opts && typeof opts === 'object' ? opts : {}
+  const label = typeof baseOpts.label === 'string' ? baseOpts.label : ''
+  const labelDisplay = label || '<no-label>'
+  try { return await agent(prompt, baseOpts) } catch (e) {
+    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once`)
   }
-  try { return await agent(prompt, { ...opts, label: `${opts.label}:retry` }) } catch (e) {
-    log(`${opts.label} threw again (${e && e.message ? e.message : e}) — treating as no result`)
+  const retryOpts = { ...baseOpts, label: label ? `${label}:retry` : 'retry' }
+  try { return await agent(prompt, retryOpts) } catch (e) {
+    log(`${labelDisplay} threw again (${e && e.message ? e.message : e}) — treating as no result`)
     return null
   }
 }
