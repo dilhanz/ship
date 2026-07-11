@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.1.0
+
+Minor release — reviewer and verifier follow the session model, plus reliability fixes at the seams between the agents and the two orchestration paths.
+
+### Changed
+
+- **Reviewer and verifier inherit the parent model**: `ship-reviewer` and `ship-verifier` no longer pin `model: sonnet` in frontmatter — like the builder, they inherit the parent session model. The brainstormer keeps its explicit `opus` pin.
+
+### Fixed
+
+- **go workflow re-review prompt embeds the findings**: each workflow `agent()` call spawns a fresh agent, so the re-reviewer had no memory of the round-1 critical/high findings it was asked to confirm as resolved. The re-review prompt now lists the findings and the fix commits explicitly.
+- **`VERIFY_SCHEMA` accepts `criteria_verdicts`**: the verifier is instructed to report per-criterion verdicts, but the workflow schema's `additionalProperties: false` rejected the field, forcing a validation retry that silently dropped the evidence. The schema now includes it.
+- **Verifier diff-base handles an empty diff**: `git merge-base HEAD main` is HEAD itself when the feature was built directly on main, leaving Stage 2's changed-file list empty. The fallback (feature commits via `git log --grep`, or PLAN.md `<files>`) now also fires on an empty diff, not just a git error.
+- **Reviewer Inputs documents all invocation forms**: diff range (manual build), commit list (go workflow), or neither (working tree vs merge-base) — previously only the diff-range form was described.
+- **go skill persists review findings to REVIEW.md**: findings from `/ship:go` phases only appeared in the chat report; the reconcile step now appends them to REVIEW.md in the same format as the manual build path.
+- **Verifier verdict asymmetry made explicit**: grep evidence can prove absence (→ FAIL) but never correctness (existence alone is at most INCONCLUSIVE); the FAIL definition previously required an executed verify command, contradicting the wiring rule.
+
 ## 4.0.2
 
 Patch release — `/ship:go` survives flaky agent crashes instead of dying after the work is already committed.
