@@ -82,6 +82,19 @@ const VERIFY_SCHEMA = {
     criteria_failed: { type: 'number' },
     criteria_inconclusive: { type: 'number' },
     criteria_total: { type: 'number' },
+    criteria_verdicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['criterion', 'verdict'],
+        properties: {
+          criterion: { type: 'string' },
+          verdict: { enum: ['PASS', 'FAIL', 'INCONCLUSIVE'] },
+          evidence: { type: 'string' },
+        },
+      },
+    },
     tests_written: { type: 'number' },
     tests_passed: { type: 'number' },
     tests_failed: { type: 'number' },
@@ -147,6 +160,15 @@ ${findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.file} — ${f.descriptio
 
 For each fix: implement it, re-run the affected task's verify command, and commit with "fix(${feature}): {short description}". Emit an updated build_result.`
 
+// Each agent() call is a fresh agent — the re-reviewer has no memory of the
+// original review, so the findings must be embedded in the prompt.
+const rereviewPrompt = (ph, findings, fixCommits) => `Re-review feature: ${feature}
+${phaseLine(ph)}A previous review found these critical/high issues, and a builder has applied fixes${fixCommits.length ? ` (fix commits: ${fixCommits.join(', ')})` : ''}:
+
+${findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.file} — ${f.description}`).join('\n')}
+
+You have no memory of that review — verify from the code. Re-run the affected verify commands and review ONLY whether each finding above is now resolved. Report any still-unresolved findings in your review_result.`
+
 phase('Build')
 const completed = []
 let stoppedAt = null
@@ -180,7 +202,7 @@ for (let i = 0; i < phases.length; i++) {
       agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, label: `fix:${label}`, phase: 'Build',
     })
     rereview = await safeAgent(
-      `Re-review feature: ${feature}\n${phaseLine(ph)}The builder applied fixes for your critical/high findings. Re-run the affected verify commands and re-review ONLY whether each critical/high finding is now resolved. Emit an updated review_result.`,
+      rereviewPrompt(ph, blocking, (fixRound && fixRound.commits) || []),
       { agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build' },
     )
   }
