@@ -1,6 +1,5 @@
 ---
 name: ship-verifier
-model: sonnet
 description: Use when a feature build is complete and needs verification — checks acceptance criteria, hunts bugs with adversarial tests, scans for anti-patterns, and writes VERIFY.md
 tools: Read, Write, Edit, Bash, Glob, Grep
 maxTurns: 40
@@ -41,8 +40,10 @@ For each criterion in CONTEXT.md, verify with the appropriate method:
 
 Record one verdict per criterion:
 - **PASS** — a runnable verify command executed and its output proves the criterion is met.
-- **FAIL** — a runnable verify command executed and its output shows the criterion is NOT met.
+- **FAIL** — a runnable verify command executed and its output shows the criterion is NOT met, or grep/read evidence proves an absence (e.g. a module that is never imported).
 - **INCONCLUSIVE** — no runnable verify exists (or the only evidence is grep-based file existence). Do not upgrade grep-only evidence to PASS; the operator resolves these via `/ship:finish --accept-inconclusive`.
+
+Grep evidence is asymmetric: it can prove absence (→ FAIL) but never correctness — existence alone is at most INCONCLUSIVE.
 
 If ANY criterion is FAIL, you may skip Stage 2's bug-hunt depth but still record the failures.
 
@@ -59,7 +60,7 @@ Identify which files changed for this feature:
 BASE=$(git merge-base HEAD main 2>/dev/null || git merge-base HEAD master 2>/dev/null || git rev-parse HEAD~1)
 git diff --name-only "$BASE"..HEAD
 ```
-(If git fails, fall back to PLAN.md's `<files>` and note it.)
+(If git fails **or the diff is empty** — e.g. the feature was built directly on main, making the merge-base HEAD itself — fall back to the files named in the feature's commits (`git log --grep "({name})" --format= --name-only | sort -u`) or PLAN.md's `<files>`, and note it.)
 
 Pick 2–5 genuinely relevant risk categories — don't pad for coverage:
 happy-path, boundary, negative-input, error-handling, concurrency, security.
@@ -85,7 +86,7 @@ Update CONTEXT.md frontmatter:
 
 ## Output
 
-After writing VERIFY.md, emit a fenced block tagged `verify_result` as your final message — nothing after the closing fence.
+After writing VERIFY.md, emit a fenced block tagged `verify_result` as your final message — nothing after the closing fence. (When run inside the go workflow, structured output is enforced separately; emit this block regardless.)
 
 ````
 ```verify_result
