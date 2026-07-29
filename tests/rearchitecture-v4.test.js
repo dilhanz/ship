@@ -258,6 +258,26 @@ describe('v4 — go workflow control flow', () => {
     assert.equal(result.completed[0].unresolved[0].severity, 'high');
   });
 
+  it('APPROVED review that still lists critical findings triggers the fix round', async () => {
+    const CONTRADICTORY = { feature: 'f', status: 'APPROVED',
+      findings: [{ severity: 'critical', file: 'x.js:1', description: 'real bug' }] };
+    const { result, calls } = await runWorkflow(
+      { feature: 'f', phases: [{ id: 'p1', name: 'A' }] },
+      { 'build:': COMPLETE, 'review:': CONTRADICTORY, 'fix:': COMPLETE, 'rereview:': APPROVED, 'verify': VERDICT, __default: APPROVED });
+    assert.deepEqual(calls, ['build:p1', 'review:p1', 'fix:p1', 'rereview:p1', 'verify']);
+    assert.equal(result.completed[0].fixApplied, true, 'findings must outrank a contradictory verdict');
+  });
+
+  it('a dead reviewer surfaces as a phase concern, not a clean phase', async () => {
+    const { result } = await runWorkflow(
+      { feature: 'f', phases: [{ id: 'p1', name: 'A' }] },
+      { 'build:': COMPLETE, 'verify': VERDICT, __default: APPROVED,
+        'review:': () => { throw new Error('schema wrapper flake'); } });
+    assert.equal(result.completed[0].reviewStatus, 'SKIPPED');
+    assert.ok(result.completed[0].concerns.some((c) => /review never ran/.test(c)),
+      'a skipped review must be surfaced in concerns');
+  });
+
   it('throws when args.feature is missing', async () => {
     await assert.rejects(() => runWorkflow({ phases: [] }, { __default: APPROVED }), /feature is required/);
   });
