@@ -20,44 +20,13 @@ Feature state is injected by hooks at session start and after compaction — che
 
 ## Pre-Planning Exploration
 
-Launch 3 parallel exploration sub-agents using the Agent tool. Run all three simultaneously in a single response:
+Scale exploration to uncertainty — the gate is the output, not the process:
 
-**Agent 1 — Similar Features:**
-```
-Explore the codebase and find features or patterns similar to this feature idea: {summary from CONTEXT.md}.
-Use Glob, Read, and Grep to find analogous implementations. Report:
-- File paths of similar implementations
-- Patterns used (naming, structure, abstractions)
-- Key function signatures and conventions
-- How similar features integrate with the rest of the codebase
-Be concise. Max 500 words.
-```
+- **Read CONTEXT.md `## Codebase Notes` first, if present.** When the brainstormer already mapped the territory, do not re-explore it — verify with spot-checks only.
+- **Small or familiar surface:** explore inline with Glob/Read/Grep.
+- **Large or unfamiliar surface:** fan out parallel Explore agents — you choose how many and what each investigates. Similar features, architecture, and conventions remain useful lenses, not mandatory slots.
 
-**Agent 2 — Architecture Map:**
-```
-Map the architecture relevant to this feature: {summary from CONTEXT.md}.
-Use Glob, Read, and Grep to identify:
-- Module boundaries and directory structure in the relevant area
-- Abstraction layers (models, services, routes, components, etc.)
-- Entry points and integration patterns
-- Dependencies between modules
-Be concise. Max 500 words.
-```
-
-**Agent 3 — Codebase Conventions:**
-```
-Survey coding conventions in this project. Read 3-5 representative source files.
-Report:
-- File naming style (camelCase, kebab-case, PascalCase)
-- Import patterns (relative vs alias, default vs named exports)
-- Error handling conventions
-- Test file locations and framework
-- File extension conventions
-- Any linting/formatting config (eslint, prettier, tsconfig)
-Be concise. Max 500 words.
-```
-
-Collect the output from all three agents into an `## Exploration Findings` block.
+Planning may start only when you know the integration points, the closest existing patterns, and the conventions the new code must follow. Collect what you learned into an `## Exploration Findings` block; these findings land in PLAN.md's `## Exploration Summary`.
 
 ## Post-Exploration Clarifying Questions
 
