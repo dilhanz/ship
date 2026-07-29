@@ -1,5 +1,16 @@
 # Changelog
 
+## 5.0.1
+
+Patch release — hardens the go workflow's result handling and fixes a Windows launch failure.
+
+### Fixed
+
+- **Review findings outrank the verdict**: an `APPROVED` review that still listed critical/high findings previously skipped the fix round, and those findings were recorded as merely informational. Blocking findings are now derived from severities regardless of the reviewer's verdict, in both the review and re-review rounds.
+- **A dead reviewer surfaces as a concern**: when both review attempts fail, the phase previously completed with `reviewStatus: 'SKIPPED'` and nothing user-visible. The workflow now injects a "review never ran — the diff went unreviewed" concern into the channel the go skill already reports.
+- **Review prompt no longer assumes commit ordering**: the phase diff range was derived as `<first-commit>~1..HEAD`, which silently narrowed the reviewed diff to a single commit if a builder reported commits newest-first. The reviewer now confirms ordering with `git log`, and the ill-defined merge-base fallback is replaced with `git diff HEAD`.
+- **Workflow scripts check out as LF**: the Workflow engine's permission layer rejects scripts containing CR bytes, so `/ship:go` failed to launch on Windows where `core.autocrlf` checked the plugin cache copy out as CRLF. A `.gitattributes` rule (`ship/workflows/*.js text eol=lf`) fixes installed copies at the source.
+
 ## 5.0.0
 
 Doctrine release — the ruleset moves from prescriptive micromanagement to outcome-gated guidance: contract the artifacts, gate the outcomes, free the process. Machine contracts (task XML, result JSON shapes, go.workflow.js schemas, status state machine) are unchanged.
