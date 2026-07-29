@@ -1,5 +1,24 @@
 # Changelog
 
+## 5.0.0
+
+Doctrine release — the ruleset moves from prescriptive micromanagement to outcome-gated guidance: contract the artifacts, gate the outcomes, free the process. Machine contracts (task XML, result JSON shapes, go.workflow.js schemas, status state machine) are unchanged.
+
+### Changed
+
+- **Outcome gates replace question/task quotas**: the brainstormer writes CONTEXT.md only when the problem, scope boundary, and 3+ testable acceptance criteria can be stated without guessing and the user has confirmed — question count is judgment ("5-10+ questions" and the HARD-GATE minimums are gone). The plan's task-count floor is removed (the ~12-task ceiling stays as a split trigger).
+- **Exploration scales to uncertainty**: the plan skill's mandatory 3-agent exploration fan-out is removed — it reuses CONTEXT.md Codebase Notes when present, explores inline for small or familiar surfaces, and fans out Explore agents only for large or unfamiliar ones.
+- **Contracts-vs-internals task altitude**: plan `<action>`s specify observable, load-bearing contracts (schemas, endpoint shapes, error behavior at boundaries, library choices, integration points) and leave internals (function names, decomposition, imports) to the builder. New litmus: would two reasonable implementations differ in a way the user cares about?
+- **Builder internals latitude with surface-don't-take**: the builder follows planned contracts exactly, owns unspecified internals, and surfaces materially better approaches as deviations/concerns or NEEDS_CONTEXT — never silently substituting its own approach for a planned contract.
+- **Plan-verify runs as a fresh-context subagent**: the skill orchestrates inline but delegates the review to a general-purpose subagent that shares none of the planner's conversation. Grounding checks (paths, references, depends IDs, packages, verify-command feasibility) are retained; format-policing checks are gone; the plan's self-checks 6.2–6.7 move to the reviewer as judgment (the acceptance-coverage map and adversarial review stay in plan).
+- **Design proposes feature-specific approaches**: the three canned philosophy agents (minimal changes / clean architecture / pragmatic balance) are replaced by 2-3 genuinely distinct approaches derived from the feature's actual decision axes.
+- **Build skill deduplicated**: the orchestrator's Trust-But-Verify re-run is removed (the reviewer already re-runs every phase verify command — verifies run 2×, matching the go-workflow path), and the pre-build Explore digest is now conditional on phase size instead of mandatory.
+
+### Removed
+
+- **`INFRA_DETECTED` and the NFR routing table**: replaced by two sentences of judgment guidance — probe the NFR dimensions the codebase makes relevant, skip the ones that plainly don't apply.
+- **Brainstormer `model: opus` pin**: the agent inherits the session model, consistent with the builder/reviewer/verifier.
+
 ## 4.1.0
 
 Minor release — reviewer and verifier follow the session model, plus reliability fixes at the seams between the agents and the two orchestration paths.

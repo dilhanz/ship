@@ -18,86 +18,83 @@ Feature state is injected by hooks at session start and after compaction — che
 4. If multiple candidates exist, list them and pick the most recent
 5. If no candidates exist, report that no verifiable plans were found
 
-## Read Inputs
+## How This Skill Works
+
+This skill is an orchestrator. The review itself runs in ONE general-purpose subagent launched via the Agent tool, because the reviewer must be fresh-context: it must not share the planner's conversation, or it inherits the planner's assumptions and rubber-stamps its own reasoning. The skill launches the reviewer, waits for its structured verdict, then writes the results and status itself.
+
+## Launch the Reviewer
+
+Launch one general-purpose subagent via the Agent tool with this prompt (substitute `{name}`):
+
+```
+You are an independent plan reviewer. You did not write this plan and must not trust
+its claims — check whether it will actually work against the real codebase. Your job
+is to catch problems that would cause build failures or produce code that doesn't fit
+the project.
 
 Read both files:
-- `.planning/features/{name}/CONTEXT.md`
-- `.planning/features/{name}/PLAN.md`
+- .planning/features/{name}/CONTEXT.md
+- .planning/features/{name}/PLAN.md
 
-Extract from PLAN.md: all file paths (existing and new), directories, key class/function names, and packages referenced. These are your verification targets.
+You are READ-ONLY. Explore with Read/Glob/Grep; use Bash only for existence and
+feasibility probes (e.g. does the test runner exist, does a package appear in a
+manifest) — never modify any file.
 
-## Verify the Plan
+Stay plan-driven: only explore what the plan touches — do not map the entire codebase.
+Reading PLAN.md alone is not evidence; verify structural claims against the actual code.
 
-You are an independent reviewer checking whether this plan will actually work against the real codebase. You are NOT the planner and NOT the builder. Your job is to catch problems that would cause build failures or produce code that doesn't fit the project.
+### Mechanical grounding — verify each claim
 
-<HARD-RULES>
-1. Do NOT approve based on reading PLAN.md alone. You MUST explore the actual codebase and verify structural claims. "Looks reasonable" is not evidence — only codebase exploration is evidence.
-2. Stay plan-driven. Only explore what the plan touches — do not map the entire codebase.
-3. You MUST write results to PLAN.md when done.
-</HARD-RULES>
+For every task in PLAN.md:
+- <files> paths: existing files resolve via Glob; for new files, the parent directory
+  exists or its creation is plausible under project conventions
+- <reference>: resolves to a real file; where a symbol, function, or pattern is named,
+  confirm it exists there via Grep
+- depends attributes: every referenced task ID exists, with no forward or circular
+  references
+- Packages: every named package exists in the project's dependency manifests or is
+  stdlib
+- <verify> commands: each is a runnable shell command whose runner exists in the
+  repo/toolchain, and passing it would actually prove the task's completion
 
-### Stage 1 — Targeted Codebase Discovery
+### Judgment review — against the real code
 
-Use the plan's file paths as exploration targets — do NOT do a broad survey of the entire project.
+- Completeness: is each task specified enough to execute without guessing at contracts
+  (schemas, endpoint shapes, error behavior, integration points)?
+- Wiring: are artifacts created by one task consumed by another, or orphaned?
+- Ordering: is the task order sound? Are phases self-contained?
+- Pattern consistency: does the approach match how the codebase already does this
+  (layering, naming, library choices)?
+- Duplicate functionality: does the plan rebuild something that already exists? Grep
+  for similar function names or route paths.
+- Coverage: is any acceptance criterion in CONTEXT.md left unaddressed by the tasks?
+- Side effects: will planned modifications break existing callers?
 
-1. **Verify plan paths exist:** Glob for each directory and existing file mentioned in the plan. Batch related paths into single Glob calls using patterns (e.g., `src/components/**/*.tsx` instead of individual files).
-2. **Read 1-2 analogous examples:** If the plan creates a new controller/component/service, find ONE existing example in the same directory and read it. Note patterns (naming, imports, structure).
-3. **Check config only if relevant:** Only read tsconfig/package.json/etc. if the plan references new dependencies or build changes.
+Do NOT police document format — review substance, not section presence or wording.
 
-Do NOT: map the entire directory tree, read unrelated files, or explore areas the plan doesn't touch.
+### Return a structured verdict
 
-### Stage 2 — Plan Structural Verification
+Report back in exactly this format:
 
-For each task in PLAN.md, verify:
+## Review Verdict
 
-#### 2.1 — File Path Accuracy
+**Status:** APPROVED | NEEDS-REVISION
+**Examined:** [key codebase files/patterns you checked]
 
-For every path in `<files>`:
-- If the file should already exist (modification), verify it exists with Glob
-- If the file is new, verify the parent directory exists and follows naming conventions
-- Check that file extensions match the project's conventions
+### Findings
 
-Use batch Glob calls — verify multiple paths per turn.
+[One line per finding:]
+- [CRITICAL|WARNING|SUGGESTION] Task {id} / {file}: {description} —
+  Evidence: {what the codebase shows} — Fix: {specific recommendation}
 
-#### 2.2 — Pattern Consistency
+[Or "No issues found."]
 
-For each task's `<action>`, check that the approach matches existing codebase patterns:
+APPROVED iff zero CRITICAL findings.
+```
 
-- **Architecture layers:** Does the plan respect the project's layering? (e.g., doesn't skip service layer and call DB from route handler if existing code uses services)
-- **Naming conventions:** Do proposed names follow the project's conventions?
-- **Library usage:** Does the plan use libraries already in the project, or introduce new ones without reason?
+## Handle the Verdict
 
-#### 2.3 — Dependency & Conflict Check
-
-- **Existing code conflicts:** Does any planned change conflict with existing code?
-- **Missing dependencies:** Does the plan assume packages or modules that don't exist?
-- **Import chain validity:** Will the planned imports resolve correctly?
-
-#### 2.4 — Verify Command Feasibility
-
-For each task's `<verify>` command:
-- Is the command syntactically valid for this project's setup?
-- Does it actually prove the task is done?
-
-#### 2.5 — Enhanced Field Checks
-
-- **Reference validity:** For each task with a `<reference>`, verify the referenced file and function/pattern exist via Glob/Grep
-- **Dependency ordering:** For tasks with a `depends` attribute, verify depended-on task IDs exist and appear earlier in execution order
-- **Error paths at boundaries:** For tasks targeting API endpoints, file I/O, or DB operations, check that `<action>` specifies error responses — flag missing error handling as WARNING
-- **Integration verify:** Check that the final task's `<verify>` tests the integrated feature flow, not just an isolated unit
-- **Exploration summary:** Verify PLAN.md contains an `## Exploration Summary` section with non-empty content
-
-### Stage 3 — Feature Landscape Review
-
-Quick checks:
-
-1. **Duplicate functionality:** Grep for similar function names or route paths the plan introduces
-2. **Integration points:** Are all connection points to existing code identified?
-3. **Side effects:** Will modifications break existing callers?
-
-### Stage 4 — Verdict
-
-Classify each finding:
+Findings are classified by severity:
 
 | Severity | Meaning | Blocks Approval? |
 |----------|---------|-----------------|
@@ -109,7 +106,9 @@ Overall Status:
 - **APPROVED:** No CRITICAL findings. Plan is structurally sound.
 - **NEEDS-REVISION:** One or more CRITICAL findings. Plan must be fixed.
 
-### Stage 5 — Write Results
+If the subagent errors or returns no parseable verdict, relaunch it once; if it fails again, report the failure to the user and stop — never approve a plan without a completed review.
+
+## Write Results
 
 #### If APPROVED:
 
@@ -183,9 +182,9 @@ Next: /ship:plan {name} (replan with review notes)
 
 ## What NOT to Do
 
-- **Rubber-stamp.** Never approve without exploring the codebase.
+- **Rubber-stamp.** Never approve without a completed subagent review grounded in codebase exploration.
+- **Review in this conversation.** The reviewer must be fresh-context — do not perform the review inline.
 - **Rewrite the plan.** You review — the planner rewrites.
-- **Review code quality.** You review structural feasibility, not "good enough."
 - **Block on style preferences.** Only CRITICAL findings block.
 - **Invent requirements.** Only check what the plan claims against what the codebase shows.
 

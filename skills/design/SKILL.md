@@ -20,82 +20,32 @@ Feature state is injected by hooks at session start and after compaction — che
 
 ## Generate Architecture Options
 
-Launch 3 parallel architecture sub-agents using the Agent tool. Run all three simultaneously in a single response. Each explores the codebase and proposes a concrete approach under a different philosophy.
+Identify the 2-3 genuinely distinct viable approaches for THIS feature. They come from the feature's actual decision axes — e.g. extend an existing module vs. build a new one, sync vs. async, buy (use a library) vs. build — not from a fixed menu of philosophies. The count and framing come from the feature: if only two real contenders exist, present two; do not invent a third to fill a slot.
 
-**Agent 1 — Minimal Changes:**
+1. Read `.planning/features/{name}/CONTEXT.md` for the requirements and constraints.
+2. Find the decision axes: where would two reasonable architects genuinely diverge on this feature?
+3. Develop each candidate approach until it is concrete: what changes, the key files involved, its tradeoffs against the other approaches, and a rough task count.
+
+For small or familiar surfaces, explore inline with Glob/Read/Grep and develop the approaches yourself. For larger or unfamiliar surfaces, launch one parallel sub-agent per candidate approach via the Agent tool — each explores the codebase and reports back in this format:
+
 ```
-Design an architecture for feature '{name}' using a MINIMAL CHANGES philosophy.
-Read .planning/features/{name}/CONTEXT.md for the feature requirements.
-
-Explore the codebase with Glob/Read/Grep to understand existing patterns.
-Propose the approach that achieves the feature with the smallest diff and maximum
-reuse of existing code.
-
-Report in this exact format:
-## Approach: Minimal Changes
-**Philosophy:** Smallest diff, maximum reuse
+## Approach: {approach name}
 **Summary:** [2-3 sentences]
 **Key implementation points:**
-- [concrete point 1]
-- [concrete point 2]
-- [concrete point 3]
-**Pros:** [2 items]
-**Cons:** [2 items]
-**Estimated tasks:** [N]
-```
-
-**Agent 2 — Clean Architecture:**
-```
-Design an architecture for feature '{name}' using a CLEAN ARCHITECTURE philosophy.
-Read .planning/features/{name}/CONTEXT.md for the feature requirements.
-
-Explore the codebase with Glob/Read/Grep to understand existing patterns.
-Propose the approach that prioritizes maintainability, proper abstractions, and
-elegant design — even if it means more files or refactoring.
-
-Report in this exact format:
-## Approach: Clean Architecture
-**Philosophy:** Maintainability, elegant abstractions
-**Summary:** [2-3 sentences]
-**Key implementation points:**
-- [concrete point 1]
-- [concrete point 2]
-- [concrete point 3]
-**Pros:** [2 items]
-**Cons:** [2 items]
-**Estimated tasks:** [N]
-```
-
-**Agent 3 — Pragmatic Balance:**
-```
-Design an architecture for feature '{name}' using a PRAGMATIC BALANCE philosophy.
-Read .planning/features/{name}/CONTEXT.md for the feature requirements.
-
-Explore the codebase with Glob/Read/Grep to understand existing patterns.
-Propose the approach that balances speed with quality — ship quickly without
-accruing significant tech debt.
-
-Report in this exact format:
-## Approach: Pragmatic Balance
-**Philosophy:** Ship quickly, quality where it matters
-**Summary:** [2-3 sentences]
-**Key implementation points:**
-- [concrete point 1]
-- [concrete point 2]
-- [concrete point 3]
-**Pros:** [2 items]
-**Cons:** [2 items]
+- [concrete point, naming key files]
+- [concrete point, naming key files]
+**Tradeoffs:** [what this buys and costs vs. the alternatives]
 **Estimated tasks:** [N]
 ```
 
 ## Present Options
 
-After all three agents return, read their outputs and present a comparison to the user.
+Once every candidate approach is concrete, present a comparison to the user.
 
-Display a summary of all three approaches, then form your own recommendation based on the feature's complexity, the codebase's current state, and the trade-offs.
+Display a summary of each approach, then form your own recommendation based on the feature's complexity, the codebase's current state, and the trade-offs.
 
 Use AskUserQuestion to ask: "Which architecture approach should we use for this feature?"
-- Options: the 3 approaches, with your recommendation marked
+- Options: the candidate approaches, with your recommendation marked
 - Include a brief note about why you recommend that approach
 
 ## Record Choice
