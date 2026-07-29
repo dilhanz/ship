@@ -1,0 +1,4 @@
+# The Workflow engine's permission layer rejects scripts containing CR bytes
+# ("control characters that would be hidden in the approval dialog"), so
+# workflow scripts must check out as LF regardless of core.autocrlf.
+ship/workflows/*.js text eol=lf
