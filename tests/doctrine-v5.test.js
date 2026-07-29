@@ -127,3 +127,27 @@ describe('v5 — frozen contracts', () => {
       'builder keeps the HARD-GATE');
   });
 });
+
+// ---------------------------------------------------------------------------
+// FAIL → rebuild re-entry (v5.0.2) — fix rounds must reach both build paths
+// ---------------------------------------------------------------------------
+
+describe('v5 — verify fix rounds re-enter the build paths', () => {
+  it('verifier wraps fix tasks in a pending phase on phased plans', () => {
+    const c = readSrc('agents/ship-verifier.md');
+    assert.ok(c.includes('fix-1') && c.includes('<phase'),
+      'verifier must wrap FAIL fix tasks in a new pending <phase> so go/build pick them up');
+  });
+
+  it('go skill sweeps orphaned fix tasks into the pseudo-phase', () => {
+    const c = readSrc('skills/go/SKILL.md');
+    assert.ok(c.includes('outside any phase'),
+      'go must route pending tasks outside phases through the {id: "all"} pseudo-phase');
+  });
+
+  it('go skill records skipped reviews in REVIEW.md', () => {
+    const c = readSrc('skills/go/SKILL.md');
+    assert.ok(c.includes('Status: SKIPPED') || c.includes('`SKIPPED`'),
+      'an unreviewed phase must still be recorded in REVIEW.md, not silently skipped');
+  });
+});
