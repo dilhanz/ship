@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.0.2
+
+Patch release — the verify-FAIL loop now re-enters `/ship:go`, and unreviewed phases leave a durable record.
+
+### Fixed
+
+- **Verify FAIL re-enters `/ship:go` on phased plans**: the verifier appended fix tasks as bare `<task>` elements, so on a phased plan (all phases done) go's pending-phase extraction found nothing, passed an empty phase list to the workflow, and skipped straight to verify-only — re-running the verifier against unfixed code and appending duplicate fix tasks. The verifier now wraps fix tasks in a new pending phase (`fix-1`, incrementing on repeat failures); the go skill also sweeps orphaned fix tasks from older plans into the `{id: "all"}` pseudo-phase, and its FAIL report points to `/ship:go` instead of the `/ship:build`-then-`/ship:go` workaround.
+- **Skipped reviews are recorded in REVIEW.md**: a phase whose reviewer died twice (`reviewStatus: SKIPPED`, empty findings) was previously omitted from REVIEW.md entirely — the one phase that went unreviewed was the one with no record. It now gets its heading with `Status: SKIPPED`.
+
 ## 5.0.1
 
 Patch release — hardens the go workflow's result handling and fixes a Windows launch failure.
