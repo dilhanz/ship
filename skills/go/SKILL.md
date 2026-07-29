@@ -36,7 +36,7 @@ Fires when status is `plan-verified` (whether plan-verify just ran or the featur
 
 ## 4. Pre-Build Prep
 
-1. From PLAN.md, build the ordered list of **pending phases** (each `<phase>` whose `status` != `done`, as `{id, name}`). If the plan is flat (no `<phase>` elements), use a single pseudo-phase `{id: "all", name: "all"}`.
+1. From PLAN.md, build the ordered list of **pending phases** (each `<phase>` whose `status` != `done`, as `{id, name}`). If the plan is flat (no `<phase>` elements), use a single pseudo-phase `{id: "all", name: "all"}`. If no pending phases remain but pending `<task>`s exist outside any phase (fix tasks appended by an older verifier), also use the `{id: "all", name: "all"}` pseudo-phase — its builder prompt says to execute all pending tasks in the plan, which sweeps them up.
 2. If status is `built` (build already complete, verify only), use an **empty** phase list — the workflow will skip straight to verify.
 3. Set CONTEXT.md frontmatter `status: building` (unless already `built`).
 
@@ -58,7 +58,7 @@ The workflow builds each phase (builder → reviewer re-verify+review → one fi
 From the returned result:
 
 1. For each phase in `completed`, mark its `<phase>` `status="done"` in PLAN.md (skip the `all` pseudo-phase).
-2. Persist review findings to `.planning/features/{name}/REVIEW.md` (create on first append), same format as the manual build skill: a `## Phase {id} — {phase-name} (round 1)` heading with `Status: {reviewStatus}`, then one line per finding: `- [{severity}] {file}: {description} — {marker}`. Marker: `unresolved` if the finding appears in that phase's `unresolved` list; `fixed in fix round` for other critical/high findings when `fixApplied` is true; `recorded` otherwise. Skip phases with an empty `findings` array.
+2. Persist review findings to `.planning/features/{name}/REVIEW.md` (create on first append), same format as the manual build skill: a `## Phase {id} — {phase-name} (round 1)` heading with `Status: {reviewStatus}`, then one line per finding: `- [{severity}] {file}: {description} — {marker}`. Marker: `unresolved` if the finding appears in that phase's `unresolved` list; `fixed in fix round` for other critical/high findings when `fixApplied` is true; `recorded` otherwise. Skip phases with an empty `findings` array — except when `reviewStatus` is `SKIPPED`: an unreviewed phase must still get its heading with `Status: SKIPPED`, so REVIEW.md durably records that the diff went unreviewed.
 3. Collect any per-phase `unresolved` review findings (critical/high that survived the fix round) and builder `concerns` across `completed`. These must be surfaced in the report below — a phase is marked `done` even when it carries unresolved findings (one fix round only, the verifier is the backstop), so the user needs to see them.
 4. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, or no result): leave CONTEXT.md `status: building` and report the blocker. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run).
 5. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE, `plan-verified` + fix tasks on FAIL). Report it.
@@ -78,7 +78,7 @@ Verify: {PASS | FAIL | INCONCLUSIVE — criteria_passed/criteria_total, bugs by 
 - {phase id}: {concern}
 
 [If verdict PASS/INCONCLUSIVE:] Ready to finish — run /ship:finish (or I can run it now).
-[If FAIL:] Fix tasks were appended to PLAN.md. Review them, then /ship:build and /ship:go to continue.
+[If FAIL:] Fix tasks were appended to PLAN.md as a pending fix phase. Review them, then /ship:go to continue (or /ship:build for manual control).
 [If stoppedAt:] Stopped at phase {id}. Reason: {status}. Next: {suggested action}.
 ```
 
