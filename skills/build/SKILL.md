@@ -28,14 +28,14 @@ If prerequisites fail, stop and tell the user what's missing.
 
 ## Pre-Build Context Loading
 
-Before executing any phase, delegate the file read to a disposable `Explore` subagent to keep raw file bodies out of the orchestrator window.
+The Explore digest is conditional — an optimization for large or unfamiliar phases, not a required step.
 
 1. Read `.planning/features/{name}/PLAN.md` in full.
 2. Extract all `<files>` elements across all pending tasks. Deduplicate the paths.
 3. Filter to files that already exist (skip files the plan creates from scratch — use Glob to check existence; also skip binary, lock, and generated files).
-4. **Do NOT Read the candidate file bodies into this conversation.**
-5. If the deduped existing-file list is empty, skip the digest and use an empty Key File Context block.
-6. Otherwise, delegate the read to the built-in `Explore` agent via the Agent tool. Use "medium" search breadth and send it this prompt:
+4. **Decide whether a digest is worth it:** skip the digest and use an empty Key File Context block when the phase is small (roughly ≤5 unique existing files across its tasks) or the area is already well understood from this conversation. Delegate to an Explore digest subagent only when the phase touches many or unfamiliar files.
+5. **Do NOT Read the candidate file bodies into this conversation.**
+6. When the digest runs, delegate the read to the built-in `Explore` agent via the Agent tool — this keeps raw file bodies out of the orchestrator window. Use "medium" search breadth and send it this prompt:
 
    ```
    Read these files and return ONLY a `## Key File Context` block: {deduped existing file list}.
@@ -134,55 +134,14 @@ Proceed to the status handling below (### 3).
 Parse the builder agent's `build_result` JSON block. Extract the `status` field.
 
 **If status is "COMPLETE":**
-Run the Trust-But-Verify gate (3.1), then the Review Gate (3.2), then mark the phase done.
+Proceed directly to the Review Gate (3.1), then mark the phase done. The orchestrator does not re-run verify commands itself — the ship-reviewer's Step 1 re-runs every phase verify command and treats a failure as a critical finding, which triggers the fix round below.
 
 **If status is "COMPLETE_WITH_CONCERNS":**
-Run the Trust-But-Verify gate (3.1), then the Review Gate (3.2), then mark the phase done.
+Proceed directly to the Review Gate (3.1), then mark the phase done.
 
-### 3.1 Trust-But-Verify
+### 3.1 Review Gate
 
-The builder self-reports COMPLETE — independently confirm it before reviewing or marking the phase done.
-
-1. From PLAN.md, collect the `<verify>` command of every task in the just-completed phase (tasks now marked status="done"). Re-run each command via Bash, in task order. Decide pass/fail on the exit code alone; on success retain only the last 5 lines of output, and re-pull full output only when a verify fails.
-2. **All pass:** proceed to the Review Gate (3.2).
-3. **Any fail:** SendMessage to the builder agent:
-
-```
-The orchestrator re-ran this phase's verify commands and task {id} ({task name}) failed:
-
-Command: {verify command}
-Exit code: {code}
-Output:
-{full output (re-pulled because this verify failed)}
-
-The task is not actually complete. Diagnose and fix the issue, re-run the verify command
-until it passes, commit the fix with "fix({feature-name}): {short description}",
-and emit an updated build_result JSON block.
-```
-
-   If multiple verifies failed, include all of them in one message.
-4. After the builder returns, re-run ONLY the previously-failing verify commands.
-5. **Still failing:** stop the build with CHECKPOINT semantics — leave CONTEXT.md status as `building`, do NOT mark the phase done, and output:
-
-```
-## CHECKPOINT REACHED
-
-Feature: {name}
-Phase: {phase-id} — {phase-name}
-Reason: verify command for task {id} fails even after a fix round — builder reported COMPLETE but the work does not verify.
-Failing command: {command}
-
-Recommendation: investigate manually or replan this phase with /ship:plan {name}.
-```
-
-   **Stop the loop** — do not continue to the next phase, do not run the Review Gate.
-6. **Now passing:** proceed to the Review Gate (3.2). Fix commits made here are included in the review diff range.
-
-Edge rule: if a verify command cannot run at all in the orchestrator environment (missing tool, environment-specific path) and the failure output clearly shows an environment error rather than a code failure, record "verify {id} not re-runnable by orchestrator" as a phase concern and treat that single verify as passed — do not send environment problems to the builder.
-
-### 3.2 Review Gate
-
-1. Compute the phase diff range: take the first commit hash from `result.commits` (plus any fix-round commits from 3.1) and run `git rev-parse {first-commit}~1` to get the base. The range is `{base}..HEAD`. If `result.commits` is empty or git rev-parse fails, skip the review with a "review skipped: no diff range" concern and proceed to mark the phase done.
+1. Compute the phase diff range: take the first commit hash from `result.commits` and run `git rev-parse {first-commit}~1` to get the base. The range is `{base}..HEAD`. If `result.commits` is empty or git rev-parse fails, skip the review with a "review skipped: no diff range" concern and proceed to mark the phase done.
 2. Invoke the `ship-reviewer` agent via the Agent tool:
 
 ```
@@ -226,7 +185,7 @@ Status: {APPROVED | NEEDS_FIXES | SKIPPED}
 - [{severity}] {file}: {description} — {fixed in {hash} | unresolved | recorded}
 ```
 
-After gates complete (both 3.1 and 3.2):
+After the Review Gate completes:
 - If phased, mark the current phase `status="done"` in PLAN.md
 - Output to the user (use values from the JSON fields):
 
@@ -276,7 +235,7 @@ Answer: {user's answer}
 Continue with the remaining tasks in this phase and emit an updated build_result JSON block when done.
 ```
 
-c. Parse the new build_result from the SendMessage response and route it back through section 3's status handling (COMPLETE → gates 3.1/3.2; another NEEDS_CONTEXT → repeat this flow).
+c. Parse the new build_result from the SendMessage response and route it back through section 3's status handling (COMPLETE → Review Gate 3.1; another NEEDS_CONTEXT → repeat this flow).
 d. **Cap: 2 NEEDS_CONTEXT rounds per phase.** On a third NEEDS_CONTEXT in the same phase, stop the loop, leave CONTEXT.md status as `building`, and output:
 
 ```
