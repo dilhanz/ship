@@ -73,7 +73,7 @@ If a decision contradicts CONTEXT.md, flag it explicitly.
 
 ### Step 5 — Design Tasks
 
-Write 3-12 tasks. Each task must:
+Write the tasks the feature needs — task count is judgment, not a quota. If the plan exceeds ~12 tasks, split the feature. Each task must:
 - Be atomic — one coherent chunk of work
 - Have a specific verify command that proves the task is done
 - List the exact files that will be created or modified
@@ -98,11 +98,7 @@ Write 3-12 tasks. Each task must:
 
 **Task dependencies:** Use `depends` when a task's dependency isn't simply the previous task (e.g., task 5 depends on tasks 1 and 3 but not 4). Omit when tasks are naturally sequential.
 
-**Writing for the builder:** The build step follows instructions literally. Be unambiguous:
-- Include literal function signatures
-- Include schema shapes with field names and types
-- Name specific imports
-- Make all design decisions here — never leave a choice for the builder
+**Writing for the builder — contracts vs internals:** `<action>` specifies the observable, load-bearing contracts — endpoint shapes, schemas and field names, error behavior at boundaries, library choices, integration points — and leaves internals (function names, decomposition, imports, file-internal structure) to the builder. The litmus: would two reasonable implementations differ in a way the user cares about? If yes, decide it in the plan; if no, leave it to the builder.
 
 **Specificity litmus test:** Could a different Claude instance execute this task without asking clarifying questions? If not, add more detail.
 
@@ -151,35 +147,7 @@ Criterion: "Invalid credentials show error" → Task 3 (401) + Task 5 (toast)
 
 **If any criterion has no task mapping, add a task.**
 
-#### 6.2 — Task Completeness
-
-Every task must have all four fields filled with specifics:
-- `name`: Verb phrase
-- `files`: Exact paths
-- `action`: Implementation details with function signatures, field names, patterns
-- `verify`: Runnable shell command
-
-#### 6.3 — Wiring Completeness
-
-Check that artifacts created in one task are consumed in another. A function that exists but is never imported is not done.
-
-#### 6.4 — Verify Quality
-
-Every `<verify>` must be a runnable shell command, not prose.
-
-#### 6.5 — Task Ordering
-
-No task depends on output from a later task.
-
-#### 6.6 — Scope
-
-3-12 tasks total. Fewer = underplanned. More = split the feature.
-
-#### 6.7 — Phase Coherence (if phased)
-
-Each phase is self-contained — no half-finished features mid-phase.
-
-#### 6.8 — Adversarial Review
+#### 6.2 — Adversarial Review
 
 For each task involving external boundaries (API endpoints, file I/O, DB operations, user input), ask:
 - What if this runs twice (idempotency)?
@@ -189,6 +157,8 @@ For each task involving external boundaries (API endpoints, file I/O, DB operati
 - Any security surface (injection, auth bypass, data exposure)?
 
 Add mitigations to the relevant task's `<action>` if issues are found.
+
+Completeness, wiring, ordering, and phase-coherence judgments belong to the independent plan-verify reviewer. One hard rule stands regardless: every `<verify>` must be a runnable shell command — that rule lives in Step 5's task format, not this checklist.
 
 ### Step 7 — Write PLAN.md
 
@@ -264,7 +234,7 @@ Next: /ship:plan-verify
 
 - **Vague actions.** Never write `<action>Implement the feature</action>`.
 - **Scope creep.** Only plan tasks that serve the acceptance criteria.
-- **Open decisions.** Never write "choose an appropriate library" — pick one and name it.
+- **Open contracts.** Never leave a *contract* open — "choose an appropriate library" stays banned (library choice is a contract); pick one and name it. Internals latitude is not an open decision.
 - **Verify commands needing a running server without setup.**
 
 $ARGUMENTS
