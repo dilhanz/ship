@@ -82,7 +82,7 @@ Read the template at `${CLAUDE_PLUGIN_ROOT}/ship/templates/VERIFY.md` and write 
 
 Update CONTEXT.md frontmatter:
 - PASS or INCONCLUSIVE → `status: done` (INCONCLUSIVE gaps are recorded in VERIFY.md; the override gate lives in `/ship:finish`)
-- FAIL → `status: plan-verified`, and append Fix Tasks to PLAN.md for each failing criterion and critical/high bug.
+- FAIL → `status: plan-verified`, and append Fix Tasks to PLAN.md for each failing criterion and critical/high bug. In a phased plan, wrap them in a new pending phase — `<phase id="fix-1" name="Verify fix round 1" status="pending">` (increment the id on repeat failures) — so `/ship:go` and `/ship:build` pick them up as the next pending phase; in a flat plan, append them as bare tasks.
 
 ## Output
 
