@@ -150,7 +150,7 @@ Execute all pending tasks ${ph.id === 'all' ? 'in the plan' : 'in this phase'}. 
 const reviewPrompt = (ph, commits) => `Review feature: ${feature}
 ${phaseLine(ph)}Phase commits: ${commits.length ? commits.join(', ') : '(none reported)'}
 
-Determine the diff range from the first phase commit (\`<first-commit>~1..HEAD\`; if no commits were reported, review the working tree against the merge-base). Re-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md.`
+Determine the diff range from the phase commits — confirm their order with \`git log\` and diff \`<oldest-phase-commit>~1..HEAD\` (if no commits were reported, review the uncommitted working-tree changes via \`git diff HEAD\`). Re-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md.`
 
 const fixPrompt = (ph, findings) => `Fix review findings for feature: ${feature}
 ${phaseLine(ph)}
@@ -193,7 +193,9 @@ for (let i = 0; i < phases.length; i++) {
 
   let fixRound = null
   let rereview = null
-  const blocking = review && review.status === 'NEEDS_FIXES'
+  // Trust the findings over the verdict: an APPROVED review that still lists
+  // critical/high findings is contradictory and must not skip the fix round.
+  const blocking = review
     ? review.findings.filter((f) => f.severity === 'critical' || f.severity === 'high')
     : []
 
@@ -212,14 +214,19 @@ for (let i = 0; i < phases.length; i++) {
   // silently claiming a clean phase.
   const unresolved = blocking.length && !rereview
     ? blocking
-    : rereview && rereview.status === 'NEEDS_FIXES'
+    : rereview
       ? rereview.findings.filter((f) => f.severity === 'critical' || f.severity === 'high')
       : []
 
   completed.push({
     phaseId: ph.id, phaseName: ph.name,
     tasksCompleted: build.tasks_completed, tasksTotal: build.tasks_total,
-    commits: build.commits || [], concerns: build.concerns || [],
+    commits: build.commits || [],
+    // A dead reviewer must not read as a clean phase — surface it through the
+    // concerns channel the go skill already reports to the user.
+    concerns: review
+      ? build.concerns || []
+      : [...(build.concerns || []), `phase ${label} review never ran (no result after retry) — the diff went unreviewed`],
     reviewStatus: review ? review.status : 'SKIPPED',
     findings: review ? review.findings : [],
     fixApplied: !!fixRound, unresolved,
