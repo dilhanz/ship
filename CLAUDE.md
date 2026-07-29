@@ -20,19 +20,19 @@ agents/*.md                4 specialized agents (brainstormer, builder, reviewer
 **Workflow:** `/ship:go` runs the non-interactive build→verify spine through the Claude Code Workflow engine (`ship/workflows/go.workflow.js`) — schema-validated `agent()` calls keep per-agent output out of the main conversation context. The interactive steps (plan, plan-verify, plan-approval gate, finish) run inline in the `go` skill.
 
 **Agents** define `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, and `skills` in frontmatter. Each agent has a single responsibility:
-- `ship-brainstormer` — intensive questioning → CONTEXT.md
+- `ship-brainstormer` — probes until requirements are testable and confirmed → CONTEXT.md
 - `ship-builder` — task execution with atomic commits
 - `ship-reviewer` — re-runs phase verify commands + reviews the phase diff → review_result findings
 - `ship-verifier` — acceptance criteria + adversarial bug hunt + anti-pattern scan → VERIFY.md (single post-build gate)
 
 **Inline skills** (run in the main conversation for unlimited turns):
-- `plan` — codebase exploration → PLAN.md (uses parallel Explore agents for pre-planning, then plans inline)
-- `plan-verify` — independent plan review against codebase patterns (runs inline to avoid turn limits)
+- `plan` — codebase exploration → PLAN.md (exploration scaled to uncertainty — reuses CONTEXT.md Codebase Notes when present, explores inline for small surfaces, fans out Explore agents for large ones)
+- `plan-verify` — independent plan review against codebase patterns (runs inline as orchestrator, delegating the review to a fresh-context subagent for independence)
 
 ## Flow
 
 ```
-/ship:start       "idea" → brainstorm (5-10+ questions) → CONTEXT.md
+/ship:start       "idea" → brainstorm (outcome-gated)   → CONTEXT.md
 /ship:plan               → explore code, design tasks    → PLAN.md
 /ship:plan-verify        → verify plan against codebase  → PLAN.md (review appended)
 /ship:build              → implement, verify, commit     → tasks marked done
@@ -74,7 +74,7 @@ install.js             Deprecated legacy installer — use claude plugin install
 ## Key Concepts
 
 - **Feature-centric:** Each feature/fix gets its own directory — no phases, no milestones, no FEAT-XX IDs
-- **Intensive brainstorming:** The brainstormer asks 5-10+ questions before writing CONTEXT.md
+- **Intensive brainstorming:** The brainstormer probes until the problem, scope boundary, and testable acceptance criteria can be stated without guessing — and the user has confirmed — before writing CONTEXT.md
 - **Atomic commits:** One commit per task, specific files staged (never `git add .`), format: `feat(feature-name): description`
 - **Deviation rules:** 3 escalation levels when reality diverges from the plan, with structured debugging in Rule 2 (see `skills/deviation-rules/SKILL.md`)
 - **Test-driven development:** Builder follows RED-GREEN-REFACTOR when tasks have test-based verify commands
@@ -115,7 +115,7 @@ Hooks are stdin->stdout Node.js scripts. They receive JSON on stdin and (optiona
 
 ### Skills
 
-Skills live in `skills/*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `model`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. Plan and plan-verify skills run inline in the main conversation (full instructions in the skill body, no agent delegation) for unlimited turns. Start runs inline. The manual `build` skill runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress. The `go` skill runs the interactive steps inline but delegates the build→verify spine to the Workflow engine (`ship/workflows/go.workflow.js`), keeping per-agent output out of the main context. Skills are auto-namespaced as `ship:skill-name` by the plugin system (e.g., `/ship:start`).
+Skills live in `skills/*/SKILL.md`. Each file is a Markdown document with YAML frontmatter. Key fields: `model`, `allowed-tools`. The body is the task prompt. `$ARGUMENTS` is replaced with user-provided arguments. The plan skill runs inline in the main conversation (full instructions in the skill body) with exploration scaled to uncertainty. The plan-verify skill runs inline as an orchestrator and delegates the review to a fresh-context subagent for independence. Start runs inline. The manual `build` skill runs inline and invokes the builder agent per-phase so the main context sees phase-by-phase progress. The `go` skill runs the interactive steps inline but delegates the build→verify spine to the Workflow engine (`ship/workflows/go.workflow.js`), keeping per-agent output out of the main context. Skills are auto-namespaced as `ship:skill-name` by the plugin system (e.g., `/ship:start`).
 
 ### Agents
 

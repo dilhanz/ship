@@ -130,16 +130,15 @@ describe('v4 — surviving behaviours', () => {
     assert.ok(c.includes('git config user.email'), 'finish records the operator');
   });
 
-  it('brainstormer keeps the adaptive NFR probe', () => {
+  it('brainstormer NFR probing is judgment-based', () => {
     const c = readSrc('agents/ship-brainstormer.md');
-    assert.ok(c.includes('INFRA_DETECTED'), 'brainstormer keeps the infra-signal flag');
-    assert.ok(c.includes('Dockerfile') && c.includes('kubernetes'), 'brainstormer keeps signal detection');
-    assert.ok(/NFR prob/i.test(c), 'brainstormer keeps the NFR probe');
+    assert.ok(!c.includes('INFRA_DETECTED'), 'brainstormer must not carry the infra-signal flag');
+    assert.ok(/NFR/i.test(c), 'brainstormer keeps NFR judgment guidance');
   });
 
   it('version files agree with ship/VERSION', () => {
     const version = readSrc('ship/VERSION').trim();
-    assert.ok(version.startsWith('4.'), 'ship/VERSION on the 4.x line');
+    assert.ok(version.startsWith('5.'), 'ship/VERSION on the 5.x line');
     assert.equal(JSON.parse(readSrc('.claude-plugin/plugin.json')).version, version, `plugin.json at ${version}`);
     assert.equal(JSON.parse(readSrc('package.json')).version, version, `package.json at ${version}`);
   });

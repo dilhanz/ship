@@ -15,7 +15,7 @@ Start a new feature brainstorming session.
 2. **First-run detection:** If `.planning/features/` was just created or is empty (no existing feature directories), this is the user's first feature. Show a brief welcome:
 
    > **Welcome to Ship!** This is your first feature. Here's how Ship works:
-   > 1. **Brainstorm** — I'll ask 5-10+ questions to deeply understand your needs
+   > 1. **Brainstorm** — I'll ask questions until the problem, scope, and acceptance criteria are nailed down
    > 2. **Plan** — I'll explore your codebase and design a step-by-step plan
    > 3. **Build** — I'll implement the plan with atomic git commits
    > 4. **Verify** — I'll check that all acceptance criteria are met
@@ -40,6 +40,6 @@ Read `${CLAUDE_PLUGIN_ROOT}/agents/ship-brainstormer.md` and follow its instruct
 - Feature name: `{name}`
 - Feature idea: `$ARGUMENTS`
 
-You must ask the user 5-10+ questions using `AskUserQuestion`, explore the codebase, and write `.planning/features/{name}/CONTEXT.md`.
+Explore the codebase, then probe with `AskUserQuestion` until the problem, scope boundary, and 3+ testable acceptance criteria can be stated without guessing and the user has confirmed the summary, then write `.planning/features/{name}/CONTEXT.md`.
 
 $ARGUMENTS
