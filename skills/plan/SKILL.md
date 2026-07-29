@@ -85,7 +85,7 @@ Write the tasks the feature needs — task count is judgment, not a quota. If th
   <name>Verb phrase describing what is built</name>
   <files>exact/path/to/file.ts, another/path.ts</files>
   <reference>path/to/similar/existing_code.ts:functionName — closest existing pattern to follow</reference>
-  <action>Specific implementation instructions. Include: function names, field names, schema shape, HTTP method + path, expected behavior. Be concrete enough that the builder can implement without guessing.</action>
+  <action>Specific implementation instructions at contract altitude. Include: schema shape and field names, HTTP method + path, error behavior at boundaries, integration points. Be concrete enough that the builder can implement the contracts without guessing; internals stay theirs.</action>
   <verify>Runnable command that proves completion. Examples:
     - npm test -- --testPathPattern=auth
     - node -e "require('./src/models/user')"
