@@ -20,44 +20,13 @@ Feature state is injected by hooks at session start and after compaction — che
 
 ## Pre-Planning Exploration
 
-Launch 3 parallel exploration sub-agents using the Agent tool. Run all three simultaneously in a single response:
+Scale exploration to uncertainty — the gate is the output, not the process:
 
-**Agent 1 — Similar Features:**
-```
-Explore the codebase and find features or patterns similar to this feature idea: {summary from CONTEXT.md}.
-Use Glob, Read, and Grep to find analogous implementations. Report:
-- File paths of similar implementations
-- Patterns used (naming, structure, abstractions)
-- Key function signatures and conventions
-- How similar features integrate with the rest of the codebase
-Be concise. Max 500 words.
-```
+- **Read CONTEXT.md `## Codebase Notes` first, if present.** When the brainstormer already mapped the territory, do not re-explore it — verify with spot-checks only.
+- **Small or familiar surface:** explore inline with Glob/Read/Grep.
+- **Large or unfamiliar surface:** fan out parallel Explore agents — you choose how many and what each investigates. Similar features, architecture, and conventions remain useful lenses, not mandatory slots.
 
-**Agent 2 — Architecture Map:**
-```
-Map the architecture relevant to this feature: {summary from CONTEXT.md}.
-Use Glob, Read, and Grep to identify:
-- Module boundaries and directory structure in the relevant area
-- Abstraction layers (models, services, routes, components, etc.)
-- Entry points and integration patterns
-- Dependencies between modules
-Be concise. Max 500 words.
-```
-
-**Agent 3 — Codebase Conventions:**
-```
-Survey coding conventions in this project. Read 3-5 representative source files.
-Report:
-- File naming style (camelCase, kebab-case, PascalCase)
-- Import patterns (relative vs alias, default vs named exports)
-- Error handling conventions
-- Test file locations and framework
-- File extension conventions
-- Any linting/formatting config (eslint, prettier, tsconfig)
-Be concise. Max 500 words.
-```
-
-Collect the output from all three agents into an `## Exploration Findings` block.
+Planning may start only when you know the integration points, the closest existing patterns, and the conventions the new code must follow. Collect what you learned into an `## Exploration Findings` block; these findings land in PLAN.md's `## Exploration Summary`.
 
 ## Post-Exploration Clarifying Questions
 
@@ -104,7 +73,7 @@ If a decision contradicts CONTEXT.md, flag it explicitly.
 
 ### Step 5 — Design Tasks
 
-Write 3-12 tasks. Each task must:
+Write the tasks the feature needs — task count is judgment, not a quota. If the plan exceeds ~12 tasks, split the feature. Each task must:
 - Be atomic — one coherent chunk of work
 - Have a specific verify command that proves the task is done
 - List the exact files that will be created or modified
@@ -116,7 +85,7 @@ Write 3-12 tasks. Each task must:
   <name>Verb phrase describing what is built</name>
   <files>exact/path/to/file.ts, another/path.ts</files>
   <reference>path/to/similar/existing_code.ts:functionName — closest existing pattern to follow</reference>
-  <action>Specific implementation instructions. Include: function names, field names, schema shape, HTTP method + path, expected behavior. Be concrete enough that the builder can implement without guessing.</action>
+  <action>Specific implementation instructions at contract altitude. Include: schema shape and field names, HTTP method + path, error behavior at boundaries, integration points. Be concrete enough that the builder can implement the contracts without guessing; internals stay theirs.</action>
   <verify>Runnable command that proves completion. Examples:
     - npm test -- --testPathPattern=auth
     - node -e "require('./src/models/user')"
@@ -129,11 +98,7 @@ Write 3-12 tasks. Each task must:
 
 **Task dependencies:** Use `depends` when a task's dependency isn't simply the previous task (e.g., task 5 depends on tasks 1 and 3 but not 4). Omit when tasks are naturally sequential.
 
-**Writing for the builder:** The build step follows instructions literally. Be unambiguous:
-- Include literal function signatures
-- Include schema shapes with field names and types
-- Name specific imports
-- Make all design decisions here — never leave a choice for the builder
+**Writing for the builder — contracts vs internals:** `<action>` specifies the observable, load-bearing contracts — endpoint shapes, schemas and field names, error behavior at boundaries, library choices, integration points — and leaves internals (function names, decomposition, imports, file-internal structure) to the builder. The litmus: would two reasonable implementations differ in a way the user cares about? If yes, decide it in the plan; if no, leave it to the builder.
 
 **Specificity litmus test:** Could a different Claude instance execute this task without asking clarifying questions? If not, add more detail.
 
@@ -182,35 +147,7 @@ Criterion: "Invalid credentials show error" → Task 3 (401) + Task 5 (toast)
 
 **If any criterion has no task mapping, add a task.**
 
-#### 6.2 — Task Completeness
-
-Every task must have all four fields filled with specifics:
-- `name`: Verb phrase
-- `files`: Exact paths
-- `action`: Implementation details with function signatures, field names, patterns
-- `verify`: Runnable shell command
-
-#### 6.3 — Wiring Completeness
-
-Check that artifacts created in one task are consumed in another. A function that exists but is never imported is not done.
-
-#### 6.4 — Verify Quality
-
-Every `<verify>` must be a runnable shell command, not prose.
-
-#### 6.5 — Task Ordering
-
-No task depends on output from a later task.
-
-#### 6.6 — Scope
-
-3-12 tasks total. Fewer = underplanned. More = split the feature.
-
-#### 6.7 — Phase Coherence (if phased)
-
-Each phase is self-contained — no half-finished features mid-phase.
-
-#### 6.8 — Adversarial Review
+#### 6.2 — Adversarial Review
 
 For each task involving external boundaries (API endpoints, file I/O, DB operations, user input), ask:
 - What if this runs twice (idempotency)?
@@ -220,6 +157,8 @@ For each task involving external boundaries (API endpoints, file I/O, DB operati
 - Any security surface (injection, auth bypass, data exposure)?
 
 Add mitigations to the relevant task's `<action>` if issues are found.
+
+Completeness, wiring, ordering, and phase-coherence judgments belong to the independent plan-verify reviewer. One hard rule stands regardless: every `<verify>` must be a runnable shell command — that rule lives in Step 5's task format, not this checklist.
 
 ### Step 7 — Write PLAN.md
 
@@ -295,7 +234,7 @@ Next: /ship:plan-verify
 
 - **Vague actions.** Never write `<action>Implement the feature</action>`.
 - **Scope creep.** Only plan tasks that serve the acceptance criteria.
-- **Open decisions.** Never write "choose an appropriate library" — pick one and name it.
+- **Open contracts.** Never leave a *contract* open — "choose an appropriate library" stays banned (library choice is a contract); pick one and name it. Internals latitude is not an open decision.
 - **Verify commands needing a running server without setup.**
 
 $ARGUMENTS
