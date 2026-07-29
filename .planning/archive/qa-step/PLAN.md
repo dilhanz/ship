@@ -53,7 +53,7 @@ Criterion: "New status qa-passed works with existing hooks"                → N
 
 ---
 
-<phase id="1" name="Core QA infrastructure" status="building">
+<phase id="1" name="Core QA infrastructure" status="done">
 
 <task id="1" status="done" commit="7252af0">
   <name>Create QA.md report template</name>
@@ -416,9 +416,9 @@ End the file with `$ARGUMENTS` on its own line.
 
 </phase>
 
-<phase id="2" name="Hook and verification integration" status="pending">
+<phase id="2" name="Hook and verification integration" status="done">
 
-<task id="4" status="pending">
+<task id="4" status="done" commit="43d9468">
   <name>Update subagent-stop hook to validate qa_result from ship-qa agent</name>
   <files>hooks/subagent-stop.cjs</files>
   <reference>hooks/subagent-stop.cjs:13-55 — extractBuildResult function pattern for fenced JSON block parsing</reference>
@@ -464,7 +464,7 @@ Maintain the existing try/catch + silent exit pattern. No new dependencies.
   <verify>node -e "const m = require('./hooks/subagent-stop.cjs'); console.log('module loaded')" 2>&1; grep -q "ship-qa" hooks/subagent-stop.cjs && grep -q "qa_result" hooks/subagent-stop.cjs && grep -q "QA_VALID_STATUSES" hooks/subagent-stop.cjs && echo "hook updated with QA support"</verify>
 </task>
 
-<task id="5" status="pending">
+<task id="5" status="done" commit="8de3fd6">
   <name>Update VERIFY.md template with Stage 4 for QA findings</name>
   <files>ship/templates/VERIFY.md</files>
   <reference>ship/templates/VERIFY.md:29-47 — Stage 3 section pattern for external findings integration</reference>
@@ -506,7 +506,7 @@ No other changes to the template. Existing Stage 1, 2, 3, Human Checks, Gaps, Fi
   <verify>grep -q "Stage 4" ship/templates/VERIFY.md && grep -q "QA Findings" ship/templates/VERIFY.md && grep -q "Stage 1" ship/templates/VERIFY.md && grep -q "Stage 3" ship/templates/VERIFY.md && echo "VERIFY template has all 4 stages"</verify>
 </task>
 
-<task id="6" status="pending">
+<task id="6" status="done" commit="966b7b9">
   <name>Update verifier agent to process QA findings in Stage 4</name>
   <files>agents/ship-verifier.md</files>
   <reference>agents/ship-verifier.md:148-167 — Stage 3 pattern for processing external findings and applying to verdict</reference>
@@ -587,7 +587,7 @@ Update the three status definitions to reference Stage 4:
   <verify>grep -q "Stage 4" agents/ship-verifier.md && grep -q "QA Findings" agents/ship-verifier.md && grep -q "qa_findings" agents/ship-verifier.md && grep -q "Step 4.1" agents/ship-verifier.md && echo "verifier agent has Stage 4 QA processing"</verify>
 </task>
 
-<task id="7" status="pending">
+<task id="7" status="done" commit="d82d680">
   <name>Update verify skill to read QA.md and pass findings to verifier</name>
   <files>skills/verify/SKILL.md</files>
   <reference>skills/verify/SKILL.md:22-29 — pattern for pre-gathering /review findings and passing to verifier agent</reference>
@@ -648,9 +648,9 @@ QA: {result.qa_findings.critical} critical / {result.qa_findings.high} high / {r
 
 </phase>
 
-<phase id="3" name="Workflow and navigation updates" status="pending">
+<phase id="3" name="Workflow and navigation updates" status="done">
 
-<task id="8" status="pending">
+<task id="8" status="done" commit="d980469">
   <name>Update go workflow with QA step in status flow</name>
   <files>ship/workflows/go.md</files>
   <reference>ship/workflows/go.md:16-26 — status-to-next-step table and execution logic</reference>
@@ -695,7 +695,7 @@ Add a new bullet:
   <verify>grep -q "qa-passed" ship/workflows/go.md && grep -q "/ship:qa" ship/workflows/go.md && grep -q "qa → verify" ship/workflows/go.md && echo "go workflow includes QA step"</verify>
 </task>
 
-<task id="9" status="pending">
+<task id="9" status="done" commit="f6ef68e">
   <name>Update resume, status, and help skills with QA step</name>
   <files>skills/resume/SKILL.md, skills/status/SKILL.md, skills/help/SKILL.md</files>
   <reference>skills/resume/SKILL.md:17-26 — status-to-action table pattern</reference>
