@@ -89,49 +89,55 @@ Follow your instructions for the execution loop, deviation rules, and commit con
 
 For flat plans, omit the Phase line.
 
-### 2.5. Auto-Continue on Incomplete Result
+### 2.5. Auto-Continue While the Phase Is Progressing
 
 After the Agent tool returns, extract the `build_result` JSON block from the builder's output. Look for a fenced code block tagged `build_result` and parse the JSON inside it.
 
-**If no valid `build_result` JSON is found** (likely turn exhaustion):
+A builder running out of turns mid-phase is expected on large tasks, not a failure: its finished tasks are committed and marked `status="done"` in PLAN.md, so a continuation picks up exactly where it stopped. Two shapes signal it — a `build_result` with status `PARTIAL`, or no parseable `build_result` at all (the agent died mid-turn). Both continue.
 
-1. Use `SendMessage` to the builder agent with this message:
+**Continuation round** (run for either shape, up to 4 rounds per phase):
 
-   ```
-   You were building feature "{name}" and stopped without emitting a build_result JSON block.
-   Continue where you left off. Read PLAN.md to check which tasks are done (status="done")
-   and which are still pending. Resume from the first pending task.
-   When finished with all tasks in this phase, emit your build_result JSON block.
-   ```
-
-2. After `SendMessage` returns, check again for a valid `build_result` JSON block.
-3. If still no valid result, retry `SendMessage` one more time (same message).
-4. After 2 retries (3 total attempts including the original Agent call), if still no valid result:
-   - Read PLAN.md to check actual progress (tasks marked done)
-   - Report to the user:
+1. Read PLAN.md and count tasks in this phase marked `status="done"` — this is the ground truth for progress, not the builder's self-report.
+2. **If no pending tasks remain**, the phase is done: treat it as `COMPLETE_WITH_CONCERNS` with the concern "builder exhausted its turn budget without reporting; completion confirmed from PLAN.md", and go to the Review Gate (3.1) using the commit hashes recorded on the phase's done tasks.
+3. **If the done-count did not increase since the previous round**, the phase is genuinely stuck — go to BUILDER EXHAUSTED below.
+4. Otherwise continue: `SendMessage` to the builder agent (or invoke a fresh `ship-builder` if the agent is gone) with:
 
    ```
-   ## BUILDER EXHAUSTED
-
-   Feature: {name}
-   Phase: {phase-id} — {phase-name}
-   Attempts: 3 (original + 2 continuations)
-   Tasks completed: [count from PLAN.md]
-   Tasks remaining: [count from PLAN.md]
-
-   The builder could not complete this phase within the turn limit.
-   Run /ship:build to retry with a fresh agent, or investigate the remaining tasks.
+   You were building feature "{name}", phase {phase-id}, and stopped before finishing.
+   Read PLAN.md: skip every task marked status="done" and resume from the first pending task
+   in this phase. If the working tree has uncommitted changes from an interrupted task,
+   finish that task, run its <verify> command, and commit it before moving on.
+   When all tasks in this phase are done, emit your build_result JSON block.
    ```
 
-   - Leave CONTEXT.md status as `building`
-   - **Stop the loop** — do not continue to the next phase
+5. Re-parse the result and route it back through this section (a `COMPLETE`/`COMPLETE_WITH_CONCERNS` result ends the loop and goes to ### 3; another `PARTIAL`/no-result starts the next round).
 
-**If a valid `build_result` JSON is found** (either from original Agent call or after SendMessage):
-Proceed to the status handling below (### 3).
+When the phase completes across several rounds, the commits list for the Review Gate is the union of every round's commits — the diff range must cover the whole phase, so take the oldest.
+
+**BUILDER EXHAUSTED** — after 4 continuation rounds, or when a round lands no new done tasks:
+
+```
+## BUILDER EXHAUSTED
+
+Feature: {name}
+Phase: {phase-id} — {phase-name}
+Builder rounds: {N}
+Tasks completed: [count from PLAN.md]
+Tasks remaining: [count from PLAN.md]
+
+Completed tasks are committed — the phase is partially built.
+The remaining tasks are likely too large for one builder's turn budget.
+Run /ship:build to continue, or /ship:plan {name} to split them into smaller tasks.
+```
+
+- Leave CONTEXT.md status as `building`
+- **Stop the loop** — do not continue to the next phase
+
+**If a valid `build_result` JSON with a terminal status is found** (from the original Agent call or any continuation round): proceed to the status handling below (### 3).
 
 ### 3. Handle Agent Result
 
-Parse the builder agent's `build_result` JSON block. Extract the `status` field.
+Parse the builder agent's `build_result` JSON block. Extract the `status` field. (`PARTIAL` never reaches here — section 2.5 continues the phase until a terminal status.)
 
 **If status is "COMPLETE":**
 Proceed directly to the Review Gate (3.1), then mark the phase done. The orchestrator does not re-run verify commands itself — the ship-reviewer's Step 1 re-runs every phase verify command and treats a failure as a critical finding, which triggers the fix round below.
