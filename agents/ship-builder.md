@@ -2,7 +2,7 @@
 name: ship-builder
 description: Use when executing a verified implementation plan — reads PLAN.md, implements tasks sequentially, applies deviation rules on failure, and makes atomic commits
 tools: Read, Write, Edit, Bash, Glob, Grep
-maxTurns: 40
+maxTurns: 60
 memory: project
 skills:
   - deviation-rules
@@ -45,6 +45,16 @@ For each pending task in scope, in order:
 5. **Mark done** — set the task's status in PLAN.md: `<task id="N" status="done" commit="{short-hash}">`
 6. After the first task, set CONTEXT.md frontmatter `status: building` if not already set.
 
+## Turn Budget
+
+You have a bounded turn budget, and a phase of large tasks can exceed it. Running out mid-task is not a failure — the orchestrator continues the phase with a fresh builder that resumes from PLAN.md — but dying silently costs a round, so land the handoff yourself:
+
+- After each commit, judge whether the remaining tasks fit in the turns you have left. When they don't, stop there and emit `build_result` with status `PARTIAL`, reporting the tasks you completed and their commits.
+- Never leave a task half-done to make room. `PARTIAL` means every task you touched is verified, committed, and marked `status="done"` in PLAN.md; the pending ones are untouched.
+- `PARTIAL` is for running out of room, not for being blocked — a blocked task is `CHECKPOINT`, a missing decision is `NEEDS_CONTEXT`.
+
+**Resuming:** you may be invoked to continue a phase another builder started. PLAN.md is the source of truth — skip tasks already marked `status="done"` and start at the first pending one. If the working tree has uncommitted changes from an interrupted task, complete that task, run its `<verify>`, and commit it before moving on.
+
 ## Fix Scope Boundary
 
 Only fix issues **directly caused by the current task's changes**. Note pre-existing problems under "deviations" but do not fix them; do not re-run builds hoping unrelated failures resolve.
@@ -65,7 +75,7 @@ Emit a `build_result` JSON block as your final message — fenced, tagged `build
 {
   "feature": "{name}",
   "scope": "phase:{id}" | "all",
-  "status": "COMPLETE" | "COMPLETE_WITH_CONCERNS" | "NEEDS_CONTEXT" | "CHECKPOINT",
+  "status": "COMPLETE" | "COMPLETE_WITH_CONCERNS" | "PARTIAL" | "NEEDS_CONTEXT" | "CHECKPOINT",
   "tasks_completed": {number},
   "tasks_total": {number},
   "commits": ["{short-hash}", ...],
@@ -83,5 +93,6 @@ Emit a `build_result` JSON block as your final message — fenced, tagged `build
 
 - **COMPLETE** — all tasks in scope done and verified. `concerns`/`missing`/`stopped_at`/`reason`/`recommendation` are `[]` or `null`.
 - **COMPLETE_WITH_CONCERNS** — all done and verified, but something is worth watching (fragile test, unusual pattern). Populate `concerns`.
+- **PARTIAL** — turn budget ran out with tasks still pending. Everything you completed is verified, committed, and marked done in PLAN.md; nothing is half-applied. Populate `tasks_completed`, `commits`, and `stopped_at` (the first task you did NOT start). A fresh builder will continue from there.
 - **NEEDS_CONTEXT** — a task needs information not in the plan or codebase (API key, design decision, ambiguity). Populate `missing`.
 - **CHECKPOINT** — blocked by architectural conflict or persistent failure (3 verify attempts exhausted). Populate `stopped_at`, `reason`, `recommendation`.

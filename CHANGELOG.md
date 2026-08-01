@@ -1,5 +1,22 @@
 # Changelog
 
+## 5.1.0
+
+Minor release — a builder running out of turn budget no longer aborts the build.
+
+### Fixed
+
+- **Turn-budget exhaustion continues the phase instead of stopping the run**: large tasks routinely spend a builder's whole turn budget after 2-3 tasks. The builder died without emitting `build_result`, `/ship:go` read that empty return as a dead phase, and stopped — even though the completed tasks were committed and marked done in PLAN.md, and one more builder would have finished the phase. The workflow now continues with a fresh builder while work keeps landing (up to 5 rounds per phase), and stops only when a round lands no new done tasks.
+- **Empty builder returns are checked against PLAN.md**: when a builder returns nothing at all, a read-only progress probe reports the phase's real task status. A phase whose tasks are all done completes normally (carrying a concern about the silent exhaustion) instead of being reported as a failed build.
+- **Partial progress is reported, not lost**: a phase that genuinely stalls now returns `EXHAUSTED` with the tasks completed and commits landed across every round, so `/ship:go` reports what was built and points at `/ship:build` (continue) or `/ship:plan` (split the remaining tasks).
+
+### Changed
+
+- **New builder status `PARTIAL`**: the builder now hands off deliberately when the remaining tasks won't fit its turn budget — everything it touched is verified, committed, and marked done — rather than dying mid-task. Continuation builders are told PLAN.md is the source of truth and to finish any interrupted task left in the working tree.
+- **Builder `maxTurns` raised from 40 to 60**, reducing how often a phase needs a context-losing handoff.
+- **Manual `/ship:build` continuation is progress-based**: it continues while the PLAN.md done-count keeps rising (up to 4 rounds) instead of a fixed 2 SendMessage retries, and confirms progress from PLAN.md rather than the builder's self-report.
+- **Phase diffs span continuation rounds**: the reviewer receives the union of every round's commits, so the phase diff covers the whole phase rather than the last builder's slice.
+
 ## 5.0.2
 
 Patch release — the verify-FAIL loop now re-enters `/ship:go`, and unreviewed phases leave a durable record.
