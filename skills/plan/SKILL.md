@@ -130,7 +130,7 @@ Phase status: `pending` → `building` → `done`. Task IDs are globally unique 
 
 **Integration verify:** The last task's `<verify>` must exercise the complete feature path, not just its individual piece. If the feature spans multiple layers (API + UI, or CLI + service), the final verify should test the integrated flow.
 
-**Context-aware phasing:** Each phase should be completable within a single builder context window. If a phase requires reading >15 unique files or has >5 tasks with complex multi-file actions, split it. The builder runs with 40 maxTurns per phase — budget accordingly.
+**Context-aware phasing:** Each phase should be completable within a single builder context window. If a phase requires reading >15 unique files or has >5 tasks with complex multi-file actions, split it. The builder runs with 60 maxTurns per phase. A phase that outlives that budget is recoverable — a continuation builder resumes from the first pending task — but every handoff loses warm context, so size tasks to avoid it: a task whose action spans many files or a long spec should be split.
 
 ### Step 6 — Self-Check
 

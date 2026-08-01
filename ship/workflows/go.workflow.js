@@ -25,6 +25,11 @@ const keyFileContext = (parsedArgs && parsedArgs.keyFileContext) || 'No key file
 
 if (!feature) throw new Error('go.workflow: args.feature is required')
 
+// How many builder agents a single phase may burn before we call it stuck.
+// Large tasks routinely exhaust one builder's turn budget after 2-3 tasks; the
+// work is committed and PLAN.md records it, so a fresh builder resumes cleanly.
+const MAX_BUILD_ROUNDS = 5
+
 const BUILD_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -32,7 +37,7 @@ const BUILD_SCHEMA = {
   properties: {
     feature: { type: 'string' },
     scope: { type: 'string' },
-    status: { enum: ['COMPLETE', 'COMPLETE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'CHECKPOINT'] },
+    status: { enum: ['COMPLETE', 'COMPLETE_WITH_CONCERNS', 'PARTIAL', 'NEEDS_CONTEXT', 'CHECKPOINT'] },
     tasks_completed: { type: 'number' },
     tasks_total: { type: 'number' },
     commits: { type: 'array', items: { type: 'string' } },
@@ -68,6 +73,22 @@ const REVIEW_SCHEMA = {
         },
       },
     },
+  },
+}
+
+// Read-only probe used when a builder returns nothing at all: PLAN.md task
+// status is the ground truth for what actually landed.
+const PROGRESS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['tasks_done', 'tasks_pending', 'tasks_total'],
+  properties: {
+    tasks_done: { type: 'number' },
+    tasks_pending: { type: 'number' },
+    tasks_total: { type: 'number' },
+    commits: { type: 'array', items: { type: 'string' } },
+    working_tree_clean: { type: 'boolean' },
+    notes: { type: ['string', 'null'] },
   },
 }
 
@@ -125,11 +146,19 @@ const phaseLine = (ph) => (ph.id === 'all' ? '' : `Phase: ${ph.id} — ${ph.name
 // below already handles a null result gracefully. Retrying an agent is safe:
 // PLAN.md tracks task status and commits are atomic, so a retried builder
 // sees done tasks and returns quickly.
+//
+// `retry: false` opts out of the internal retry for call sites that run their
+// own continuation loop (the builder), so a dead agent costs one attempt there
+// instead of two.
 const safeAgent = async (prompt, opts) => {
-  const baseOpts = opts && typeof opts === 'object' ? opts : {}
+  const { retry = true, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
   const label = typeof baseOpts.label === 'string' ? baseOpts.label : ''
   const labelDisplay = label || '<no-label>'
   try { return await agent(prompt, baseOpts) } catch (e) {
+    if (!retry) {
+      log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — treating as no result`)
+      return null
+    }
     log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once`)
   }
   const retryOpts = { ...baseOpts, label: label ? `${label}:retry` : 'retry' }
@@ -146,6 +175,30 @@ ${phaseLine(ph)}
 ${keyFileContext}
 
 Execute all pending tasks ${ph.id === 'all' ? 'in the plan' : 'in this phase'}. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions.`
+
+const continuePrompt = (ph, state) => `Continue building feature: ${feature}
+${phaseLine(ph)}
+A previous builder ran out of turn budget before finishing this phase. You are a fresh agent with no memory of that run — PLAN.md is the source of truth for what already landed.
+
+${state}
+
+## Key File Context (from Explore digest)
+
+${keyFileContext}
+
+Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md. Skip every task already marked status="done" and resume from the first pending task ${ph.id === 'all' ? 'in the plan' : 'in this phase'}. If the working tree carries uncommitted changes from the interrupted task, finish that task, run its verify command, and commit it before moving on. Then follow your normal execution loop, deviation rules, and commit conventions.`
+
+const progressPrompt = (ph) => `Report build progress for feature: ${feature}
+${phaseLine(ph)}
+READ-ONLY — do not edit, write, or commit anything. Read and report only.
+
+Read .planning/features/${feature}/PLAN.md and count the tasks ${ph.id === 'all' ? 'in the plan' : `inside <phase id="${ph.id}">`}:
+- tasks_done — tasks with status="done"
+- tasks_pending — tasks in scope not marked done
+- tasks_total — all tasks in scope
+- commits — short hashes recorded on done tasks in scope (the commit="..." attribute), oldest first
+- working_tree_clean — true when \`git status --porcelain\` prints nothing
+- notes — anything odd (uncommitted work, a done task with no commit), else null`
 
 const reviewPrompt = (ph, commits) => `Review feature: ${feature}
 ${phaseLine(ph)}Phase commits: ${commits.length ? commits.join(', ') : '(none reported)'}
@@ -169,6 +222,99 @@ ${findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.file} — ${f.descriptio
 
 You have no memory of that review — verify from the code. Re-run the affected verify commands and review ONLY whether each finding above is now resolved. Report any still-unresolved findings in your review_result.`
 
+const uniq = (list) => Array.from(new Set(list.filter((c) => typeof c === 'string' && c)))
+
+// Build one phase, spanning as many builder agents as it takes.
+//
+// A builder that runs out of turns is the common case on large tasks, not an
+// error: its finished tasks are committed and marked done in PLAN.md, so a
+// fresh builder picks up at the first pending task. Two shapes signal it —
+// an explicit PARTIAL result, or no structured result at all (the agent died
+// mid-turn). Both continue; we only stop when a whole round lands nothing,
+// which is the real "stuck" signal.
+const buildPhase = async (ph, label) => {
+  const priorCommits = []
+  let priorTasks = 0
+  let lastDone = null // absolute done-count from the last probe, when we have one
+  let lastTotal = 0
+
+  for (let round = 1; round <= MAX_BUILD_ROUNDS; round++) {
+    const suffix = round === 1 ? '' : `:cont${round - 1}`
+    const state = lastDone === null
+      ? `Committed so far this phase: ${priorCommits.length ? priorCommits.join(', ') : '(none reported)'}.`
+      : `PLAN.md showed ${lastDone} of ${lastTotal} task(s) done in this scope when the previous builder stopped.`
+
+    const build = await safeAgent(round === 1 ? buildPrompt(ph) : continuePrompt(ph, state), {
+      agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, phase: 'Build', retry: false,
+      label: `build:${label}${suffix}`,
+    })
+
+    if (build && build.status !== 'PARTIAL') {
+      // Terminal result. Fold in the earlier rounds so the reviewer's diff
+      // range covers the whole phase, not just this builder's slice.
+      const done = priorTasks + (build.tasks_completed || 0)
+      return {
+        ...build,
+        commits: uniq([...priorCommits, ...(build.commits || [])]),
+        tasks_completed: build.tasks_total ? Math.min(done, build.tasks_total) : done,
+        rounds: round,
+      }
+    }
+
+    let landed
+    if (build) {
+      landed = (build.commits || []).length > 0 || (build.tasks_completed || 0) > 0
+      priorCommits.push(...(build.commits || []))
+      priorTasks += build.tasks_completed || 0
+      lastTotal = build.tasks_total || lastTotal
+      log(`build:${label} round ${round} returned PARTIAL — ${build.tasks_completed || 0} task(s) landed, continuing with a fresh builder`)
+    } else {
+      // No result at all — ask PLAN.md what actually landed before deciding.
+      const progress = await safeAgent(progressPrompt(ph), {
+        agentType: 'Explore', schema: PROGRESS_SCHEMA, phase: 'Build', effort: 'low',
+        label: `progress:${label}${suffix}`,
+      })
+      if (!progress) {
+        // Blind round: the builder and the probe both failed. One fresh builder
+        // is cheap when nothing is pending (it returns COMPLETE immediately).
+        landed = round < MAX_BUILD_ROUNDS
+        log(`build:${label} round ${round} returned no result and the progress probe failed — ${landed ? 'retrying blind' : 'giving up'}`)
+      } else {
+        priorCommits.push(...(progress.commits || []))
+        if (progress.tasks_pending === 0) {
+          log(`build:${label} round ${round} returned no result, but PLAN.md shows every task done — treating the phase as complete`)
+          return {
+            feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
+            status: 'COMPLETE_WITH_CONCERNS',
+            tasks_completed: progress.tasks_done, tasks_total: progress.tasks_total,
+            commits: uniq(priorCommits),
+            concerns: [`phase ${label}: a builder exhausted its turn budget without reporting; completion confirmed from PLAN.md task status${progress.working_tree_clean === false ? ' (working tree not clean — check for uncommitted leftovers)' : ''}`],
+            rounds: round,
+          }
+        }
+        landed = lastDone === null || progress.tasks_done > lastDone
+        lastDone = progress.tasks_done
+        lastTotal = progress.tasks_total
+        priorTasks = progress.tasks_done
+        log(`build:${label} round ${round} returned no result — PLAN.md shows ${progress.tasks_done}/${progress.tasks_total} done, ${progress.tasks_pending} pending; ${landed ? 'continuing with a fresh builder' : 'no progress since the last round'}`)
+      }
+    }
+
+    if (!landed) break
+  }
+
+  return {
+    feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
+    status: 'EXHAUSTED',
+    tasks_completed: priorTasks, tasks_total: lastTotal,
+    commits: uniq(priorCommits),
+    stopped_at: `phase ${label}`,
+    reason: `builders stopped making progress after ${MAX_BUILD_ROUNDS} round(s) — turn budget exhausted with tasks still pending`,
+    recommendation: `Run /ship:build ${feature} to continue this phase interactively, or split its remaining tasks into smaller ones with /ship:plan ${feature}.`,
+    rounds: MAX_BUILD_ROUNDS,
+  }
+}
+
 phase('Build')
 const completed = []
 let stoppedAt = null
@@ -177,11 +323,9 @@ for (let i = 0; i < phases.length; i++) {
   const ph = phases[i]
   const label = ph.id === 'all' ? 'all' : ph.id
 
-  const build = await safeAgent(buildPrompt(ph), {
-    agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, label: `build:${label}`, phase: 'Build',
-  })
+  const build = await buildPhase(ph, label)
 
-  if (!build || build.status === 'NEEDS_CONTEXT' || build.status === 'CHECKPOINT') {
+  if (!build || build.status === 'EXHAUSTED' || build.status === 'NEEDS_CONTEXT' || build.status === 'CHECKPOINT') {
     stoppedAt = { phase: ph, build: build || { status: 'NO_RESULT' } }
     log(`Build stopped at phase ${label}: ${build ? build.status : 'no result'} — surfacing to the user.`)
     break
@@ -221,6 +365,9 @@ for (let i = 0; i < phases.length; i++) {
   completed.push({
     phaseId: ph.id, phaseName: ph.name,
     tasksCompleted: build.tasks_completed, tasksTotal: build.tasks_total,
+    // >1 means the phase outlived at least one builder's turn budget and was
+    // finished by a fresh continuation builder.
+    builderRounds: build.rounds || 1,
     commits: build.commits || [],
     // A dead reviewer must not read as a clean phase — surface it through the
     // concerns channel the go skill already reports to the user.
