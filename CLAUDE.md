@@ -129,6 +129,16 @@ The VERIFY.md template in `ship/templates/` is read at runtime by the verifier a
 
 Use `node --test` (Node.js built-in test runner). Test files go in the `tests/` directory.
 
+### Releasing
+
+The version lives in three files — `ship/VERSION`, `package.json`, `.claude-plugin/plugin.json` — and they must agree. Bump all three plus a `## {version}` CHANGELOG entry in the release PR, then tag `main` after merge:
+
+```bash
+git tag -a v5.1.0 -m "v5.1.0 — short description" main && git push origin v5.1.0
+```
+
+`.github/workflows/release.yml` takes it from there: it checks the tag against the three version files, runs the test suite, extracts the matching CHANGELOG section as the release notes, and publishes the GitHub release. A version mismatch or a missing CHANGELOG section fails the run instead of publishing.
+
 ### Commit Conventions
 
 ```

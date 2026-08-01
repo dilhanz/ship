@@ -1,0 +1,69 @@
+name: Release
+
+# Cuts the GitHub release when a version tag is pushed:
+#   git tag -a v5.1.0 -m "..." main && git push origin v5.1.0
+#
+# Release notes come from the matching CHANGELOG.md section, so the changelog
+# entry is written once (in the PR that bumps the version) and never retyped.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The version lives in three files plus the tag. A mismatch means the
+      # release bump was incomplete — better to fail here than to publish a
+      # release whose artifacts disagree with its name.
+      - name: Check the tag matches the version files
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for file in ship/VERSION package.json .claude-plugin/plugin.json; do
+            case "$file" in
+              ship/VERSION) found=$(tr -d '[:space:]' < "$file") ;;
+              *) found=$(node -p "require('./$file').version") ;;
+            esac
+            if [ "$found" != "$tag" ]; then
+              echo "::error file=$file::$file is at $found but the tag is v$tag"
+              exit 1
+            fi
+          done
+          echo "All version files agree: $tag"
+
+      - name: Run tests
+        run: node --test "tests/*.test.js"
+
+      - name: Extract the release notes from CHANGELOG.md
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          awk -v v="$tag" '
+            $0 == "## " v { capture = 1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error file=CHANGELOG.md::no '## $tag' section found in CHANGELOG.md"
+            exit 1
+          fi
+          cat release-notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            --verify-tag
