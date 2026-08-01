@@ -137,7 +137,9 @@ The version lives in three files — `ship/VERSION`, `package.json`, `.claude-pl
 git tag -a v5.1.0 -m "v5.1.0 — short description" main && git push origin v5.1.0
 ```
 
-`.github/workflows/release.yml` takes it from there: it checks the tag against the three version files, runs the test suite, extracts the matching CHANGELOG section as the release notes, and publishes the GitHub release. A version mismatch or a missing CHANGELOG section fails the run instead of publishing.
+`.github/workflows/release.yml` takes it from there: it checks the tag against the three version files, runs the test suite, extracts the matching CHANGELOG section as the release notes, and publishes the GitHub release. A version mismatch, a missing CHANGELOG section, or a tag that is already released fails the run instead of publishing.
+
+The same job runs from the Actions tab (**Run workflow** → tag) for a tag pushed before the workflow existed, or to retry a failed publish. It reads the tagged commit either way, so a manual run publishes exactly what the tag push would have.
 
 ### Commit Conventions
 
