@@ -53,6 +53,8 @@ Workflow({
 
 The workflow builds each phase (builder → reviewer re-verify+review → one fix round for critical/high findings), then runs the merged verifier (acceptance criteria + adversarial bug hunt → VERIFY.md). It returns `{ feature, stoppedAt, completed, verdict }`. Agent output stays inside the workflow — you receive only this structured result.
 
+A builder that runs out of turn budget mid-phase does not stop the run: the workflow continues the phase with fresh builders (up to 5 rounds) as long as tasks keep landing, and reports the round count per phase as `builderRounds`. It only stops when a whole round lands nothing new.
+
 ## 6. Reconcile & Report
 
 From the returned result:
@@ -60,7 +62,7 @@ From the returned result:
 1. For each phase in `completed`, mark its `<phase>` `status="done"` in PLAN.md (skip the `all` pseudo-phase).
 2. Persist review findings to `.planning/features/{name}/REVIEW.md` (create on first append), same format as the manual build skill: a `## Phase {id} — {phase-name} (round 1)` heading with `Status: {reviewStatus}`, then one line per finding: `- [{severity}] {file}: {description} — {marker}`. Marker: `unresolved` if the finding appears in that phase's `unresolved` list; `fixed in fix round` for other critical/high findings when `fixApplied` is true; `recorded` otherwise. Skip phases with an empty `findings` array — except when `reviewStatus` is `SKIPPED`: an unreviewed phase must still get its heading with `Status: SKIPPED`, so REVIEW.md durably records that the diff went unreviewed.
 3. Collect any per-phase `unresolved` review findings (critical/high that survived the fix round) and builder `concerns` across `completed`. These must be surfaced in the report below — a phase is marked `done` even when it carries unresolved findings (one fix round only, the verifier is the backstop), so the user needs to see them.
-4. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, or no result): leave CONTEXT.md `status: building` and report the blocker. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run).
+4. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, or `EXHAUSTED`): leave CONTEXT.md `status: building` and report the blocker, including `stoppedAt.build.commits` — a stopped phase is usually partially built, and those commits are real. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run). For `EXHAUSTED`, the phase outlived several builders without finishing: report `tasks_completed / tasks_total`, and suggest `/ship:build {name}` to continue or `/ship:plan {name}` to split the remaining tasks into smaller ones.
 5. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE, `plan-verified` + fix tasks on FAIL). Report it.
 6. **If `verdict` is null and nothing stopped:** all phases built but the verifier produced no result (it crashed or was skipped — the workflow retries once, then degrades to null). Set CONTEXT.md `status: built`, check `git log` to confirm the build commits landed, and tell the user to run `/ship:verify {name}` manually.
 
@@ -79,7 +81,8 @@ Verify: {PASS | FAIL | INCONCLUSIVE — criteria_passed/criteria_total, bugs by 
 
 [If verdict PASS/INCONCLUSIVE:] Ready to finish — run /ship:finish (or I can run it now).
 [If FAIL:] Fix tasks were appended to PLAN.md as a pending fix phase. Review them, then /ship:go to continue (or /ship:build for manual control).
-[If stoppedAt:] Stopped at phase {id}. Reason: {status}. Next: {suggested action}.
+[If stoppedAt:] Stopped at phase {id}. Reason: {status}{, tasks_completed/tasks_total if EXHAUSTED}. Commits landed: {stoppedAt.build.commits}. Next: {suggested action}.
+[If any phase has builderRounds > 1:] Note: phase {id} needed {builderRounds} builder rounds (tasks are large enough to outlive one turn budget).
 ```
 
 ## 7. Finish (interactive)
