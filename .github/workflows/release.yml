@@ -5,20 +5,45 @@ name: Release
 #
 # Release notes come from the matching CHANGELOG.md section, so the changelog
 # entry is written once (in the PR that bumps the version) and never retyped.
+#
+# The same job can be run by hand from the Actions tab (Run workflow → tag) for
+# a tag that was pushed before this workflow existed, or to retry a publish that
+# failed. Everything is read from the tagged commit either way, so a manual run
+# publishes exactly what an automatic one would.
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing version tag to release (e.g. v5.1.0)'
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Check the tag looks like a version tag
+        run: |
+          case "$TAG" in
+            v[0-9]*) ;;
+            *) echo "::error::'$TAG' is not a version tag (expected v{major}.{minor}.{patch})"; exit 1 ;;
+          esac
+
+      # Read everything from the tagged commit, not from the default branch, so
+      # a manual run publishes the same content the tag push would have.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - uses: actions/setup-node@v4
         with:
@@ -29,32 +54,43 @@ jobs:
       # release whose artifacts disagree with its name.
       - name: Check the tag matches the version files
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           for file in ship/VERSION package.json .claude-plugin/plugin.json; do
             case "$file" in
               ship/VERSION) found=$(tr -d '[:space:]' < "$file") ;;
               *) found=$(node -p "require('./$file').version") ;;
             esac
-            if [ "$found" != "$tag" ]; then
-              echo "::error file=$file::$file is at $found but the tag is v$tag"
+            if [ "$found" != "$version" ]; then
+              echo "::error file=$file::$file is at $found but the tag is $TAG"
               exit 1
             fi
           done
-          echo "All version files agree: $tag"
+          echo "All version files agree: $version"
+
+      # A published release is not something to overwrite by accident — a
+      # re-run against an already-released tag stops here.
+      - name: Check the release does not already exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG is already released — delete the release first to republish"
+            exit 1
+          fi
 
       - name: Run tests
         run: node --test "tests/*.test.js"
 
       - name: Extract the release notes from CHANGELOG.md
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          awk -v v="$tag" '
+          version="${TAG#v}"
+          awk -v v="$version" '
             $0 == "## " v { capture = 1; next }
             capture && /^## / { exit }
             capture { print }
           ' CHANGELOG.md > release-notes.md
           if [ ! -s release-notes.md ]; then
-            echo "::error file=CHANGELOG.md::no '## $tag' section found in CHANGELOG.md"
+            echo "::error file=CHANGELOG.md::no '## $version' section found in CHANGELOG.md"
             exit 1
           fi
           cat release-notes.md
@@ -63,7 +99,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
+          gh release create "$TAG" \
+            --title "$TAG" \
             --notes-file release-notes.md \
             --verify-tag
