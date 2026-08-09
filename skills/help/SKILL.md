@@ -18,7 +18,8 @@ Commands:
   /ship:build          Execute the plan with atomic commits
   /ship:verify         Verify acceptance criteria + adversarial bug hunt (writes tests)
                        Per-criterion verdicts: PASS / FAIL / INCONCLUSIVE (no runnable verify command).
-  /ship:go             Auto-run remaining steps (plan → plan-verify → build → verify)
+  /ship:go             Auto-run remaining steps (plan → plan loop → build → verify)
+                       Use --auto to skip the "Ready to build?" approval gate.
   /ship:finish         Complete a feature (create PR, merge, or keep branch)
                        Use --accept-inconclusive "reason" to override INCONCLUSIVE verdicts.
 
@@ -31,8 +32,11 @@ Flow:
   start → [design →] plan → plan-verify → build → verify → finish
           (or just: start → go → finish)
 
-  /ship:go runs build→verify in a background Workflow (agent output stays out
-  of the main context); plan, plan-verify, and finish run interactively.
+  /ship:go runs the plan revision loop (review → replan → re-review, max 5
+  rounds) and the build→verify spine in background Workflows (agent output
+  stays out of the main context); round-1 planning, the build-approval gate
+  (skipped with --auto), and finish run interactively. The plan loop
+  interrupts only when the replanner needs a decision you must make.
   On verify FAIL: fix tasks are appended to PLAN.md; resume runs build again.
   On INCONCLUSIVE: /ship:finish requires --accept-inconclusive "reason" to proceed.
 
