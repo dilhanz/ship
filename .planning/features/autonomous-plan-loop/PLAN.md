@@ -241,7 +241,7 @@ Run the whole suite, not just this file — Phase 1's T8 and this task together 
 
 <phase id="3" name="Tests and release" status="pending">
 
-<task id="6" status="pending">
+<task id="6" status="done" commit="ade88b3">
   <name>Test the loop's control flow and the cross-file wiring</name>
   <files>tests/plan-loop.test.js</files>
   <reference>tests/builder-continuation.test.js:18-39 — the runWorkflow harness to copy; tests/doctrine-v5-wiring.test.js:54-81 — the cross-file contract-assertion style</reference>
@@ -268,7 +268,7 @@ Note: the two `tests/doctrine-v5-wiring.test.js` retargetings are NOT in this ta
   <verify>node --test tests/plan-loop.test.js</verify>
 </task>
 
-<task id="7" status="pending">
+<task id="7" status="done" commit="80e44b1">
   <name>Bump the version, write the CHANGELOG entry, and update CLAUDE.md</name>
   <files>ship/VERSION, package.json, .claude-plugin/plugin.json, CHANGELOG.md, CLAUDE.md, README.md, skills/help/SKILL.md</files>
   <reference>CHANGELOG.md:3-20 — the 5.1.0 entry's structure (one-line summary, then ### Added / ### Changed / ### Fixed bullets)</reference>
