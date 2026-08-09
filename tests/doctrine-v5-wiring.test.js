@@ -34,7 +34,10 @@ describe('v5 wiring — residual scaffolding gone', () => {
   it('plan-verify no longer format-polices the plan document', () => {
     const c = readSrc('skills/plan-verify/SKILL.md');
     assert.ok(!/Exploration Summary.*non-empty/i.test(c), 'the Exploration Summary non-empty check is removed');
-    assert.ok(/do not police document format/i.test(c), 'the subagent prompt forbids format policing');
+    // The review contract now lives in the agent; the skill only delegates to it.
+    assert.ok(/do not police document format/i.test(readSrc('agents/ship-plan-reviewer.md')),
+      'the plan reviewer agent forbids format policing');
+    assert.ok(c.includes('ship-plan-reviewer'), 'plan-verify delegates to the plan reviewer agent');
   });
 
   it('plan self-checks are exactly 6.1 coverage map and 6.2 adversarial review', () => {
@@ -52,12 +55,15 @@ describe('v5 wiring — residual scaffolding gone', () => {
 });
 
 describe('v5 wiring — cross-skill contracts hold', () => {
-  it('go skill routes on the verdict strings plan-verify still emits', () => {
+  it('go routes on the plan-loop statuses while plan-verify keeps its verdict strings', () => {
     const go = readSrc('skills/go/SKILL.md');
     const pv = readSrc('skills/plan-verify/SKILL.md');
     for (const s of ['APPROVED', 'NEEDS-REVISION']) {
-      assert.ok(go.includes(s), `go skill routes on ${s}`);
       assert.ok(pv.includes(s), `plan-verify still emits ${s}`);
+    }
+    // go now branches on the plan.workflow.js statuses, not the skill's verdict.
+    for (const s of ['APPROVED', 'NEEDS_INPUT', 'STUCK', 'UNRESOLVED', 'BLOCKED']) {
+      assert.ok(go.includes(s), `go skill routes on ${s}`);
     }
     assert.ok(pv.includes('## PLAN REVIEW COMPLETE'), 'plan-verify keeps the terminal block heading');
     assert.ok(pv.includes('**Status:** APPROVED'), 'PLAN.md append keeps the APPROVED branch verbatim');
