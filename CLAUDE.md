@@ -12,15 +12,18 @@ skills/deviation-rules/    Reference skill preloaded into builder agent
 skills/git-commits/        Reference skill preloaded into builder + verifier agents
 skills/tdd/                Reference skill preloaded into builder agent (test-driven development)
 ship/workflows/go.workflow.js   Workflow-engine script for the /ship:go build→verify spine
-agents/*.md                4 specialized agents (brainstormer, builder, reviewer, verifier)
+ship/workflows/plan.workflow.js Workflow-engine script for the /ship:go plan revision loop
+agents/*.md                6 specialized agents (brainstormer, plan-reviewer, replanner, builder, reviewer, verifier)
 ```
 
 **Skills** define frontmatter fields like `model` and `allowed-tools`. Some skills delegate to agents via the Agent tool; others run inline with full instructions embedded in the skill body.
 
-**Workflow:** `/ship:go` runs the non-interactive build→verify spine through the Claude Code Workflow engine (`ship/workflows/go.workflow.js`) — schema-validated `agent()` calls keep per-agent output out of the main conversation context. The interactive steps (plan, plan-verify, plan-approval gate, finish) run inline in the `go` skill.
+**Workflow:** `/ship:go` runs two non-interactive spines through the Claude Code Workflow engine — the plan revision loop (`ship/workflows/plan.workflow.js`) and the build→verify spine (`ship/workflows/go.workflow.js`) — where schema-validated `agent()` calls keep per-agent output out of the main conversation context. The interactive steps (round-1 planning, the plan-loop `NEEDS_INPUT` questions, the build-approval gate, finish) run inline in the `go` skill.
 
 **Agents** define `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, and `skills` in frontmatter. Each agent has a single responsibility:
 - `ship-brainstormer` — probes until requirements are testable and confirmed → CONTEXT.md
+- `ship-plan-reviewer` — read-only plan review against the codebase → plan_review_result findings
+- `ship-replanner` — revises PLAN.md against CRITICAL findings (PLAN.md only) → replan_result
 - `ship-builder` — task execution with atomic commits
 - `ship-reviewer` — re-runs phase verify commands + reviews the phase diff → review_result findings
 - `ship-verifier` — acceptance criteria + adversarial bug hunt + anti-pattern scan → VERIFY.md (single post-build gate)
@@ -80,7 +83,8 @@ install.js             Deprecated legacy installer — use claude plugin install
 - **Test-driven development:** Builder follows RED-GREEN-REFACTOR when tasks have test-based verify commands
 - **Context bridge:** The statusline hook writes context metrics to `${CLAUDE_PLUGIN_DATA}/claude-ctx-{session}.json`, which the context-monitor hook reads to inject warnings
 - **Auto-discovery:** The guide SessionStart hook injects Ship awareness into every conversation, so Claude proactively suggests commands when it detects feature work. Skill descriptions use "Use when..." trigger-condition format for semantic matching (inspired by superpowers CSO pattern).
-- **Workflow-engine `/ship:go`:** the build→verify spine runs in `ship/workflows/go.workflow.js` via schema-validated `agent()` calls, so per-phase builder/reviewer/verifier output never enters the main conversation context. The interactive steps (plan, plan-verify, plan-approval, finish) stay inline in the `go` skill. Trade-off: the workflow cannot prompt mid-run, so a builder NEEDS_CONTEXT stops it and is surfaced to the manual `/ship:build`. Turn-budget exhaustion does not stop it — see Builder continuation below.
+- **Workflow-engine `/ship:go`:** the build→verify spine runs in `ship/workflows/go.workflow.js` via schema-validated `agent()` calls, so per-phase builder/reviewer/verifier output never enters the main conversation context. The interactive steps (round-1 planning, plan-approval, finish) stay inline in the `go` skill. Trade-off: the workflow cannot prompt mid-run, so a builder NEEDS_CONTEXT stops it and is surfaced to the manual `/ship:build`. Turn-budget exhaustion does not stop it — see Builder continuation below.
+- **Plan revision loop:** at status `planned`, `/ship:go` runs `ship/workflows/plan.workflow.js` — review → replan → re-review, capped at 5 rounds (5 reviews, at most 4 replans), with a convergence guard that returns `STUCK` the moment a round's CRITICAL set repeats (keyed on `task_id||file`). `APPROVED` is the only status that advances to `plan-verified`; `STUCK`, `UNRESOLVED`, and `BLOCKED` leave the feature at `planned` and never proceed to build. `NEEDS_INPUT` is the only case that interrupts: the go skill asks the replanner's questions via AskUserQuestion and re-invokes with `args.answers` plus a `roundOffset` so the replanner's `### Round n` subsections stay unique. `/ship:plan-verify` remains single-shot; `/ship:go --auto` additionally skips the build-approval gate.
 - **Per-phase review gate:** after each build phase, the read-only ship-reviewer agent re-runs the phase's verify commands (trust-but-verify, a failing verify is a critical finding) and reviews the phase diff; critical/high findings trigger one builder fix round; all findings persist to REVIEW.md
 - **Single post-build gate:** ship-verifier checks every acceptance criterion against running code AND hunts bugs with adversarial tests AND scans for anti-patterns, producing one VERIFY.md — there is no separate QA layer
 - **Structured output:** the go workflow validates agent results via JSON Schema (`StructuredOutput`) rather than parsing fenced text-JSON blocks; agents still emit `build_result`/`review_result`/`verify_result` blocks for the manual skill paths
