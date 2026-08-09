@@ -22,7 +22,9 @@ for (let i = 0; i < 3 && typeof parsedArgs === 'string'; i++) {
 
 const feature = parsedArgs && parsedArgs.feature
 const answers = (parsedArgs && parsedArgs.answers) || ''
-const roundOffset = (parsedArgs && parsedArgs.roundOffset) || 0
+// Coerce: the go skill hand-builds this args object from prose, so roundOffset
+// can arrive as a string — `round + "3"` would render "### Round 13".
+const roundOffset = Number(parsedArgs && parsedArgs.roundOffset) || 0
 
 if (!feature) throw new Error('plan.workflow: args.feature is required')
 
@@ -186,8 +188,21 @@ for (let round = 1; round <= MAX_PLAN_ROUNDS; round++) {
     }
   }
 
-  const criticals = review.findings.filter((f) => f.severity === 'CRITICAL')
-  history.push({ round, reviewStatus: review.status, criticals: criticals.length, findings: review.findings })
+  // `findings` is schema-required, but a flaked StructuredOutput wrapper has
+  // dropped required fields before. A result without it is an incomplete
+  // review, not a clean one — block rather than throw a TypeError out of the
+  // workflow, and never let it fall through to APPROVED.
+  if (!Array.isArray(review.findings)) {
+    return {
+      feature, status: 'BLOCKED', rounds: round, findings: priorCriticals, history,
+      reason: 'the plan reviewer returned a result with no findings array — an incomplete review is never an approval',
+      recommendation: `Run /ship:plan-verify ${feature} to review the plan once manually.`,
+    }
+  }
+
+  const reviewFindings = review.findings
+  const criticals = reviewFindings.filter((f) => f.severity === 'CRITICAL')
+  history.push({ round, reviewStatus: review.status, criticals: criticals.length, findings: reviewFindings })
 
   // Trust the findings over the verdict in both directions: zero CRITICALs
   // approves even if status says NEEDS-REVISION, and a non-empty CRITICAL list
@@ -195,7 +210,7 @@ for (let round = 1; round <= MAX_PLAN_ROUNDS; round++) {
   if (criticals.length === 0) {
     return {
       feature, status: 'APPROVED', rounds: round,
-      findings: review.findings.filter((f) => f.severity !== 'CRITICAL'),
+      findings: reviewFindings.filter((f) => f.severity !== 'CRITICAL'),
       examined: review.examined || [],
       history,
     }

@@ -16,6 +16,11 @@ Minor release — `/ship:go` now carries a feature from `planned` to `plan-verif
 - **`/ship:plan-verify` delegates to `ship-plan-reviewer`** rather than carrying an inline reviewer prompt, and stays single-shot — one review, one verdict, you decide. The revision loop is the `/ship:go` path only.
 - **Only `NEEDS_INPUT` interrupts**: the loop asks the replanner's questions via AskUserQuestion and re-invokes with the answers. `STUCK` (the same CRITICALs recurred), `UNRESOLVED` (5 rounds spent), and `BLOCKED` (an agent returned nothing after retry) all leave the feature at `status: planned`, report the surviving findings, and never proceed to build — a plan is never approved without a completed review.
 
+### Fixed
+
+- **A review result missing its `findings` array blocks instead of crashing the run**: the field is schema-required, but the StructuredOutput wrapper has dropped required fields before. The loop read it unguarded, so a flaked result threw a TypeError out of the workflow. It now returns `BLOCKED` — an incomplete review is never an approval, and it must not fall through to `APPROVED` on an empty CRITICAL set either.
+- **`roundOffset` is coerced to a number**: the `go` skill hand-builds the workflow args, so a string `"3"` made `round + roundOffset` concatenate and label the PLAN.md history subsection `### Round 13` instead of `### Round 4`.
+
 ## 5.1.0
 
 Minor release — a builder running out of turn budget no longer aborts the build.
