@@ -3,14 +3,18 @@ name: ship:go
 description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, Skill, AskUserQuestion
-argument-hint: "[feature-name]"
+argument-hint: "[feature-name] [--auto]"
 ---
 
-Auto-run all remaining steps for the active feature. The interactive, exploration-heavy steps (brainstorm, plan, plan-verify, finish) run inline here; the repetitive, non-interactive build→verify spine runs in the `go` Workflow so per-agent output never enters this conversation.
+Auto-run all remaining steps for the active feature. Round-1 planning and the finish step run inline here; the plan revision loop and the build→verify spine each run in a Workflow, so per-agent output never enters this conversation.
+
+Pass `--auto` for a fully hands-off run: it skips the "Ready to build?" approval gate. Everything else is unchanged — `--auto` never suppresses a `NEEDS_INPUT` question, which is the one interruption the plan loop can raise.
 
 ## 1. Find the Active Feature
 
-Feature state is injected at session start ("SHIP ACTIVE FEATURES"). If `$ARGUMENTS` names a feature, use it. Otherwise pick the one feature whose CONTEXT.md `status` is not `done`. If several are unfinished, ask which. If none exist, tell the user to run `/ship:start`.
+First parse flags out of `$ARGUMENTS`: strip `--auto` (recording whether it was present) *before* resolving the feature name, so `/ship:go my-feature --auto`, `/ship:go --auto my-feature`, and `/ship:go --auto` all work.
+
+Feature state is injected at session start ("SHIP ACTIVE FEATURES"). If the remaining `$ARGUMENTS` names a feature, use it. Otherwise pick the one feature whose CONTEXT.md `status` is not `done`. If several are unfinished, ask which. If none exist, tell the user to run `/ship:start`.
 
 ## 2. Advance Pre-Build Steps (inline)
 
@@ -19,18 +23,56 @@ Route on the feature's `status` and run these inline, in order, until the featur
 | Status | Action |
 |--------|--------|
 | `brainstormed` | Invoke the `/ship:plan` skill. On success the status becomes `planned`. |
-| `planned` | Invoke the `/ship:plan-verify` skill. If APPROVED → `plan-verified`; if NEEDS-REVISION → **stop**, tell the user to `/ship:plan {name}`. |
+| `planned` | Run the plan loop (section 2a). |
 | `done` | Invoke `/ship:finish` and stop. |
 
 (`brainstormed` requires that `/ship:start` already ran — `go` does not brainstorm; an interview can't run unattended.)
 
+## 2a. Plan Loop (workflow)
+
+Invoke the Workflow tool:
+
+```
+Workflow({
+  scriptPath: "${CLAUDE_PLUGIN_ROOT}/ship/workflows/plan.workflow.js",
+  args: { feature: "{name}" }
+})
+```
+
+The workflow loops review → replan → re-review for up to 5 rounds (the cap check fires before the replan, so at most 4 replans) and stops early when a round's CRITICAL set repeats. It returns `{ feature, status, rounds, findings, questions?, examined?, history }`. Agent output stays inside the workflow — you receive only this structured result.
+
+### Write the outcome block (every terminal status)
+
+Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ensure a `## Plan Review` section exists — **create it if absent**, since on a clean round 1 no replanner ran and the section does not exist yet — then append:
+
+```markdown
+### Outcome — {status}
+
+**Rounds:** {rounds}
+[If `reason` is present:] **Reason:** {reason}
+[If `history` is non-empty, one line per round:]
+- Round {n}: {reviewStatus}, {criticals} critical
+```
+
+`rounds` and `reason` always render: a round-1 `BLOCKED` returns `history: []`, so they are what make that case legible. The per-round lines carry the multi-round cases where no replanner subsection was written.
+
+### Branch on `status`
+
+- **`APPROVED`** — set CONTEXT.md `status: plan-verified`. The outcome block additionally lists the examined files and any WARNING/SUGGESTION findings. Continue to the approval gate (section 3).
+- **`NEEDS_INPUT`** — ask each entry in `questions` via AskUserQuestion (one question per entry, using its `options`; the automatic Other option covers anything else). Then RE-INVOKE the same workflow with `args: { feature: "{name}", answers: "<Q/A transcript>", roundOffset: <total rounds spent so far across all invocations> }` and re-branch on the new status. The `roundOffset` is what keeps the replanner's `### Round {n}` headings unique across re-invocations — without it a second run restarts at `### Round 1` and collides with the first run's subsection, which the replanner is forbidden to rewrite. Do **not** use `resumeFromRunId`. Cap this at 2 re-invocations; if a third `NEEDS_INPUT` arrives, report it and stop.
+- **`STUCK`** — leave CONTEXT.md `status: planned`. Report the surviving CRITICAL findings and the round count, tell the user to run `/ship:plan {name}`, and stop.
+- **`UNRESOLVED`** — same as `STUCK`, additionally reporting that all 5 rounds were spent. Stop.
+- **`BLOCKED`** — leave CONTEXT.md `status: planned`. Report that an agent produced no result after retry (a plan is never approved without a completed review) and that the run stopped; suggest `/ship:plan-verify {name}` to review once manually. Stop.
+
+**Invariant:** only `APPROVED` advances the status machine. `STUCK`, `UNRESOLVED`, and `BLOCKED` all leave CONTEXT.md at `planned` and never proceed to build.
+
 ## 3. Plan Approval Gate (interactive)
 
-Fires when status is `plan-verified` (whether plan-verify just ran or the feature was already there). Skip it when resuming from `building`.
+Fires when status is `plan-verified` (whether the plan loop just approved it or the feature was already there). Skip it when resuming from `building`, and skip it when `--auto` was passed — without the flag the gate always fires.
 
 1. Read `.planning/features/{name}/PLAN.md`; count tasks and phases.
 2. Show a compact summary: feature, task count (and phase count), Must Deliver items, the task list grouped by phase, and the count of any plan-review warnings.
-3. AskUserQuestion: "Ready to build?" — options **Proceed** / **Adjust first**.
+3. AskUserQuestion: "Ready to build?" — options **Proceed** / **Adjust first**. (Skipped entirely under `--auto`: show the summary, note that the gate was skipped, and continue.)
 4. **Adjust first** → stop; tell the user to `/ship:plan {name}` then `/ship:go`.
 5. **Proceed** → continue.
 
