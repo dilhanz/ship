@@ -217,6 +217,30 @@ describe('plan loop — control flow', () => {
     assert.ok(!/### Round 1\b/.test(replanPrompt));
     assert.equal(result.rounds, 2, 'the returned round count stays 1-based and offset-free');
   });
+
+  it('coerces a string roundOffset instead of string-concatenating the label', async () => {
+    let replanPrompt = null;
+    await runWorkflow({ feature: 'f', roundOffset: '3' }, (label, prompt) => {
+      if (label === 'plan-review:r1') return review(critical('3', 'src/a.js', 'missing import'));
+      if (label === 'replan:r1') { replanPrompt = prompt; return revised(); }
+      if (label === 'plan-review:r2') return clean();
+      return null;
+    });
+
+    assert.match(replanPrompt, /### Round 4/, 'a string offset must add, not concatenate');
+    assert.ok(!/### Round 13/.test(replanPrompt));
+  });
+
+  it('blocks instead of throwing when a review result arrives without a findings array', async () => {
+    const { result, calls } = await runWorkflow(ARGS, (label) => {
+      if (label.startsWith('plan-review:')) return { feature: 'f', status: 'APPROVED' };
+      return null;
+    });
+
+    assert.equal(result.status, 'BLOCKED', 'an incomplete review must never approve the plan');
+    assert.match(result.reason, /no findings array/);
+    assert.equal(replans(calls).length, 0, 'a malformed review must not trigger a replan');
+  });
 });
 
 describe('plan loop — agent and skill wiring', () => {
