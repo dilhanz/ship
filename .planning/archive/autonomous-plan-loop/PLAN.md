@@ -78,7 +78,7 @@ Domain familiar — no research needed. Internal rearchitecture over patterns al
 
 ---
 
-<phase id="1" name="Agent contracts" status="pending">
+<phase id="1" name="Agent contracts" status="done">
 
 <task id="1" status="done" commit="31ed602">
   <name>Extract the plan reviewer into agents/ship-plan-reviewer.md</name>
@@ -136,7 +136,7 @@ Leave the sibling `agents are slimmed` test's loop list unchanged unless the new
 
 </phase>
 
-<phase id="2" name="Loop and wiring" status="pending">
+<phase id="2" name="Loop and wiring" status="done">
 
 <task id="3" status="done" commit="6595b88">
   <name>Implement ship/workflows/plan.workflow.js</name>
@@ -239,7 +239,7 @@ Run the whole suite, not just this file — Phase 1's T8 and this task together 
 
 </phase>
 
-<phase id="3" name="Tests and release" status="pending">
+<phase id="3" name="Tests and release" status="done">
 
 <task id="6" status="done" commit="ade88b3">
   <name>Test the loop's control flow and the cross-file wiring</name>
