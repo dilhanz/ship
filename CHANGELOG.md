@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.2.0
+
+Minor release — `/ship:go` now carries a feature from `planned` to `plan-verified` unattended.
+
+### Added
+
+- **Plan revision loop**: at status `planned`, `/ship:go` runs `ship/workflows/plan.workflow.js` instead of stopping on the first NEEDS-REVISION verdict. Each round reviews the plan, hands the surviving CRITICAL findings to a replanner that revises PLAN.md, and re-reviews — capped at 5 rounds, with a convergence guard that stops the moment a round's CRITICAL set repeats rather than burning the remaining rounds. Agent output stays inside the workflow, out of the main conversation context.
+- **`ship-replanner` agent**: revises PLAN.md against plan-review CRITICAL findings. PLAN.md is its only writable artifact — a HARD-GATE forbids touching CONTEXT.md, which stays human-owned brainstorm output. It is biased against interrupting: `needs_input` is only for a decision that changes the plan's structure and cannot be settled from CONTEXT.md, the codebase, or existing conventions, and every escalation must carry 2-4 concrete options.
+- **`ship-plan-reviewer` agent**: the plan-review contract, extracted so the loop and `/ship:plan-verify` share one prompt instead of duplicating it. From round 2 on, the review is scoped to whether the prior findings are resolved plus new findings that would actually break the build.
+- **`/ship:go --auto`**: skips the "Ready to build?" approval gate for a fully hands-off run. Without the flag the gate still fires.
+
+### Changed
+
+- **`/ship:plan-verify` delegates to `ship-plan-reviewer`** rather than carrying an inline reviewer prompt, and stays single-shot — one review, one verdict, you decide. The revision loop is the `/ship:go` path only.
+- **Only `NEEDS_INPUT` interrupts**: the loop asks the replanner's questions via AskUserQuestion and re-invokes with the answers. `STUCK` (the same CRITICALs recurred), `UNRESOLVED` (5 rounds spent), and `BLOCKED` (an agent returned nothing after retry) all leave the feature at `status: planned`, report the surviving findings, and never proceed to build — a plan is never approved without a completed review.
+
 ## 5.1.0
 
 Minor release — a builder running out of turn budget no longer aborts the build.
