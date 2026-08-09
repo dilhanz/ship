@@ -52,9 +52,16 @@ describe('v4 — removed pieces', () => {
 // ---------------------------------------------------------------------------
 
 describe('v4 — agent roster', () => {
-  it('exactly the 4 expected agents exist', () => {
+  it('exactly the 6 expected agents exist', () => {
     const agents = fs.readdirSync(path.join(repoRoot, 'agents')).filter((f) => f.endsWith('.md')).sort();
-    assert.deepEqual(agents, ['ship-brainstormer.md', 'ship-builder.md', 'ship-reviewer.md', 'ship-verifier.md']);
+    assert.deepEqual(agents, [
+      'ship-brainstormer.md',
+      'ship-builder.md',
+      'ship-plan-reviewer.md',
+      'ship-replanner.md',
+      'ship-reviewer.md',
+      'ship-verifier.md',
+    ]);
   });
 
   it('agents are slimmed — no rationalization / forbidden-responses scaffolding', () => {
