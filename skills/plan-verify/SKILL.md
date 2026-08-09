@@ -20,76 +20,22 @@ Feature state is injected by hooks at session start and after compaction — che
 
 ## How This Skill Works
 
-This skill is an orchestrator. The review itself runs in ONE general-purpose subagent launched via the Agent tool, because the reviewer must be fresh-context: it must not share the planner's conversation, or it inherits the planner's assumptions and rubber-stamps its own reasoning. The skill launches the reviewer, waits for its structured verdict, then writes the results and status itself.
+This skill is an orchestrator. The review itself runs in ONE `ship-plan-reviewer` subagent launched via the Agent tool, because the reviewer must be fresh-context: it must not share the planner's conversation, or it inherits the planner's assumptions and rubber-stamps its own reasoning. The skill launches the reviewer, waits for its structured verdict, then writes the results and status itself.
+
+This skill is SINGLE-SHOT: exactly one review round, one verdict, and the user decides what happens next. There is no revision loop here — the automated review → replan → re-review loop lives in `ship/workflows/plan.workflow.js` and runs only under `/ship:go`.
+
+The review contract itself (what the reviewer checks and how it reports) lives in `agents/ship-plan-reviewer.md` — that agent file is its home, and this skill does not restate it.
 
 ## Launch the Reviewer
 
-Launch one general-purpose subagent via the Agent tool with this prompt (substitute `{name}`):
+Launch one `ship-plan-reviewer` subagent via the Agent tool with this prompt (substitute `{name}`):
 
 ```
-You are an independent plan reviewer. You did not write this plan and must not trust
-its claims — check whether it will actually work against the real codebase. Your job
-is to catch problems that would cause build failures or produce code that doesn't fit
-the project.
+Review the plan for feature: {name}
 
-Read both files:
-- .planning/features/{name}/CONTEXT.md
-- .planning/features/{name}/PLAN.md
-
-You are READ-ONLY. Explore with Read/Glob/Grep; use Bash only for existence and
-feasibility probes (e.g. does the test runner exist, does a package appear in a
-manifest) — never modify any file.
-
-Stay plan-driven: only explore what the plan touches — do not map the entire codebase.
-Reading PLAN.md alone is not evidence; verify structural claims against the actual code.
-
-### Mechanical grounding — verify each claim
-
-For every task in PLAN.md:
-- <files> paths: existing files resolve via Glob; for new files, the parent directory
-  exists or its creation is plausible under project conventions
-- <reference>: resolves to a real file; where a symbol, function, or pattern is named,
-  confirm it exists there via Grep
-- depends attributes: every referenced task ID exists, with no forward or circular
-  references
-- Packages: every named package exists in the project's dependency manifests or is
-  stdlib
-- <verify> commands: each is a runnable shell command whose runner exists in the
-  repo/toolchain, and passing it would actually prove the task's completion
-
-### Judgment review — against the real code
-
-- Completeness: is each task specified enough to execute without guessing at contracts
-  (schemas, endpoint shapes, error behavior, integration points)?
-- Wiring: are artifacts created by one task consumed by another, or orphaned?
-- Ordering: is the task order sound? Are phases self-contained?
-- Pattern consistency: does the approach match how the codebase already does this
-  (layering, naming, library choices)?
-- Duplicate functionality: does the plan rebuild something that already exists? Grep
-  for similar function names or route paths.
-- Coverage: is any acceptance criterion in CONTEXT.md left unaddressed by the tasks?
-- Side effects: will planned modifications break existing callers?
-
-Do NOT police document format — review substance, not section presence or wording.
-
-### Return a structured verdict
-
-Report back in exactly this format:
-
-## Review Verdict
-
-**Status:** APPROVED | NEEDS-REVISION
-**Examined:** [key codebase files/patterns you checked]
-
-### Findings
-
-[One line per finding:]
-- [CRITICAL|WARNING|SUGGESTION] Task {id} / {file}: {description} —
-  Evidence: {what the codebase shows} — Fix: {specific recommendation}
-
-[Or "No issues found."]
-
-APPROVED iff zero CRITICAL findings.
+Read .planning/features/{name}/CONTEXT.md and .planning/features/{name}/PLAN.md, then
+review the plan against the codebase following your review contract. Return your
+plan_review_result block.
 ```
 
 ## Handle the Verdict
