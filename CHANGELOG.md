@@ -1,5 +1,20 @@
 # Changelog
 
+## 5.3.0
+
+Minor release — adds a project-level layer above individual features.
+
+### Added
+
+- **Project Manager layer**: two new skills sit above the feature layer for cross-feature planning. `/ship:pm` is a question router (what's next, what can run in parallel, status, decision history) that never implements — every recommendation ends with a concrete Ship command handoff. `/ship:pm-sync` bootstraps `.project-manager/` on first run (scan repo → propose milestones/backlog → interview → confirm) and reconciles state with reality on later runs.
+- **`.project-manager/` state**: `ROADMAP.md` (milestones, backlog, status, priority, dependencies) and `DECISIONS.md` (dated decision log), with no time concepts (no deadlines, estimates, or sizing) and a generated self-contained `dashboard.html` (zero server, zero dependencies, safe to open via `file://`).
+- **`pm-sync-nudge` hook**: registered on `Write|Edit` `PostToolUse`, detects drift between a Ship feature's recorded status in `ROADMAP.md` and its actual status, and nudges a `/ship:pm-sync` reconcile — debounced per drift set, without modifying any existing Ship skill.
+- **`skills/pm-state`**: new reference skill defining the `.project-manager/` file formats, shared by the PM skills and the nudge hook.
+
+### Changed
+
+- **`.planning/` is no longer tracked in git.** Feature planning state (`CONTEXT.md`, `PLAN.md`, `REVIEW.md`, `VERIFY.md`) is local, per-repo working data — it's now git-ignored instead of committed. Existing clones keep their local files; `git pull` will show them as untracked.
+
 ## 5.2.0
 
 Minor release — `/ship:go` now carries a feature from `planned` to `plan-verified` unattended.
