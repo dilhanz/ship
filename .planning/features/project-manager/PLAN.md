@@ -56,7 +56,7 @@ Criterion 7 (no time concepts)                         → Task 1 (format spec f
 
 ---
 
-<phase id="1" name="State conventions and dashboard template" status="pending">
+<phase id="1" name="State conventions and dashboard template" status="done">
 
 <task id="1" status="done" commit="5c6031a">
   <name>Create pm-state reference skill defining the .project-manager state format</name>
@@ -81,9 +81,9 @@ Criterion 7 (no time concepts)                         → Task 1 (format spec f
 
 </phase>
 
-<phase id="2" name="PM skills" status="pending">
+<phase id="2" name="PM skills" status="done">
 
-<task id="3" status="pending" depends="1,2">
+<task id="3" status="done" commit="365aae1" depends="1,2">
   <name>Create the /ship:pm-sync interactive bootstrap and reconcile skill</name>
   <files>skills/pm-sync/SKILL.md</files>
   <reference>skills/start/SKILL.md — inline interactive skill shape (AskUserQuestion in main conversation, ${CLAUDE_PLUGIN_ROOT} file reads)</reference>
@@ -97,7 +97,7 @@ Criterion 7 (no time concepts)                         → Task 1 (format spec f
   <verify>grep -q "ship:pm-sync" skills/pm-sync/SKILL.md && grep -q "pm-state/SKILL.md" skills/pm-sync/SKILL.md && grep -q "AskUserQuestion" skills/pm-sync/SKILL.md && grep -qi "only inside .project-manager" skills/pm-sync/SKILL.md</verify>
 </task>
 
-<task id="4" status="pending" depends="1,2">
+<task id="4" status="done" commit="2256b23" depends="1,2">
   <name>Create the /ship:pm question-router skill</name>
   <files>skills/pm/SKILL.md</files>
   <reference>skills/status/SKILL.md — read-mostly inline skill shape with $ARGUMENTS routing</reference>
@@ -112,9 +112,9 @@ Criterion 7 (no time concepts)                         → Task 1 (format spec f
 
 </phase>
 
-<phase id="3" name="Sync nudge hook, tests, and docs" status="pending">
+<phase id="3" name="Sync nudge hook, tests, and docs" status="done">
 
-<task id="5" status="pending" depends="1">
+<task id="5" status="done" commit="5617830" depends="1">
   <name>Create the pm-sync-nudge PostToolUse hook</name>
   <files>hooks/pm-sync-nudge.cjs</files>
   <reference>hooks/guide.cjs — stdin→stdout hook with additionalContext injection and silent-fail wrapper; hooks/scan-features.cjs — scanFeatures(cwd)</reference>
@@ -128,7 +128,7 @@ Criterion 7 (no time concepts)                         → Task 1 (format spec f
   <verify>node -e "const s=require('fs').readFileSync('hooks/pm-sync-nudge.cjs','utf8');if(!/scan-features/.test(s)||!/nudge-state/.test(s)||!/additionalContext/.test(s))process.exit(1)"</verify>
 </task>
 
-<task id="6" status="pending" depends="5">
+<task id="6" status="done" commit="0af79b6" depends="5">
   <name>Register the nudge hook in hooks.json</name>
   <files>hooks/hooks.json</files>
   <reference>hooks/hooks.json — existing PostToolUse entry with matcher and ${CLAUDE_PLUGIN_ROOT} command path</reference>
@@ -136,7 +136,7 @@ Criterion 7 (no time concepts)                         → Task 1 (format spec f
   <verify>node -e "const h=require('./hooks/hooks.json');const e=h.hooks.PostToolUse.find(x=>x.hooks.some(k=>k.command.includes('pm-sync-nudge')));if(!e||e.matcher!=='Write|Edit')process.exit(1)"</verify>
 </task>
 
-<task id="7" status="pending" depends="5,6">
+<task id="7" status="done" commit="44dac7c" depends="5,6">
   <name>Add behavior tests for the nudge hook</name>
   <files>tests/pm-nudge.test.js</files>
   <reference>tests/post-compact.test.js — spawn-hook-in-tmpdir test pattern with createFeature helper</reference>
@@ -152,7 +152,7 @@ Criterion 7 (no time concepts)                         → Task 1 (format spec f
   <verify>node --test "tests/pm-nudge.test.js"</verify>
 </task>
 
-<task id="8" status="pending" depends="1,2,3,4,6">
+<task id="8" status="done" commit="bdd2b60" depends="1,2,3,4,6">
   <name>Add wiring tests for skills, template, and hook registration</name>
   <files>tests/pm-wiring.test.js</files>
   <reference>tests/doctrine-v5-wiring.test.js — static wiring assertions over skill files and registration</reference>
@@ -166,7 +166,7 @@ Criterion 7 (no time concepts)                         → Task 1 (format spec f
   <verify>node --test "tests/pm-wiring.test.js"</verify>
 </task>
 
-<task id="9" status="pending" depends="3,4,6">
+<task id="9" status="done" commit="c85f932" depends="3,4,6">
   <name>Document the PM layer in CLAUDE.md and the help skill</name>
   <files>CLAUDE.md, skills/help/SKILL.md</files>
   <reference>skills/help/SKILL.md:26 — existing command-reference list format</reference>
