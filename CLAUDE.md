@@ -7,10 +7,11 @@ Ship is a feature-centric development framework for Claude Code. Every piece of 
 Three-layer design, all Markdown with YAML frontmatter:
 
 ```
-skills/*/SKILL.md          14 skills (11 user-invocable commands + 3 reference skills)
+skills/*/SKILL.md          17 skills (13 user-invocable commands + 4 reference skills)
 skills/deviation-rules/    Reference skill preloaded into builder agent
 skills/git-commits/        Reference skill preloaded into builder + verifier agents
 skills/tdd/                Reference skill preloaded into builder agent (test-driven development)
+skills/pm-state/           Reference skill defining the .project-manager/ state formats
 ship/workflows/go.workflow.js   Workflow-engine script for the /ship:go build→verify spine
 ship/workflows/plan.workflow.js Workflow-engine script for the /ship:go plan revision loop
 agents/*.md                6 specialized agents (brainstormer, plan-reviewer, replanner, builder, reviewer, verifier)
@@ -61,16 +62,17 @@ Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan
 ## Supporting Files
 
 ```
-hooks/                 5 Node.js hooks (stdin->stdout, zero dependencies)
+hooks/                 6 Node.js hooks (stdin->stdout, zero dependencies)
   guide.cjs              SessionStart event — injects Ship awareness so Claude proactively suggests commands
   statusline.cjs         StatusLine event — displays model, task, dir, context %
   context-monitor.cjs    PostToolUse event — injects warnings when context is high (matcher: Write|Edit|Bash|Agent)
   safety-gate.cjs        PreToolUse event — blocks git add . to enforce atomic commits (matcher: Bash)
   post-compact.cjs       PostCompact event — re-injects feature state after context compaction
+  pm-sync-nudge.cjs      PostToolUse event — nudges /ship:pm-sync when ROADMAP.md drifts from feature statuses (matcher: Write|Edit)
   scan-features.cjs      Helper — scans .planning/features for state injected by guide/post-compact
   hooks.json             Declarative hook registration for the plugin system
 
-ship/templates/*.md    1 planning file template (VERIFY)
+ship/templates/        VERIFY.md planning template + dashboard.html PM dashboard template
 install.js             Deprecated legacy installer — use claude plugin install ship instead
 ```
 
@@ -89,6 +91,7 @@ install.js             Deprecated legacy installer — use claude plugin install
 - **Single post-build gate:** ship-verifier checks every acceptance criterion against running code AND hunts bugs with adversarial tests AND scans for anti-patterns, producing one VERIFY.md — there is no separate QA layer
 - **Structured output:** the go workflow validates agent results via JSON Schema (`StructuredOutput`) rather than parsing fenced text-JSON blocks; agents still emit `build_result`/`review_result`/`verify_result` blocks for the manual skill paths
 - **Builder continuation:** a builder that runs out of turn budget mid-phase is expected on large tasks, not a failure — its finished tasks are committed and marked done in PLAN.md, so a continuation resumes from the first pending task. The builder signals it with `PARTIAL`; if it dies without reporting, the `go` workflow probes PLAN.md for the real task status. Both paths continue the phase (up to 5 builder rounds in the workflow, 4 continuation rounds in the manual skill) and stop only when a round lands no new done tasks
+- **Project manager:** two skills sit above the feature layer — `/ship:pm` (question router: next item, parallel lanes, status, decisions) and `/ship:pm-sync` (interactive bootstrap/reconcile). State lives in `.project-manager/` (ROADMAP.md, DECISIONS.md, generated dashboard.html) per the `skills/pm-state` reference skill; the pm-sync-nudge hook injects a sync reminder when Ship feature statuses drift from ROADMAP.md. No time concepts in PM state; the PM directs and hands off to Ship commands but never implements.
 
 ## Plugin Structure
 
