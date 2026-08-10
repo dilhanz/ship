@@ -34,3 +34,6 @@ Thumbs.db
 dist/
 /build/
 *.log
+
+# Ship planning state (local, per-repo)
+.planning/
