@@ -26,6 +26,9 @@ Commands:
   /ship:status         Show all features and their status
   /ship:resume         Pick up where you left off on a feature
 
+  /ship:pm "question"  Ask the project manager: next item, parallel work, status, decisions
+  /ship:pm-sync        Set up or update project-manager state (.project-manager/)
+
   /ship:help           Show this reference
 
 Flow:
