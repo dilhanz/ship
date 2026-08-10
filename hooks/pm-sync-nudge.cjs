@@ -74,9 +74,10 @@ process.stdin.on('end', () => {
     for (const { slug, recorded } of rows) {
       const actual = actualStatus(cwd, slug, activeSlugs);
       if (actual === 'unknown') continue;
-      if (actual === 'done' && recorded !== 'done') {
+      const recordedLower = recorded.toLowerCase();
+      if (actual === 'done' && recordedLower !== 'done') {
         drifted.push({ slug, recorded, actual });
-      } else if (actual === 'in-progress' && (recorded === 'pending' || recorded === 'done')) {
+      } else if (actual === 'in-progress' && (recordedLower === 'pending' || recordedLower === 'done')) {
         drifted.push({ slug, recorded, actual });
       }
       // recorded 'blocked' never drifts against an in-progress feature
