@@ -11,22 +11,51 @@ const { scanFeatures } = require('./scan-features.cjs');
 
 /**
  * Parse ROADMAP.md backlog table rows into { slug, recorded } pairs.
- * Rows are `| Item | Status | Priority | Depends on | Ship feature |`;
- * skips the header row, separator rows, and rows without a Ship feature slug.
+ *
+ * Columns are located by header *name*, not position or count, so both the
+ * legacy 5-column table (`| Item | Status | Priority | Depends on | Ship feature |`)
+ * and the enriched 7-column one (which adds `Size` and `Source`) parse — including
+ * two tables of different shapes in the same file, and columns in any order.
+ *
+ * A table row is any line that starts and ends with `|`. A row is a header when its
+ * cells include `Item`, `Status`, and `Ship feature`; that header becomes the active
+ * context (column count + indexes) for the rows beneath it. Rows before any header,
+ * rows whose cell count differs from their header's, separator rows, and rows without
+ * a Ship feature slug all contribute nothing. A non-blank, non-table line ends the
+ * active table, so a later table can never inherit the previous header's layout.
  */
 function parseRoadmapRows(content) {
   const pairs = [];
+  let ctx = null;
+
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
-    if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) continue;
+
+    if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) {
+      // Blank lines may separate a header from its rows; anything else ends the table.
+      if (trimmed !== '') ctx = null;
+      continue;
+    }
+
     const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
-    if (cells.length !== 5) continue;
-    if (cells[0] === 'Item') continue; // header row
+
+    const itemIdx = cells.indexOf('Item');
+    const statusIdx = cells.indexOf('Status');
+    const slugIdx = cells.indexOf('Ship feature');
+    if (itemIdx !== -1 && statusIdx !== -1 && slugIdx !== -1) {
+      ctx = { columnCount: cells.length, itemIdx, statusIdx, slugIdx };
+      continue;
+    }
+
+    if (!ctx) continue; // a table without the required headers contributes nothing
     if (cells.every(c => /^:?-+:?$/.test(c))) continue; // separator row
-    const slug = cells[4];
+    if (cells.length !== ctx.columnCount) continue; // malformed row (e.g. stray pipe)
+
+    const slug = cells[ctx.slugIdx];
     if (!slug || slug === '—' || slug === '-') continue;
-    pairs.push({ slug, recorded: cells[1] });
+    pairs.push({ slug, recorded: cells[ctx.statusIdx] });
   }
+
   return pairs;
 }
 
