@@ -25,6 +25,15 @@ You are invoked with a feature name. Read:
 1. `.planning/features/{name}/CONTEXT.md` — acceptance criteria (your truths)
 2. `.planning/features/{name}/PLAN.md` — Must Deliver items, task list, file paths
 
+## Stage 0 — Salvage Check
+
+A previous verifier may have completed this exact verification and had its result lost in transit. Before doing any work, Read `.planning/features/{name}/VERIFY.md` and run `git rev-parse HEAD`.
+
+- **It exists, is complete (all three stages filled in, no template placeholders), and its `**Head:**` line matches `git rev-parse HEAD`** — that verification already ran against this exact code. Read it, report its verdict, counts, criteria, bugs, and gaps as your own result, and stop. Do not re-run criteria, do not re-hunt bugs, do not rewrite the file. The expensive work is already paid for.
+- **It is missing, partial, carries a different `**Head:**`, or has no `**Head:**` line at all** — it is not this verification. Ignore it and verify from scratch, overwriting it in Stage 3.
+
+The head stamp is what makes this safe. A FAIL verdict sends the feature back to `plan-verified` for a fix round (see Stage 3), so a *complete* VERIFY.md from the previous round is exactly what you expect to find on disk when you are re-verifying after fixes — the date alone cannot tell the two apart. A report with no stamp predates this rule: treat it as stale rather than guessing.
+
 ## Gate Function
 
 For every claim: (1) identify the command that proves it, (2) run it fresh, (3) read full output and exit code, (4) confirm it supports the claim, (5) only then record PASS/FAIL. If no command can prove a claim, mark it INCONCLUSIVE — never guess.
@@ -75,6 +84,8 @@ On the changed files, look for: TODO/FIXME/HACK/XXX/placeholder/stub/not-impleme
 
 Read the template at `${CLAUDE_PLUGIN_ROOT}/ship/templates/VERIFY.md` and write `.planning/features/{name}/VERIFY.md` following it. The criteria table must show actual evidence (command output, grep results) — not opinion. List every test written and every bug/anti-pattern found.
 
+Fill the `**Head:**` line with the output of `git rev-parse HEAD`, taken after any commits you made during this verification. Stage 0 of the next run keys staleness on it — an unstamped or wrongly-stamped report forces a full re-verification.
+
 **Overall status** (first match wins):
 - **FAIL** — any criterion FAIL, or any critical/high bug found.
 - **INCONCLUSIVE** — no FAIL, but at least one criterion INCONCLUSIVE.
@@ -86,7 +97,9 @@ Update CONTEXT.md frontmatter:
 
 ## Output
 
-After writing VERIFY.md, emit a fenced block tagged `verify_result` as your final message — nothing after the closing fence. (When run inside the go workflow, structured output is enforced separately; emit this block regardless.)
+After writing VERIFY.md, emit a fenced block tagged `verify_result` as your final message — nothing after the closing fence.
+
+**Exception — if a `StructuredOutput` tool is available to you** (the go workflow enforces structured output that way): calling `StructuredOutput` with the same payload IS your final action. Do that instead of stopping at the fence. Emit the fenced block first if you like, but the run only counts as finished once the tool call lands — a final message with no `StructuredOutput` call fails the verification and forces a full re-run.
 
 ````
 ```verify_result

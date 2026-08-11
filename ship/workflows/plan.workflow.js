@@ -90,14 +90,19 @@ const REPLAN_SCHEMA = {
   },
 }
 
-// Defensive: the harness's final-JSON schema wrapper (StructuredOutput) has
-// flaked and thrown even when the agent's underlying work was already done.
-// Retry once, then degrade to null — every call site below handles null.
+// Defensive: an agent can finish its work and still lose the result in transit
+// (most often by ending its turn without calling StructuredOutput). Retry once,
+// then degrade to null — every call site below handles null.
 //
 // `retry: false` opts out of the internal retry for call sites that run their
 // own continuation loop; unused here, kept identical to go.workflow.js.
+//
+// `retryPrompt` makes the retry cheap instead of blind: a lost result is not
+// proof the work never happened, so the retry reads the durable record the
+// previous agent left behind (the reviewer's scratch file, the replanner's
+// round subsection in PLAN.md) rather than redoing it.
 const safeAgent = async (prompt, opts) => {
-  const { retry = true, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
+  const { retry = true, retryPrompt = null, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
   const label = typeof baseOpts.label === 'string' ? baseOpts.label : ''
   const labelDisplay = label || '<no-label>'
   try { return await agent(prompt, baseOpts) } catch (e) {
@@ -105,10 +110,10 @@ const safeAgent = async (prompt, opts) => {
       log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — treating as no result`)
       return null
     }
-    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once`)
+    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once${retryPrompt ? ' (salvage)' : ''}`)
   }
   const retryOpts = { ...baseOpts, label: label ? `${label}:retry` : 'retry' }
-  try { return await agent(prompt, retryOpts) } catch (e) {
+  try { return await agent(retryPrompt || prompt, retryOpts) } catch (e) {
     log(`${labelDisplay} threw again (${e && e.message ? e.message : e}) — treating as no result`)
     return null
   }
@@ -119,7 +124,10 @@ const findingLine = (f, i) => `${i + 1}. [CRITICAL] Task ${f.task_id == null || 
 // Each agent() call is a fresh agent — the re-reviewer has no memory of the
 // prior review, so the findings must be embedded in the prompt.
 const reviewPrompt = (round, priorCriticals) => {
+  // The round number names the reviewer's scratch record, which a salvage
+  // retry reads instead of re-running the whole review.
   const head = `Review the plan for feature: ${feature}
+Review round: ${round} (scratch record: .planning/features/${feature}/.review-scratch/plan-round-${round}.json)
 
 Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md, then review the plan against the codebase following your review contract.`
 
@@ -154,6 +162,43 @@ Record this revision under PLAN.md's \`## Plan Review\` section as \`### Round $
 
 PLAN.md is your only writable artifact: never modify CONTEXT.md. A CRITICAL finding that is really a requirements gap is not yours to fix — escalate it via \`needs_input\`. Disproving a finding is a valid resolution when you record the evidence in the round subsection.`
 
+// Salvage retries. A plan review re-reads the plan against the whole codebase;
+// a replan rewrites PLAN.md. Redoing either because a result was dropped in
+// transit is pure waste, so the retry checks the durable record first.
+//
+// Staleness is keyed on the PLAN.md content hash rather than the round number:
+// a replan always changes PLAN.md, so a scratch file from an earlier round (or
+// from a previous /ship:plan-verify run) fingerprints differently. A record
+// that matches the current plan byte-for-byte is a valid review of that plan
+// no matter which run produced it.
+const salvagePlanReviewPrompt = (round, fullPrompt) => `Salvage a lost plan review result for feature: ${feature}
+
+A plan reviewer just completed this review, but its structured result was lost in transit. The work is very likely already done and recorded.
+
+Read \`.planning/features/${feature}/.review-scratch/plan-round-${round}.json\` and run \`git hash-object .planning/features/${feature}/PLAN.md\`.
+
+- **If the file exists and its \`plan_hash\` matches that hash:** it is a completed review of exactly the plan on disk right now. Report its findings verbatim as your result and stop. Do NOT re-read the plan, do NOT re-explore the codebase, do NOT revise the findings. An empty findings array is a valid result — report it as APPROVED.
+- **If it is missing, empty, malformed, or its \`plan_hash\` differs:** it belongs to a different plan. Fall back to the full review below.
+
+---
+
+${fullPrompt}`
+
+const salvageReplanPrompt = (round, fullPrompt) => `Salvage a lost replan result for feature: ${feature}
+
+A replanner just revised this plan, but its structured result was lost in transit. PLAN.md was very likely already rewritten.
+
+Read \`.planning/features/${feature}/PLAN.md\` and look under \`## Plan Review\` for a \`### Round ${round + roundOffset}\` subsection.
+
+- **If that subsection exists and is complete:** the revision already landed. Report its recorded changes as your \`changes\`, set status \`REVISED\` with an empty \`needs_input\`, and stop. Do NOT revise the plan again — a second pass would double-apply edits that are already in the file.
+- **If that subsection is absent or was left half-written:** the previous run died mid-revision. Read the plan carefully to see what (if anything) already changed, finish the revision below without duplicating work already applied, and record the round subsection.
+
+Note: an escalation is not recoverable this way — if the previous run escalated instead of revising, there is no subsection, and re-deciding the escalation below is correct.
+
+---
+
+${fullPrompt}`
+
 // Convergence key: task id + file, normalized. Description is deliberately
 // excluded — a reworded description for the same task and file is the same
 // unresolved problem, and including it would let a paraphrase masquerade as
@@ -175,9 +220,11 @@ const history = []
 phase('Plan review')
 
 for (let round = 1; round <= MAX_PLAN_ROUNDS; round++) {
-  const review = await safeAgent(reviewPrompt(round, priorCriticals), {
+  const reviewFull = reviewPrompt(round, priorCriticals)
+  const review = await safeAgent(reviewFull, {
     agentType: 'ship:ship-plan-reviewer', schema: PLAN_REVIEW_SCHEMA, phase: 'Plan review',
     label: `plan-review:r${round}`,
+    retryPrompt: salvagePlanReviewPrompt(round, reviewFull),
   })
 
   if (!review) {
@@ -233,9 +280,11 @@ for (let round = 1; round <= MAX_PLAN_ROUNDS; round++) {
     }
   }
 
-  const replan = await safeAgent(replanPrompt(round, criticals, answers), {
+  const replanFull = replanPrompt(round, criticals, answers)
+  const replan = await safeAgent(replanFull, {
     agentType: 'ship:ship-replanner', schema: REPLAN_SCHEMA, phase: 'Plan review',
     label: `replan:r${round}`,
+    retryPrompt: salvageReplanPrompt(round, replanFull),
   })
 
   if (!replan) {
