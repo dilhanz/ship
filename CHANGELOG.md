@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.4.1
+
+Patch release — fixes a release-blocking test failure in the 5.4.0 dogfood suite.
+
+### Fixed
+
+- **Dogfood conformance no longer depends on gitignored state**: `tests/pm-state-conformance.test.js` resolved every ROADMAP `Ship feature` slug against `.planning/`, but `.planning/` is gitignored, so the directory exists only on a machine that built the features. The check passed locally and failed on every clean checkout, which broke the v5.4.0 release run. `pm-state`'s status mapping table already treats a slug that resolves nowhere as expected ("`.planning/` may be gitignored or pruned"), so the assertion now runs only where the state exists and skips otherwise.
+
 ## 5.4.0
 
 Minor release — the project-manager layer grows from a read-only roadmap view into a working PM.
