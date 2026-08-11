@@ -139,16 +139,15 @@
   <section>
     <h2>&#9654; Work on next</h2>
     <div class="card next">
-      <div class="item-name">Enrich the PM layer to five state files</div>
-      <div class="item-meta">M1 &middot; Project-manager layer &middot; P1 &middot; XL &middot; in-progress &middot; Ship feature: pm-capability-uplift</div>
+      <div class="item-name">Re-run <code>check</code> against a ship-owned archived feature</div>
+      <div class="item-meta">M1 &middot; Project-manager layer &middot; P1 &middot; S &middot; pending &middot; Ship feature: &mdash;</div>
     </div>
   </section>
 
   <section>
     <h2>&#9203; In flight</h2>
     <div class="card">
-      <p><strong>Enrich the PM layer to five state files</strong> (<code>pm-capability-uplift</code>) &mdash; building. Phases 1 and 2 are committed; phase 3 is landing tests, docs, the 5.4.0 bump, and this bootstrap. The verify gate has not run yet.</p>
-      <p class="empty">unverified &mdash; priorities, sizes, and dependencies are PM-derived from repo evidence, not user-confirmed. Run /ship:pm-sync to confirm them.</p>
+      <p><strong>Enrich the PM layer to five state files</strong> (<code>pm-capability-uplift</code>) &mdash; built, verified, and archived. PR #12 is open against <code>main</code>; the v5.4.0 tag that publishes the release has not been cut yet.</p>
     </div>
   </section>
 
@@ -158,19 +157,19 @@
       <div class="milestone-head">
         <h3>M1 &mdash; Project-manager layer</h3>
         <span class="badge active">active</span>
-        <span class="progress-label">0 / 2 done</span>
+        <span class="progress-label">1 / 2 done</span>
       </div>
       <p class="goal">Ship's PM layer is a working project manager, not a read-only roadmap view.</p>
-      <div class="progress"><div class="progress-fill" style="width: 0%"></div></div>
+      <div class="progress"><div class="progress-fill" style="width: 50%"></div></div>
       <table>
         <tr><th>Item</th><th>Status</th><th>Priority</th><th>Size</th><th>Depends on</th><th>Source</th><th>Ship feature</th></tr>
         <tr>
           <td>Enrich the PM layer to five state files</td>
-          <td class="status-in-progress">in-progress</td>
+          <td class="status-done">done</td>
           <td>P1</td>
           <td class="size">XL</td>
           <td>&mdash;</td>
-          <td class="source">.planning/features/pm-capability-uplift/CONTEXT.md</td>
+          <td class="source">.planning/archive/pm-capability-uplift/CONTEXT.md</td>
           <td>pm-capability-uplift</td>
         </tr>
         <tr>
@@ -179,7 +178,7 @@
           <td>P1</td>
           <td class="size">S</td>
           <td>Enrich the PM layer to five state files</td>
-          <td class="source">.planning/features/pm-capability-uplift/CHECK-DRYRUN.md</td>
+          <td class="source">.planning/archive/pm-capability-uplift/VERIFY.md inconclusive criterion 6</td>
           <td>&mdash;</td>
         </tr>
       </table>

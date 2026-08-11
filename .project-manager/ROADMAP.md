@@ -11,8 +11,8 @@ Goal: Ship's PM layer is a working project manager, not a read-only roadmap view
 
 | Item | Status | Priority | Size | Depends on | Source | Ship feature |
 |------|--------|----------|------|------------|--------|--------------|
-| Enrich the PM layer to five state files | in-progress | P1 | XL | — | .planning/features/pm-capability-uplift/CONTEXT.md | pm-capability-uplift |
-| Re-run `check` against a ship-owned archived feature | pending | P1 | S | Enrich the PM layer to five state files | .planning/features/pm-capability-uplift/CHECK-DRYRUN.md | — |
+| Enrich the PM layer to five state files | done | P1 | XL | — | .planning/archive/pm-capability-uplift/CONTEXT.md | pm-capability-uplift |
+| Re-run `check` against a ship-owned archived feature | pending | P1 | S | Enrich the PM layer to five state files | .planning/archive/pm-capability-uplift/VERIFY.md inconclusive criterion 6 | — |
 
 #### Enrich the PM layer to five state files
 
@@ -24,10 +24,12 @@ that keeps legacy 5-column tables working. Feature-level detail lives in
 
 #### Re-run `check` against a ship-owned archived feature
 
-The `check` verb's contract was exercised during the uplift, but `.planning/archive/` in this repo is
-empty, so the dry-run audited an archived feature in another repo read-only and filed no debt from it
-here. The verb's debt-filing path has therefore never run end-to-end against a ship-owned feature.
-Re-run it once this repo has its first archived feature.
+The `check` verb's contract was exercised during the uplift, but `.planning/archive/` was empty at
+the time, so the dry-run audited an archived feature in another repo read-only and filed no debt from
+it here. The verb's debt-filing path has therefore never run end-to-end against a ship-owned feature,
+which is why criterion 6 of that feature's VERIFY.md is INCONCLUSIVE (accepted by override).
+**Now unblocked:** archiving `pm-capability-uplift` gave this repo its first archived feature, so
+`/ship:pm check pm-capability-uplift` can settle it.
 
 ### M2 — Release and follow-through (status: pending)
 

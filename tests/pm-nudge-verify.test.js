@@ -120,7 +120,9 @@ describe('pm-sync-nudge — header-context lifecycle', () => {
         '',
         V7,
         V7SEP,
-        '| A | pending | P1 | — | src/a.ts:1 | alpha |', // 6 cells — omitted Size
+        // 6 cells vs the 7-column header: the Size cell is omitted, so Depends-on,
+        // Source and Ship feature each shift one column left.
+        '| A | pending | P1 | — | src/a.ts:1 | alpha |',
         '| B | pending | P1 | M | — | src/b.ts:1 | beta |',
         '',
       ].join('\n')
@@ -196,27 +198,62 @@ describe('pm-sync-nudge — against the real dogfooded ROADMAP.md', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('this repo\'s committed ROADMAP.md is machine-parseable: its slug drifts when the feature completes', async () => {
+  const SLUG = 'pm-capability-uplift';
+
+  /**
+   * The Status cell the real ROADMAP.md records for a slug. Derived rather than
+   * hard-coded, so these tests keep testing the hook as the dogfooded state moves
+   * through its own lifecycle instead of failing every time the item advances.
+   */
+  function recordedStatusFor(roadmap, slug) {
+    for (const line of roadmap.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) continue;
+      const cells = trimmed.slice(1, -1).split('|').map((c) => c.trim());
+      if (cells[cells.length - 1] === slug) return cells[1];
+    }
+    return null;
+  }
+
+  /** Make the feature's on-disk reality either agree with, or diverge from, `recorded`. */
+  function stageReality(dir, recorded, { matching }) {
+    const done = matching ? recorded === 'done' : recorded !== 'done';
+    if (done) {
+      const archived = path.join(dir, '.planning', 'archive', SLUG);
+      fs.mkdirSync(archived, { recursive: true });
+      fs.writeFileSync(path.join(archived, 'CONTEXT.md'), '---\nstatus: done\n---\n');
+    } else {
+      createFeature(dir, SLUG, 'building');
+    }
+  }
+
+  it('this repo\'s committed ROADMAP.md is machine-parseable: its slug drifts when reality diverges', async () => {
     const real = fs.readFileSync(path.join(repoRoot, '.project-manager', 'ROADMAP.md'), 'utf8');
+    const recorded = recordedStatusFor(real, SLUG);
+    assert.ok(recorded, `the shipped ROADMAP.md carries a row for ${SLUG}`);
+    assert.ok(
+      recorded === 'done' || recorded === 'in-progress',
+      `this test models done/in-progress only; ROADMAP records "${recorded}"`
+    );
     writeRoadmap(tmpDir, real);
-    // ROADMAP records pm-capability-uplift as in-progress; archive it → must drift to done.
-    const archived = path.join(tmpDir, '.planning', 'archive', 'pm-capability-uplift');
-    fs.mkdirSync(archived, { recursive: true });
-    fs.writeFileSync(path.join(archived, 'CONTEXT.md'), '---\nstatus: done\n---\n');
+    stageReality(tmpDir, recorded, { matching: false });
 
     const { code, output } = await runHook(tmpDir);
     assert.equal(code, 0);
     assert.ok(output, 'the shipped ROADMAP.md must be parseable by the shipped hook');
-    assert.match(msgOf(output), /pm-capability-uplift: roadmap says in-progress, actually done/);
+    const actual = recorded === 'done' ? 'in-progress' : 'done';
+    assert.match(msgOf(output), new RegExp(`${SLUG}: roadmap says ${recorded}, actually ${actual}`));
   });
 
   it('this repo\'s committed ROADMAP.md is silent when reality matches (no false nudge)', async () => {
     const real = fs.readFileSync(path.join(repoRoot, '.project-manager', 'ROADMAP.md'), 'utf8');
+    const recorded = recordedStatusFor(real, SLUG);
+    assert.ok(recorded, `the shipped ROADMAP.md carries a row for ${SLUG}`);
     writeRoadmap(tmpDir, real);
-    createFeature(tmpDir, 'pm-capability-uplift', 'building');
+    stageReality(tmpDir, recorded, { matching: true });
 
     const { code, output } = await runHook(tmpDir);
     assert.equal(code, 0);
-    assert.equal(output, null, 'in-progress recorded vs building feature is not drift');
+    assert.equal(output, null, `recorded "${recorded}" matching reality is not drift`);
   });
 });

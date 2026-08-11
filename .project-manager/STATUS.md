@@ -6,13 +6,9 @@ updated: "2026-08-11"
 
 ## In flight
 
-- **Enrich the PM layer to five state files** (`pm-capability-uplift`) — building. Phases 1 and 2 are
-  committed (pm-state format, nudge parser, dashboard template, `ship-pm` agent, `/ship:pm`,
-  `/ship:pm-sync`); phase 3 is landing tests, docs, the 5.4.0 bump, and this bootstrap. The verify
-  gate has not run yet.
-- **unverified — priorities, sizes, and dependencies in ROADMAP.md are PM-derived from repo evidence
-  (README.md, `git log`, `.planning/features/*/CONTEXT.md`, CHANGELOG.md), not user-confirmed.** This
-  bootstrap ran without the `/ship:pm-sync` interview. Run `/ship:pm-sync` to confirm or correct them.
+- **Enrich the PM layer to five state files** (`pm-capability-uplift`) — built, verified, and
+  archived. PR #12 is open against `main`; the v5.4.0 tag that publishes the release has not been
+  cut yet.
 
 ## Live status
 
@@ -24,15 +20,24 @@ No blockers recorded.
 
 ## Recently shipped
 
+- **Enrich the PM layer to five state files** (`pm-capability-uplift`) — verified 2026-08-11.
+  **Verify gate ran:** `.planning/archive/pm-capability-uplift/VERIFY.md` records 7 of 8 acceptance
+  criteria PASS with executed evidence, 0 FAIL, and one INCONCLUSIVE (`check <feature>`'s
+  debt-filing half) accepted via a recorded `--accept-inconclusive` override. Full suite: 215 tests,
+  0 failures. The inconclusive criterion is tracked as the P1 item below.
 - **v5.3.0** (commit `51241e1`) — introduced the PM layer (`/ship:pm`, `/ship:pm-sync`, `pm-state`,
-  the nudge hook). **Verify gate unconfirmed:** `.planning/` is gitignored in this repo and
-  `.planning/archive/` is empty, so no VERIFY.md for that work exists here. Whether its gate ran
-  cannot be settled from the repo — reading the local `.planning/` history of the machine that built
-  it would settle it.
+  the nudge hook). **Verify gate unconfirmed:** `.planning/` is gitignored in this repo and no
+  VERIFY.md for that work exists here. Whether its gate ran cannot be settled from the repo —
+  reading the local `.planning/` history of the machine that built it would settle it.
 
 ## Repo hygiene
 
-- On `main`, ahead of `origin/main` by 10 unpushed commits (nine `pm-capability-uplift` commits plus
-  this bootstrap). Working tree otherwise clean.
-- One worktree: the repo root, on `main`. No stale worktrees.
+- On `feat/pm-capability-uplift`, pushed and tracking its remote; PR #12 open against `main`.
+  Local `main` matches `origin/main` (`51241e1`). Working tree clean.
+- One worktree: the repo root. No stale worktrees.
 - `.planning/` is gitignored; `.project-manager/` is tracked in this repo by deliberate choice.
+- **unverified — priorities, sizes, and dependencies in ROADMAP.md are PM-derived from repo evidence
+  (README.md, `git log`, `.planning/` contents, CHANGELOG.md), not user-confirmed.** The bootstrap
+  ran without the `/ship:pm-sync` interview. Run `/ship:pm-sync` to confirm or correct them.
+- A local branch `backup/pre-scrub-2026-08-11` holds pre-rebase history containing a private project
+  name and an absolute home path. It must not be pushed; delete it once PR #12 merges.
