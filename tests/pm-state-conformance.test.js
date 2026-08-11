@@ -84,7 +84,15 @@ describe('dogfood — .project-manager/ conforms to the pm-state format', () => 
     }
   });
 
-  it('every Ship feature slug is either — or resolves to a real feature directory', () => {
+  it('every Ship feature slug is either — or resolves to a real feature directory', (t) => {
+    // `.planning/` is gitignored in this repo, so a clean checkout (CI, a fresh
+    // clone) has no planning state to resolve against. pm-state's status mapping
+    // table treats that case as "unchanged — `.planning/` may be gitignored or
+    // pruned", not as an error, so this check only runs where the state exists.
+    if (!fs.existsSync(path.join(repoRoot, '.planning'))) {
+      t.skip('no .planning/ in this checkout — slugs are unresolvable, per pm-state');
+      return;
+    }
     const c = read('ROADMAP.md');
     for (const { cells, header } of backlogRows(c)) {
       const slug = cells[header.indexOf('Ship feature')];
