@@ -27,10 +27,12 @@ You are invoked with a feature name. Read:
 
 ## Stage 0 — Salvage Check
 
-A previous verifier may have completed this exact verification and had its result lost in transit. Before doing any work, check whether `.planning/features/{name}/VERIFY.md` already exists **for this build** — it must be present, complete (all three stages filled in, no template placeholders), and dated to the current HEAD's work rather than an earlier build round.
+A previous verifier may have completed this exact verification and had its result lost in transit. Before doing any work, Read `.planning/features/{name}/VERIFY.md` and run `git rev-parse HEAD`.
 
-- **It is complete and current** — that verification already ran. Read it, report its verdict, counts, criteria, bugs, and gaps as your own result, and stop. Do not re-run criteria, do not re-hunt bugs, do not rewrite the file. The expensive work is already paid for.
-- **It is missing, partial, or stale (an earlier round's report, superseded by fix commits since)** — ignore it and verify from scratch, overwriting it in Stage 3.
+- **It exists, is complete (all three stages filled in, no template placeholders), and its `**Head:**` line matches `git rev-parse HEAD`** — that verification already ran against this exact code. Read it, report its verdict, counts, criteria, bugs, and gaps as your own result, and stop. Do not re-run criteria, do not re-hunt bugs, do not rewrite the file. The expensive work is already paid for.
+- **It is missing, partial, carries a different `**Head:**`, or has no `**Head:**` line at all** — it is not this verification. Ignore it and verify from scratch, overwriting it in Stage 3.
+
+The head stamp is what makes this safe. A FAIL verdict sends the feature back to `plan-verified` for a fix round (see Stage 3), so a *complete* VERIFY.md from the previous round is exactly what you expect to find on disk when you are re-verifying after fixes — the date alone cannot tell the two apart. A report with no stamp predates this rule: treat it as stale rather than guessing.
 
 ## Gate Function
 
@@ -81,6 +83,8 @@ On the changed files, look for: TODO/FIXME/HACK/XXX/placeholder/stub/not-impleme
 ## Stage 3 — Write VERIFY.md & Verdict
 
 Read the template at `${CLAUDE_PLUGIN_ROOT}/ship/templates/VERIFY.md` and write `.planning/features/{name}/VERIFY.md` following it. The criteria table must show actual evidence (command output, grep results) — not opinion. List every test written and every bug/anti-pattern found.
+
+Fill the `**Head:**` line with the output of `git rev-parse HEAD`, taken after any commits you made during this verification. Stage 0 of the next run keys staleness on it — an unstamped or wrongly-stamped report forces a full re-verification.
 
 **Overall status** (first match wins):
 - **FAIL** — any criterion FAIL, or any critical/high bug found.

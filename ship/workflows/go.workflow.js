@@ -262,14 +262,20 @@ Read \`.planning/features/${feature}/.review-scratch/${scope}.json\`.
 ${fullPrompt}`
 
 // Same principle for the verifier, which writes VERIFY.md before it returns.
+//
+// Staleness is keyed on the `**Head:**` stamp the verifier writes into the
+// report. A FAIL verdict sends the feature back for a fix round, so a complete
+// VERIFY.md from the previous round is exactly what a re-verification finds on
+// disk — the date alone cannot separate the two. No stamp means the report
+// predates the rule, and an unverifiable record is not salvageable.
 const salvageVerifyPrompt = (fullPrompt) => `Salvage a lost verification result for feature: ${feature}
 
 A verifier just completed this exact verification, but its structured result was lost in transit. VERIFY.md is very likely already written.
 
-Read \`.planning/features/${feature}/VERIFY.md\`.
+Read \`.planning/features/${feature}/VERIFY.md\` and run \`git rev-parse HEAD\`.
 
-- **If it exists, is complete (all stages filled, no placeholders), and reflects the current HEAD:** report its verdict, counts, criteria verdicts, bugs, and gaps as your result and stop. Do NOT re-run criteria, re-hunt bugs, or rewrite the file.
-- **If it is missing, partial, or stale from an earlier build round:** fall back to the full verification below.
+- **If it exists, is complete (all stages filled, no placeholders), and its \`**Head:**\` line matches that SHA:** report its verdict, counts, criteria verdicts, bugs, and gaps as your result and stop. Do NOT re-run criteria, re-hunt bugs, or rewrite the file.
+- **If it is missing, partial, stamped with a different head, or carries no \`**Head:**\` line at all:** it is not this verification. Fall back to the full verification below.
 
 ---
 
