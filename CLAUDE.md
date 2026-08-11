@@ -11,10 +11,10 @@ skills/*/SKILL.md          17 skills (13 user-invocable commands + 4 reference s
 skills/deviation-rules/    Reference skill preloaded into builder agent
 skills/git-commits/        Reference skill preloaded into builder + verifier agents
 skills/tdd/                Reference skill preloaded into builder agent (test-driven development)
-skills/pm-state/           Reference skill defining the .project-manager/ state formats
+skills/pm-state/           Reference skill defining the five .project-manager/ state file formats
 ship/workflows/go.workflow.js   Workflow-engine script for the /ship:go build→verify spine
 ship/workflows/plan.workflow.js Workflow-engine script for the /ship:go plan revision loop
-agents/*.md                6 specialized agents (brainstormer, plan-reviewer, replanner, builder, reviewer, verifier)
+agents/*.md                7 specialized agents (brainstormer, plan-reviewer, replanner, builder, reviewer, verifier, pm)
 ```
 
 **Skills** define frontmatter fields like `model` and `allowed-tools`. Some skills delegate to agents via the Agent tool; others run inline with full instructions embedded in the skill body.
@@ -28,6 +28,7 @@ agents/*.md                6 specialized agents (brainstormer, plan-reviewer, re
 - `ship-builder` — task execution with atomic commits
 - `ship-reviewer` — re-runs phase verify commands + reviews the phase diff → review_result findings
 - `ship-verifier` — acceptance criteria + adversarial bug hunt + anti-pattern scan → VERIFY.md (single post-build gate)
+- `ship-pm` — project-level work against `.project-manager/` state: status reconstruction, backlog grooming, shipped-feature verification audits, session handover
 
 **Inline skills** (run in the main conversation for unlimited turns):
 - `plan` — codebase exploration → PLAN.md (exploration scaled to uncertainty — reuses CONTEXT.md Codebase Notes when present, explores inline for small surfaces, fans out Explore agents for large ones)
@@ -91,7 +92,7 @@ install.js             Deprecated legacy installer — use claude plugin install
 - **Single post-build gate:** ship-verifier checks every acceptance criterion against running code AND hunts bugs with adversarial tests AND scans for anti-patterns, producing one VERIFY.md — there is no separate QA layer
 - **Structured output:** the go workflow validates agent results via JSON Schema (`StructuredOutput`) rather than parsing fenced text-JSON blocks; agents still emit `build_result`/`review_result`/`verify_result` blocks for the manual skill paths
 - **Builder continuation:** a builder that runs out of turn budget mid-phase is expected on large tasks, not a failure — its finished tasks are committed and marked done in PLAN.md, so a continuation resumes from the first pending task. The builder signals it with `PARTIAL`; if it dies without reporting, the `go` workflow probes PLAN.md for the real task status. Both paths continue the phase (up to 5 builder rounds in the workflow, 4 continuation rounds in the manual skill) and stop only when a round lands no new done tasks
-- **Project manager:** two skills sit above the feature layer — `/ship:pm` (question router: next item, parallel lanes, status, decisions) and `/ship:pm-sync` (interactive bootstrap/reconcile). State lives in `.project-manager/` (ROADMAP.md, DECISIONS.md, generated dashboard.html) per the `skills/pm-state` reference skill; the pm-sync-nudge hook injects a sync reminder when Ship feature statuses drift from ROADMAP.md. No time concepts in PM state; the PM directs and hands off to Ship commands but never implements.
+- **Project manager:** two skills sit above the feature layer. `/ship:pm` is verb-driven — `status` (reconstruct the true state and fix the files), `groom` (re-check, re-prioritise, re-size the backlog), `check <feature>` (audit whether a shipped feature was genuinely verified), `handover` (close out a session), plus the bare brief and free-text project questions — and it delegates every verb to the `ship-pm` agent so large state never enters the main conversation. `/ship:pm-sync` stays inline and interactive (bootstrap/reconcile, needs AskUserQuestion). State lives in five files under `.project-manager/` — `ROADMAP.md` (milestones + backlog), `STATUS.md` (narrative snapshot), `DECISIONS.md` (short dated entries), `CONVENTIONS.md` (project conventions + learning loop), generated `dashboard.html` — plus `decisions/{date}-{slug}.md` spill files, all per the `skills/pm-state` reference skill. Backlog rows carry a **mandatory `Source`** (do not add an item you cannot point at) and a P0–P3 priority; sizing by plan effort (S/M/L/XL) is permitted while deadlines and time estimates stay banned. The write boundary (`.project-manager/**`, `.planning/**`, `.claude/**`, root `*.md`, git for owned files — never application source, never rewritten history) is documented discipline, not machinery. The pm-sync-nudge hook parses the backlog table by header name and injects a sync reminder when Ship feature statuses drift. Legacy v5.3.0 directories (three files, 5-column table) keep working and grow into the enriched shape only through a confirmed `/ship:pm-sync` reconcile. The PM directs and hands off to Ship commands but never implements.
 
 ## Plugin Structure
 
