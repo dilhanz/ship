@@ -70,9 +70,12 @@ function createArchivedFeature(tmpDir, name) {
 
 /**
  * Write .project-manager/ROADMAP.md with a milestone heading and a backlog
- * table built from rows: array of { item, status, priority, depends, slug }.
+ * table built from rows: array of { item, status, priority, size, depends, source, slug }.
+ *
+ * shape: 'v7' (default) emits the enriched header with Size and Source;
+ *        'v5' emits the legacy v5.3.0 header, which must keep parsing.
  */
-function createRoadmap(tmpDir, rows) {
+function createRoadmap(tmpDir, rows, shape = 'v7') {
   const pmDir = path.join(tmpDir, '.project-manager');
   fs.mkdirSync(pmDir, { recursive: true });
 
@@ -88,13 +91,23 @@ function createRoadmap(tmpDir, rows) {
     '',
     'Goal: exercise the nudge hook',
     '',
-    '| Item | Status | Priority | Depends on | Ship feature |',
-    '| --- | --- | --- | --- | --- |',
   ];
-  for (const r of rows) {
-    lines.push(
-      `| ${r.item} | ${r.status} | ${r.priority || 'P1'} | ${r.depends || '—'} | ${r.slug || '—'} |`
-    );
+  if (shape === 'v5') {
+    lines.push('| Item | Status | Priority | Depends on | Ship feature |');
+    lines.push('| --- | --- | --- | --- | --- |');
+    for (const r of rows) {
+      lines.push(
+        `| ${r.item} | ${r.status} | ${r.priority || 'P1'} | ${r.depends || '—'} | ${r.slug || '—'} |`
+      );
+    }
+  } else {
+    lines.push('| Item | Status | Priority | Size | Depends on | Source | Ship feature |');
+    lines.push('| --- | --- | --- | --- | --- | --- | --- |');
+    for (const r of rows) {
+      lines.push(
+        `| ${r.item} | ${r.status} | ${r.priority || 'P1'} | ${r.size || '—'} | ${r.depends || '—'} | ${r.source || 'test fixture'} | ${r.slug || '—'} |`
+      );
+    }
   }
   fs.writeFileSync(path.join(pmDir, 'ROADMAP.md'), lines.join('\n') + '\n');
 }
@@ -208,5 +221,50 @@ describe('pm-sync-nudge hook', () => {
     const { code, output } = await runHook(tmpDir);
     assert.equal(code, 0);
     assert.equal(output, null, 'should produce no output on malformed roadmap');
+  });
+});
+
+describe('pm-sync-nudge hook — legacy 5-column roadmap', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-pm-nudge-v5-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('recorded pending but feature is building → nudge with slug and /ship:pm-sync', async () => {
+    createFeature(tmpDir, 'auth-feature', 'building');
+    createRoadmap(tmpDir, [{ item: 'Auth', status: 'pending', slug: 'auth-feature' }], 'v5');
+
+    const { code, output } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.ok(output, 'legacy table should still produce output on drift');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('auth-feature'), 'should include the drifted slug');
+    assert.ok(msg.includes('/ship:pm-sync'), 'should recommend /ship:pm-sync');
+  });
+
+  it('recorded in-progress but feature archived → flagged as actually done', async () => {
+    createArchivedFeature(tmpDir, 'shipped-feature');
+    createRoadmap(tmpDir, [{ item: 'Shipped', status: 'in-progress', slug: 'shipped-feature' }], 'v5');
+
+    const { code, output } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.ok(output, 'legacy table should still produce output on drift');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('shipped-feature'), 'should include the drifted slug');
+    assert.ok(msg.includes('done'), 'should flag the item as actually done');
+  });
+
+  it('recorded blocked with active feature → no output', async () => {
+    createFeature(tmpDir, 'stuck-feature', 'building');
+    createRoadmap(tmpDir, [{ item: 'Stuck', status: 'blocked', slug: 'stuck-feature' }], 'v5');
+
+    const { code, output } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.equal(output, null, 'blocked is a PM judgment, never drift');
   });
 });
