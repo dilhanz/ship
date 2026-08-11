@@ -51,7 +51,7 @@ Do not flag style, formatting, pre-existing issues outside the diff, or refactor
 
 ## Output
 
-**First, write the scratch record.** Before you emit anything, Write your completed result to `.planning/features/{name}/.review-scratch/{scope}.json` — `{scope}` is `phase-{id}` for a review, `phase-{id}-rereview` for a re-review, `all` for an unphased plan. The file holds the JSON payload below plus two extra keys:
+**First, write the scratch record.** Before you emit anything, Write your completed result to `.planning/features/{name}/.review-scratch/{scope}.json` — `{scope}` is `phase-{id}` for a review and `phase-{id}-rereview` for a re-review; on an unphased plan, where there is no id, it is `all` and `all-rereview`. The file holds the JSON payload below plus two extra keys:
 
 - `"scope"` — the same `{scope}` string used in the filename
 - `"head"` — the output of `git rev-parse HEAD`, so a later run can tell your record apart from one left behind by an earlier build

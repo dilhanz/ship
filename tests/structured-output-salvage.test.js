@@ -134,6 +134,22 @@ describe('salvage retry — go workflow wiring', () => {
     }
   });
 
+  it('every scope the workflow can request is a name the reviewer contract defines', () => {
+    // The workflow derives scopes from the phase id: `phase-{id}` /
+    // `phase-{id}-rereview`, collapsing to `all` / `all-rereview` for the
+    // unphased pseudo-phase `{id: 'all'}`. A scope the reviewer has no name
+    // for means it writes its record somewhere the salvage lookup never
+    // checks — safe, but it pays for a full review it had already done.
+    assert.ok(wf().includes("ph.id === 'all' ? 'all' : `phase-${ph.id}`"),
+      'the unphased pseudo-phase must map to the contract name `all`');
+
+    const contract = readSrc('agents/ship-reviewer.md');
+    for (const scope of ['phase-{id}', 'phase-{id}-rereview', 'all', 'all-rereview']) {
+      assert.ok(contract.includes(`\`${scope}\``),
+        `the reviewer contract must name the ${scope} scratch record`);
+    }
+  });
+
   it('the salvage prompt forbids redoing the work but allows a genuine fallback', () => {
     const c = wf();
     const prompt = c.split('const salvageReviewPrompt')[1].split('// Same principle')[0];
@@ -204,6 +220,28 @@ describe('stale-scratch fingerprints', () => {
       'the scratch record must be fingerprinted with the commit it reviewed');
     assert.ok(/different `head`|different scope or head/.test(agent + readSrc('ship/workflows/go.workflow.js')),
       'a record stamped with another HEAD must be rejected, not salvaged');
+  });
+
+  it('VERIFY.md carries a head stamp, and salvage keys staleness on it', () => {
+    // The FAIL path reverts the feature to plan-verified and appends fix
+    // tasks, so re-verification after a fix round always finds a *complete*
+    // VERIFY.md from the previous round. Only a head stamp separates the two —
+    // "Verified: {date}" does not.
+    assert.ok(/\*\*Head:\*\*/.test(readSrc('ship/templates/VERIFY.md')),
+      'the VERIFY.md template must reserve a line for the verified HEAD');
+
+    const agent = readSrc('agents/ship-verifier.md');
+    assert.ok(/git rev-parse HEAD/.test(agent),
+      'the verifier must stamp the report with the commit it verified');
+
+    // go.workflow.js embeds the prompt in a template literal, so its backticks
+    // arrive escaped — match the wording, not the quoting.
+    for (const c of [agent, readSrc('ship/workflows/go.workflow.js')]) {
+      assert.ok(/no \\?`\*\*Head:\*\*\\?` line at all/.test(c),
+        'an unstamped VERIFY.md predates the rule and must fall back, not salvage');
+      assert.ok(/matches (that SHA|`git rev-parse HEAD`)/.test(c),
+        'salvage must require the stamp to match the current HEAD');
+    }
   });
 
   it('plan review scratch is fingerprinted on PLAN.md content, not the round', () => {
