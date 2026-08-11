@@ -2,6 +2,7 @@
 
 **Feature:** {feature-name}
 **Verified:** {date}
+**Head:** {git rev-parse HEAD at verification time}
 **Overall Status:** PASS | FAIL | INCONCLUSIVE
 
 ## Stage 1 — Acceptance Criteria
