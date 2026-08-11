@@ -129,43 +129,121 @@
 <main>
   <header>
     <h1>
-<!-- PM:PROJECT -->
+      ship
     </h1>
     <p class="updated">
-<!-- PM:UPDATED -->
+      Last synced 2026-08-11
     </p>
   </header>
 
   <section>
     <h2>&#9654; Work on next</h2>
     <div class="card next">
-<!-- PM:NEXT -->
+      <div class="item-name">Re-run <code>check</code> against a ship-owned archived feature</div>
+      <div class="item-meta">M1 &middot; Project-manager layer &middot; P1 &middot; S &middot; pending &middot; Ship feature: &mdash;</div>
     </div>
   </section>
 
   <section>
     <h2>&#9203; In flight</h2>
     <div class="card">
-<!-- PM:INFLIGHT -->
+      <p><strong>Enrich the PM layer to five state files</strong> (<code>pm-capability-uplift</code>) &mdash; built, verified, and archived. PR #12 is open against <code>main</code>; the v5.4.0 tag that publishes the release has not been cut yet.</p>
     </div>
   </section>
 
   <section>
     <h2>&#9873; Milestones</h2>
-<!-- PM:MILESTONES -->
+    <div class="card">
+      <div class="milestone-head">
+        <h3>M1 &mdash; Project-manager layer</h3>
+        <span class="badge active">active</span>
+        <span class="progress-label">1 / 2 done</span>
+      </div>
+      <p class="goal">Ship's PM layer is a working project manager, not a read-only roadmap view.</p>
+      <div class="progress"><div class="progress-fill" style="width: 50%"></div></div>
+      <table>
+        <tr><th>Item</th><th>Status</th><th>Priority</th><th>Size</th><th>Depends on</th><th>Source</th><th>Ship feature</th></tr>
+        <tr>
+          <td>Enrich the PM layer to five state files</td>
+          <td class="status-done">done</td>
+          <td>P1</td>
+          <td class="size">XL</td>
+          <td>&mdash;</td>
+          <td class="source">.planning/archive/pm-capability-uplift/CONTEXT.md</td>
+          <td>pm-capability-uplift</td>
+        </tr>
+        <tr>
+          <td>Re-run <code>check</code> against a ship-owned archived feature</td>
+          <td class="status-pending">pending</td>
+          <td>P1</td>
+          <td class="size">S</td>
+          <td>Enrich the PM layer to five state files</td>
+          <td class="source">.planning/archive/pm-capability-uplift/VERIFY.md inconclusive criterion 6</td>
+          <td>&mdash;</td>
+        </tr>
+      </table>
+    </div>
+    <div class="card">
+      <div class="milestone-head">
+        <h3>M2 &mdash; Release and follow-through</h3>
+        <span class="badge">pending</span>
+        <span class="progress-label">0 / 3 done</span>
+      </div>
+      <p class="goal">5.4.0 is published and the enriched PM format is adopted where it was designed for.</p>
+      <div class="progress"><div class="progress-fill" style="width: 0%"></div></div>
+      <table>
+        <tr><th>Item</th><th>Status</th><th>Priority</th><th>Size</th><th>Depends on</th><th>Source</th><th>Ship feature</th></tr>
+        <tr>
+          <td>Tag and publish v5.4.0</td>
+          <td class="status-pending">pending</td>
+          <td>P2</td>
+          <td class="size">S</td>
+          <td>Enrich the PM layer to five state files</td>
+          <td class="source">CHANGELOG.md ## 5.4.0</td>
+          <td>&mdash;</td>
+        </tr>
+        <tr>
+          <td>Migrate the originating project onto the enriched PM format</td>
+          <td class="status-pending">pending</td>
+          <td>P2</td>
+          <td class="size">L</td>
+          <td>Tag and publish v5.4.0</td>
+          <td class="source">2026-08-11 &mdash; Enrich Ship's PM layer upstream first, migrate second</td>
+          <td>&mdash;</td>
+        </tr>
+        <tr>
+          <td>Retire the deprecated npx installer</td>
+          <td class="status-pending">pending</td>
+          <td>P3</td>
+          <td class="size">M</td>
+          <td>&mdash;</td>
+          <td class="source">CLAUDE.md "Legacy (deprecated)" installation note</td>
+          <td>&mdash;</td>
+        </tr>
+      </table>
+    </div>
   </section>
 
   <section>
     <h2>&#9888; Blockers</h2>
     <div class="card">
-<!-- PM:BLOCKERS -->
+      <p class="empty">No blockers</p>
     </div>
   </section>
 
   <section>
     <h2>&#9998; Recent decisions</h2>
     <div class="card">
-<!-- PM:DECISIONS -->
+      <div class="decision">
+        <div class="date">2026-08-11</div>
+        <div class="title">.project-manager/ is tracked in git for the ship repo</div>
+        <p>Ship dogfoods its own PM layer, so the state files are committed rather than gitignored. Git-neutrality still holds everywhere else &mdash; this is a choice about this repo, not a policy.</p>
+      </div>
+      <div class="decision">
+        <div class="date">2026-08-11</div>
+        <div class="title">Enrich Ship's PM layer upstream first, migrate second</div>
+        <p>The private project-specific PM that motivated this work cannot be retired until Ship's layer is a strict superset of it, so the capabilities are built into Ship first and that project converts after.</p>
+      </div>
     </div>
   </section>
 

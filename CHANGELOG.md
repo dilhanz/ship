@@ -1,5 +1,24 @@
 # Changelog
 
+## 5.4.0
+
+Minor release — the project-manager layer grows from a read-only roadmap view into a working PM.
+
+### Added
+
+- **`ship-pm` agent**: `/ship:pm` now delegates to a dedicated agent (`agents/ship-pm.md`) so project state stays out of the main conversation. It states its own write boundary — `.project-manager/**`, `.planning/**`, `.claude/**`, root `*.md`, and git (`add`, `commit`, `push`, `status`, `log`, `diff`, `worktree prune`) for the files it owns — and never edits application source, never rewrites published history (`reset --hard`, `push --force`, `rebase`), and never invents status: an unverifiable claim is reported as `unverified` with a named next step.
+- **Four `/ship:pm` verbs**: `status` (reconstruct the true state from the repo, report the delta, fix the files), `groom` (re-check every item still applies, verify Sources, re-prioritise and re-size), `check <feature>` (audit whether a shipped feature was genuinely verified — one `[PROVEN|UNPROVEN]` line per acceptance criterion with named evidence, filing unproven ones as P0/P1 verification debt), and `handover` (update STATUS.md, record decisions, atomic tracking commits, push, prune worktrees, write a cold-start note). The bare brief and free-text project questions keep their existing routing.
+- **Five state files**: `.project-manager/` grows from three to five — `ROADMAP.md`, the new `STATUS.md` (in flight, live status, blocked-with-reasoning, recently shipped, repo hygiene), `DECISIONS.md`, the new `CONVENTIONS.md` (project conventions with a learning loop), and generated `dashboard.html` — plus `decisions/{YYYY-MM-DD}-{slug}.md` spill files for decisions longer than DECISIONS.md's three-line cap, and `#### {Item}` detail sections for backlog items needing more room than a table row.
+- **Traceable backlog**: every item carries a mandatory `Source` (a VERIFY.md line reference, a decision, a `file:line`) — do not add an item you cannot point at — and a new **P0** tier for live / customer-facing risk above the existing P1–P3.
+- **Dashboard in-flight section**: a new `PM:INFLIGHT` placeholder renders STATUS.md's in-flight work; blockers now carry their reasoning and item rows render Size and Source. Still a single self-contained file with zero network requests.
+
+### Changed
+
+- **`/ship:pm` is no longer read-only** — its `allowed-tools` gain `Write`, `Edit`, `Bash`, and `Agent` for the verbs that maintain state.
+- **Sizing is permitted, time is still banned**: backlog items take an optional `Size` of `S | M | L | XL` by plan effort — complexity, not duration. Deadlines, day/week/sprint sizing, and velocity remain banned, and timestamps stay confined to STATUS.md and DECISIONS.md entry dates.
+- **`pm-sync-nudge` parses by header name**: the hook locates the `Item`, `Status`, and `Ship feature` columns from the table header rather than assuming a fixed 5-column layout, so tables of either shape — even two different shapes in one file, or columns in a different order — are drift-checked.
+- **Back-compat**: a v5.3.0 `.project-manager/` directory (three files, 5-column table, P1–P3) stays fully valid and readable. Nothing auto-migrates; a legacy directory grows into the enriched shape only through a confirmed `/ship:pm-sync` reconcile, which never fabricates a `Source`.
+
 ## 5.3.0
 
 Minor release — adds a project-level layer above individual features.

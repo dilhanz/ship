@@ -48,16 +48,17 @@ describe('v4 — removed pieces', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Structure — 4 agents, workflow script, go skill wiring
+// Structure — agent roster, workflow script, go skill wiring
 // ---------------------------------------------------------------------------
 
 describe('v4 — agent roster', () => {
-  it('exactly the 6 expected agents exist', () => {
+  it('exactly the 7 expected agents exist', () => {
     const agents = fs.readdirSync(path.join(repoRoot, 'agents')).filter((f) => f.endsWith('.md')).sort();
     assert.deepEqual(agents, [
       'ship-brainstormer.md',
       'ship-builder.md',
       'ship-plan-reviewer.md',
+      'ship-pm.md',
       'ship-replanner.md',
       'ship-reviewer.md',
       'ship-verifier.md',
