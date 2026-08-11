@@ -107,6 +107,15 @@
   .status-blocked { color: var(--bad); }
   .status-in-progress { color: var(--warn); }
   .status-pending { color: var(--muted); }
+  .source { color: var(--muted); font-size: 0.8rem; }
+  .size { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .blocker-reason {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin: 2px 0 0;
+    padding-left: 14px;
+    border-left: 2px solid var(--border);
+  }
   .decision { padding: 10px 0; border-bottom: 1px solid var(--border); }
   .decision:last-child { border-bottom: none; }
   .decision .date { color: var(--muted); font-size: 0.8rem; }
@@ -131,6 +140,13 @@
     <h2>&#9654; Work on next</h2>
     <div class="card next">
 <!-- PM:NEXT -->
+    </div>
+  </section>
+
+  <section>
+    <h2>&#9203; In flight</h2>
+    <div class="card">
+<!-- PM:INFLIGHT -->
     </div>
   </section>
 

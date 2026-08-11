@@ -1,59 +1,60 @@
 ---
 name: ship:pm
-description: Use when asking project-level questions — what to work on next, what can run in parallel, milestone status, blockers, or why something was decided
+description: Use when asking project-level questions or doing project-level work — what to work on next, what can run in parallel, milestone status, blockers, why something was decided, plus reconstructing status, grooming the backlog, auditing whether a shipped feature was verified, and handing over a session
 effort: medium
-allowed-tools: Read, Write, Glob, Grep
-argument-hint: "[question]"
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent
+argument-hint: "[status|groom|check <feature>|handover|<question>]"
 ---
 
-Answer a project-level question from the project-manager state.
+Run project-level work against the project-manager state in `.project-manager/`.
 
 ## Setup
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` for the ROADMAP.md, DECISIONS.md, and dashboard.html formats and the status mapping table.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` for the five state-file formats (ROADMAP.md, STATUS.md, DECISIONS.md, CONVENTIONS.md, dashboard.html), the status mapping table, and the hard rules.
 
-2. If `.project-manager/ROADMAP.md` is missing or unparseable, say the project manager isn't set up (or its state is damaged) and point to `/ship:pm-sync` to bootstrap or repair it. Do not error out, and do not create any file other than the dashboard.
-
-## Load state and reality
-
-3. Load `.project-manager/ROADMAP.md` and `.project-manager/DECISIONS.md`.
-
-4. Read live reality so answers reflect the repo as it is now:
-   - `.planning/features/*/CONTEXT.md` frontmatter statuses
-   - `.planning/archive/` directory names
-
-5. For each backlog item with a Ship feature slug, compare its recorded Status against reality using the pm-state mapping table. If any item has drifted, note the drift inline in your answer ("{item}: roadmap says {recorded}, actually {actual}") and recommend `/ship:pm-sync` — but do NOT edit ROADMAP.md. All roadmap mutation belongs to `/ship:pm-sync`.
+2. If `.project-manager/ROADMAP.md` is missing or unparseable, say the project manager isn't set up (or its state is damaged), point at `/ship:pm-sync` to bootstrap or repair it, and stop. Do not create state files here.
 
 ## Route on $ARGUMENTS
 
-6. **No arguments — high-level brief:**
+3. Parse the first token:
+   - `status`, `groom`, `check`, `handover` → the matching verb. `check` takes a feature slug; if the slug is missing, list the candidate features from `.planning/features/` and `.planning/archive/` and ask which one. This is the one place `/ship:pm` stops for input.
+   - Empty → the **bare brief** below.
+   - Anything else → treat the whole argument string as a free-text project question.
+
+## Delegate to the ship-pm agent
+
+4. For every verb and for free-text questions, invoke the Agent tool with `subagent_type: "ship:ship-pm"`, passing the matching verb brief below verbatim plus the raw `$ARGUMENTS`. The agent owns the writes. Do not read state into this conversation yourself, and do not re-derive the agent's findings — relay its report.
+
+   > **status** — Reconstruct the true state; do not recite STATUS.md back. Check the tracking files against git, feature frontmatter, and whether each shipped feature has a VERIFY.md recording a result. Report the delta between the files and the repo, then fix the files. End with what most deserves to happen next.
+
+   > **groom** — Re-check every backlog item still applies. Verify each carries a traceable Source and drop or flag any that does not. Re-prioritise by the P0–P3 key, re-size (S/M/L/XL), and make dependencies explicit. Report what moved and why.
+
+   > **check {feature}** — Audit whether the feature is genuinely done. One `- [PROVEN|UNPROVEN] {criterion} — {evidence}` line per acceptance criterion, evidence being a named artifact. File every unproven criterion into ROADMAP.md as verification debt at P0 (live/customer-facing risk) or P1. End with a one-line verdict.
+
+   > **handover** — Update STATUS.md to the true state, record decisions in DECISIONS.md, make atomic tracking commits, push, prune stale worktrees, and write a handover a fresh session could start cold from.
+
+## Bare brief (no arguments)
+
+5. Delegate a read-mostly brief to the agent:
    - Each milestone with progress (done/total items) and status
-   - Current blockers (items with Status `blocked`)
+   - Current blockers, with their reasoning from STATUS.md where recorded
    - Top 1–3 priorities
    - A single "work on next" recommendation with its Ship command
 
-7. **Next-style questions** ("what should I work on next?", "what's next?"):
-   - Recommend exactly one item: highest-priority non-done, non-blocked item whose dependencies are satisfied (every item in its Depends on column is `done`)
-   - Ground the rationale in recorded Priority, Depends on, and item status — never in time estimates
-   - End with the concrete Ship command: `/ship:start "{item}"`, or `/ship:resume` when its Ship feature is already in progress
-
-8. **Parallel-style questions** ("what can run in parallel?", "what's safe to work on at the same time?"):
-   - List items whose dependencies are all satisfied and that do not depend on each other
-   - Group them as independent lanes, each ending with its Ship command
-
-9. **Decision/history questions** ("why did we…", "when was X decided?"):
-   - Answer from DECISIONS.md entries (date, title, rationale)
-
-10. **Anything else:** answer from state plus live reality, staying at project altitude — milestones, priorities, dependencies, blockers. Point at feature-level commands (`/ship:status`, `/ship:resume`) for feature internals.
+6. Preserve today's routing semantics for the question shapes:
+   - **Next-style questions** ("what should I work on next?") — recommend exactly one item: the highest-priority non-done, non-blocked item whose Depends-on items are all `done`. Ground the rationale in recorded Priority, Depends on, and status. End with `/ship:start "{item}"`, or `/ship:resume` when its Ship feature is already in progress.
+   - **Parallel-style questions** ("what can run in parallel?") — list items whose dependencies are all satisfied and that do not depend on each other, grouped as independent lanes, each ending with its Ship command.
+   - **Decision/history questions** ("why did we…", "when was X decided?") — answer from DECISIONS.md and its `decisions/` spill files.
 
 ## Dashboard freshness
 
-11. If `.project-manager/dashboard.html` is missing, or state is newer than the dashboard (regenerate when it is missing or when a drift note was shown in step 5), regenerate it per the pm-state procedure. This is this skill's only write, always inside `.project-manager/`.
+7. After any verb that changed state, the agent regenerates `.project-manager/dashboard.html` per the pm-state procedure.
 
 ## Hard rules
 
-- Never write outside .project-manager/ — and inside it, only `dashboard.html`. ROADMAP.md and DECISIONS.md change only through `/ship:pm-sync`.
+- Write boundary: `.project-manager/**`, `.planning/**`, `.claude/**`, and root `*.md`, plus git (`add`, `commit`, `push`, `status`, `log`, `diff`, `worktree prune`) for the files it owns. Never application source; never `reset --hard`, `push --force`, or `rebase`.
 - Never begin implementation work — every recommendation ends with a Ship command handoff (`/ship:start "{item}"`, `/ship:resume`, `/ship:pm-sync`).
-- No time estimates in answers — reason only from priority order, status, and dependencies.
+- Never invent status — a claim that cannot be verified from a file, a command, or git is reported as `unverified` with a named next step that would settle it.
+- No time estimates in answers — reason from priority, size (complexity, not duration), status, and dependencies only.
 
 $ARGUMENTS

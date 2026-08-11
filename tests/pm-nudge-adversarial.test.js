@@ -59,7 +59,32 @@ function createArchivedFeature(tmpDir, name) {
   );
 }
 
-function roadmapContent(rows, eol = '\n') {
+/**
+ * Backlog table lines for a given shape.
+ * 'v7' (default) is the enriched header with Size and Source; 'v5' is the
+ * legacy v5.3.0 header, which must keep parsing.
+ */
+function backlogTable(rows, shape = 'v7') {
+  if (shape === 'v5') {
+    return [
+      '| Item | Status | Priority | Depends on | Ship feature |',
+      '| --- | --- | --- | --- | --- |',
+      ...rows.map(
+        (r) => `| ${r.item} | ${r.status} | ${r.priority || 'P1'} | ${r.depends || '—'} | ${r.slug || '—'} |`
+      ),
+    ];
+  }
+  return [
+    '| Item | Status | Priority | Size | Depends on | Source | Ship feature |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...rows.map(
+      (r) =>
+        `| ${r.item} | ${r.status} | ${r.priority || 'P1'} | ${r.size || '—'} | ${r.depends || '—'} | ${r.source || 'test fixture'} | ${r.slug || '—'} |`
+    ),
+  ];
+}
+
+function roadmapContent(rows, eol = '\n', shape = 'v7') {
   const lines = [
     '---',
     'project: "Test Project"',
@@ -72,21 +97,15 @@ function roadmapContent(rows, eol = '\n') {
     '',
     'Goal: exercise the nudge hook',
     '',
-    '| Item | Status | Priority | Depends on | Ship feature |',
-    '| --- | --- | --- | --- | --- |',
+    ...backlogTable(rows, shape),
   ];
-  for (const r of rows) {
-    lines.push(
-      `| ${r.item} | ${r.status} | ${r.priority || 'P1'} | ${r.depends || '—'} | ${r.slug || '—'} |`
-    );
-  }
   return lines.join(eol) + eol;
 }
 
-function createRoadmap(tmpDir, rows, eol = '\n') {
+function createRoadmap(tmpDir, rows, eol = '\n', shape = 'v7') {
   const pmDir = path.join(tmpDir, '.project-manager');
   fs.mkdirSync(pmDir, { recursive: true });
-  fs.writeFileSync(path.join(pmDir, 'ROADMAP.md'), roadmapContent(rows, eol));
+  fs.writeFileSync(path.join(pmDir, 'ROADMAP.md'), roadmapContent(rows, eol, shape));
 }
 
 describe('pm-sync-nudge hook — adversarial edges', () => {
@@ -224,5 +243,62 @@ describe('pm-sync-nudge hook — adversarial edges', () => {
     const msg = output.hookSpecificOutput.additionalContext;
     assert.ok(msg.includes('auth-feature'), 'valid row drift should be reported');
     assert.ok(!msg.includes('other-feature'), 'malformed row must not be reported');
+  });
+
+  it('legacy and enriched tables in one file → both milestones parse under their own header', async () => {
+    createFeature(tmpDir, 'legacy-feature', 'building');
+    createArchivedFeature(tmpDir, 'enriched-feature');
+
+    const pmDir = path.join(tmpDir, '.project-manager');
+    fs.mkdirSync(pmDir, { recursive: true });
+    const content = [
+      '## Milestones',
+      '',
+      '### M1 — Legacy milestone (status: active)',
+      '',
+      'Goal: legacy shape',
+      '',
+      ...backlogTable([{ item: 'Legacy', status: 'pending', slug: 'legacy-feature' }], 'v5'),
+      '',
+      '### M2 — Enriched milestone (status: active)',
+      '',
+      'Goal: enriched shape',
+      '',
+      ...backlogTable([{ item: 'Enriched', status: 'in-progress', slug: 'enriched-feature' }], 'v7'),
+    ].join('\n');
+    fs.writeFileSync(path.join(pmDir, 'ROADMAP.md'), content + '\n');
+
+    const { code, output } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.ok(output, 'mixed-shape roadmap should still nudge');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('legacy-feature'), 'drift under the 5-column table should be reported');
+    assert.ok(msg.includes('enriched-feature'), 'drift under the 7-column table should be reported');
+  });
+
+  it('reordered columns → drift still detected (parser keys on header name, not position)', async () => {
+    createFeature(tmpDir, 'auth-feature', 'building');
+    const pmDir = path.join(tmpDir, '.project-manager');
+    fs.mkdirSync(pmDir, { recursive: true });
+    const content = [
+      '## Milestones',
+      '',
+      '### M1 — Test (status: active)',
+      '',
+      'Goal: swapped Source and Ship feature columns',
+      '',
+      '| Item | Status | Priority | Size | Depends on | Ship feature | Source |',
+      '| --- | --- | --- | --- | --- | --- | --- |',
+      '| Auth | pending | P1 | M | — | auth-feature | test fixture |',
+    ].join('\n');
+    fs.writeFileSync(path.join(pmDir, 'ROADMAP.md'), content + '\n');
+
+    const { code, output } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.ok(output, 'reordered columns should still parse');
+    assert.ok(
+      output.hookSpecificOutput.additionalContext.includes('auth-feature'),
+      'drifted slug should be reported from the named column'
+    );
   });
 });
