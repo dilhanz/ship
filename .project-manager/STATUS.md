@@ -39,5 +39,3 @@ No blockers recorded.
 - **unverified — priorities, sizes, and dependencies in ROADMAP.md are PM-derived from repo evidence
   (README.md, `git log`, `.planning/` contents, CHANGELOG.md), not user-confirmed.** The bootstrap
   ran without the `/ship:pm-sync` interview. Run `/ship:pm-sync` to confirm or correct them.
-- A local branch `backup/pre-scrub-2026-08-11` holds pre-rebase history containing a private project
-  name and an absolute home path. It must not be pushed; delete it once PR #12 merges.
