@@ -150,8 +150,14 @@ const phaseLine = (ph) => (ph.id === 'all' ? '' : `Phase: ${ph.id} — ${ph.name
 // `retry: false` opts out of the internal retry for call sites that run their
 // own continuation loop (the builder), so a dead agent costs one attempt there
 // instead of two.
+//
+// `retryPrompt` makes the retry cheap instead of blind. A lost result does not
+// mean the work did not happen — the reviewer has already written its findings
+// to a scratch file and the verifier has already written VERIFY.md. Pointing
+// the retry at that durable record turns a ~90k-token redo into a few-thousand
+// token read. Falls back to the original prompt when no salvage path exists.
 const safeAgent = async (prompt, opts) => {
-  const { retry = true, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
+  const { retry = true, retryPrompt = null, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
   const label = typeof baseOpts.label === 'string' ? baseOpts.label : ''
   const labelDisplay = label || '<no-label>'
   try { return await agent(prompt, baseOpts) } catch (e) {
@@ -159,10 +165,10 @@ const safeAgent = async (prompt, opts) => {
       log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — treating as no result`)
       return null
     }
-    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once`)
+    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once${retryPrompt ? ' (salvage)' : ''}`)
   }
   const retryOpts = { ...baseOpts, label: label ? `${label}:retry` : 'retry' }
-  try { return await agent(prompt, retryOpts) } catch (e) {
+  try { return await agent(retryPrompt || prompt, retryOpts) } catch (e) {
     log(`${labelDisplay} threw again (${e && e.message ? e.message : e}) — treating as no result`)
     return null
   }
@@ -200,10 +206,23 @@ Read .planning/features/${feature}/PLAN.md and count the tasks ${ph.id === 'all'
 - working_tree_clean — true when \`git status --porcelain\` prints nothing
 - notes — anything odd (uncommitted work, a done task with no commit), else null`
 
+// The builder reports its commits oldest-first (one atomic commit per task, in
+// task order), so the range is computable here. Handing the reviewer a finished
+// range saves it the turns it used to spend re-deriving one with `git log`.
+const diffRange = (commits) => (commits.length ? `${commits[0]}~1..HEAD` : null)
+
+const rangeInstruction = (range) => range
+  ? `Diff range: \`${range}\` — already derived from the phase commits (oldest first). Use it directly with \`git diff ${range}\`; do not spend turns re-deriving it.
+
+Only if that range is unusable — \`git diff --stat ${range}\` errors or comes back empty, or \`${range.split('~')[0]}\` is the repository's root commit so \`~1\` does not resolve — fall back: \`git log --oneline -20\` to locate the true range, or \`git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD\` (the empty tree) when the phase starts at the root commit.`
+  : 'No commits were reported for this phase — review the uncommitted working-tree changes via `git diff HEAD`.'
+
 const reviewPrompt = (ph, commits) => `Review feature: ${feature}
 ${phaseLine(ph)}Phase commits: ${commits.length ? commits.join(', ') : '(none reported)'}
 
-Determine the diff range from the phase commits — confirm their order with \`git log\` and diff \`<oldest-phase-commit>~1..HEAD\` (if no commits were reported, review the uncommitted working-tree changes via \`git diff HEAD\`). Re-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md.`
+${rangeInstruction(diffRange(commits))}
+
+Re-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md.`
 
 const fixPrompt = (ph, findings) => `Fix review findings for feature: ${feature}
 ${phaseLine(ph)}
@@ -220,7 +239,41 @@ ${phaseLine(ph)}A previous review found these critical/high issues, and a builde
 
 ${findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.file} — ${f.description}`).join('\n')}
 
+${rangeInstruction(diffRange(fixCommits))}
+
 You have no memory of that review — verify from the code. Re-run the affected verify commands and review ONLY whether each finding above is now resolved. Report any still-unresolved findings in your review_result.`
+
+// Salvage retry: a lost structured result is a transport failure, not proof the
+// review never happened. The previous reviewer wrote its findings to a scratch
+// file before returning, so the retry reads that instead of re-running every
+// verify command and re-reading the diff. Falls through to a full review only
+// when the scratch file is genuinely absent.
+const salvageReviewPrompt = (ph, scope, fullPrompt) => `Salvage a lost review result for feature: ${feature}
+${phaseLine(ph)}
+A reviewer just completed this exact review, but its structured result was lost in transit. The work is very likely already done and recorded.
+
+Read \`.planning/features/${feature}/.review-scratch/${scope}.json\`.
+
+- **If it exists, its \`scope\` is \`${scope}\`, and its \`head\` matches \`git rev-parse HEAD\`:** report those findings verbatim as your result and stop. Do NOT re-run verify commands, do NOT re-read the diff, do NOT revise the findings. An empty findings array is a valid result — report it as APPROVED.
+- **If it is missing, empty, malformed, or stamped with a different scope or head:** it is not this review. Fall back to the full review below.
+
+---
+
+${fullPrompt}`
+
+// Same principle for the verifier, which writes VERIFY.md before it returns.
+const salvageVerifyPrompt = (fullPrompt) => `Salvage a lost verification result for feature: ${feature}
+
+A verifier just completed this exact verification, but its structured result was lost in transit. VERIFY.md is very likely already written.
+
+Read \`.planning/features/${feature}/VERIFY.md\`.
+
+- **If it exists, is complete (all stages filled, no placeholders), and reflects the current HEAD:** report its verdict, counts, criteria verdicts, bugs, and gaps as your result and stop. Do NOT re-run criteria, re-hunt bugs, or rewrite the file.
+- **If it is missing, partial, or stale from an earlier build round:** fall back to the full verification below.
+
+---
+
+${fullPrompt}`
 
 const uniq = (list) => Array.from(new Set(list.filter((c) => typeof c === 'string' && c)))
 
@@ -331,8 +384,11 @@ for (let i = 0; i < phases.length; i++) {
     break
   }
 
-  const review = await safeAgent(reviewPrompt(ph, build.commits || []), {
+  const reviewScope = ph.id === 'all' ? 'all' : `phase-${ph.id}`
+  const reviewFull = reviewPrompt(ph, build.commits || [])
+  const review = await safeAgent(reviewFull, {
     agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `review:${label}`, phase: 'Build',
+    retryPrompt: salvageReviewPrompt(ph, reviewScope, reviewFull),
   })
 
   let fixRound = null
@@ -347,10 +403,11 @@ for (let i = 0; i < phases.length; i++) {
     fixRound = await safeAgent(fixPrompt(ph, blocking), {
       agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, label: `fix:${label}`, phase: 'Build',
     })
-    rereview = await safeAgent(
-      rereviewPrompt(ph, blocking, (fixRound && fixRound.commits) || []),
-      { agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build' },
-    )
+    const rereviewFull = rereviewPrompt(ph, blocking, (fixRound && fixRound.commits) || [])
+    rereview = await safeAgent(rereviewFull, {
+      agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build',
+      retryPrompt: salvageReviewPrompt(ph, `${reviewScope}-rereview`, rereviewFull),
+    })
   }
 
   // If blocking findings existed but the re-review produced no result, we
@@ -383,10 +440,11 @@ for (let i = 0; i < phases.length; i++) {
 let verdict = null
 if (!stoppedAt) {
   phase('Verify')
-  verdict = await safeAgent(
-    `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.`,
-    { agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify' },
-  )
+  const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.`
+  verdict = await safeAgent(verifyFull, {
+    agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
+    retryPrompt: salvageVerifyPrompt(verifyFull),
+  })
 }
 
 return { feature, stoppedAt, completed, verdict }

@@ -25,6 +25,13 @@ You are invoked with a feature name. Read:
 1. `.planning/features/{name}/CONTEXT.md` — acceptance criteria (your truths)
 2. `.planning/features/{name}/PLAN.md` — Must Deliver items, task list, file paths
 
+## Stage 0 — Salvage Check
+
+A previous verifier may have completed this exact verification and had its result lost in transit. Before doing any work, check whether `.planning/features/{name}/VERIFY.md` already exists **for this build** — it must be present, complete (all three stages filled in, no template placeholders), and dated to the current HEAD's work rather than an earlier build round.
+
+- **It is complete and current** — that verification already ran. Read it, report its verdict, counts, criteria, bugs, and gaps as your own result, and stop. Do not re-run criteria, do not re-hunt bugs, do not rewrite the file. The expensive work is already paid for.
+- **It is missing, partial, or stale (an earlier round's report, superseded by fix commits since)** — ignore it and verify from scratch, overwriting it in Stage 3.
+
 ## Gate Function
 
 For every claim: (1) identify the command that proves it, (2) run it fresh, (3) read full output and exit code, (4) confirm it supports the claim, (5) only then record PASS/FAIL. If no command can prove a claim, mark it INCONCLUSIVE — never guess.
@@ -86,7 +93,9 @@ Update CONTEXT.md frontmatter:
 
 ## Output
 
-After writing VERIFY.md, emit a fenced block tagged `verify_result` as your final message — nothing after the closing fence. (When run inside the go workflow, structured output is enforced separately; emit this block regardless.)
+After writing VERIFY.md, emit a fenced block tagged `verify_result` as your final message — nothing after the closing fence.
+
+**Exception — if a `StructuredOutput` tool is available to you** (the go workflow enforces structured output that way): calling `StructuredOutput` with the same payload IS your final action. Do that instead of stopping at the fence. Emit the fenced block first if you like, but the run only counts as finished once the tool call lands — a final message with no `StructuredOutput` call fails the verification and forces a full re-run.
 
 ````
 ```verify_result
