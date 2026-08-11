@@ -1,5 +1,19 @@
 # Changelog
 
+## 5.4.2
+
+Patch release — two token-waste fixes in the `/ship:go` workflows.
+
+### Added
+
+- **Salvage retries**: a lost structured result is a transport failure, not proof the work never happened, so `safeAgent` (in both `ship/workflows/go.workflow.js` and `plan.workflow.js`) gains an optional `retryPrompt` that points the retry at the durable record the previous agent left behind instead of redoing ~90k tokens of work. Four call sites use it — the phase reviewer and plan reviewer write scratch records under `.planning/features/{name}/.review-scratch/` (`phase-{id}[-rereview].json`, `plan-round-{n}.json` — their one permitted write; the read-only-on-source gate still holds), the verifier salvages its own VERIFY.md, and the replanner its own `### Round {n}` subsection in PLAN.md. Every record is fingerprinted — `head` (git HEAD) for phase reviews, `plan_hash` (`git hash-object PLAN.md`) for plan reviews, and a `**Head:**` line in VERIFY.md itself — so a record from a different build or a different plan is rejected rather than salvaged, and a report with no stamp is treated as stale rather than trusted. The builder keeps `retry: false`: PLAN.md plus the progress probe already cover it. Deleting `.review-scratch/` is hygiene, not the safety net.
+
+### Changed
+
+- **Precomputed diff range**: the builder now reports `commits` oldest-first (one atomic commit per task, in task order), so the go workflow derives `{oldest}~1..HEAD` and hands the reviewer a finished range instead of paying turns for it to re-derive one with `git log`. The reviewer falls back to deriving the range itself only when the range errors, the diff comes back empty, or the phase starts at the repo's root commit (where `~1` does not resolve and the empty-tree hash is used instead).
+- **VERIFY.md carries a HEAD stamp**: the template gained the line, the verifier fills it from `git rev-parse HEAD`, and its stale-report check requires it to match. This matters on a designed-in path — a FAIL verdict reverts the feature to `plan-verified` and appends fix tasks, so re-verification after a fix round always finds a complete VERIFY.md from the previous round, and the `Verified:` date alone cannot separate the two.
+- **Reviewer scratch contract names `all-rereview`**: the contract named `phase-{id}` and `phase-{id}-rereview` for phased reviews but only bare `all` for an unphased plan, leaving an unphased re-review with no defined filename while the workflow looked for `all-rereview`. Both are now named.
+
 ## 5.4.1
 
 Patch release — fixes a release-blocking test failure in the 5.4.0 dogfood suite.
