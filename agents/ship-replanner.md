@@ -21,6 +21,8 @@ You are invoked with:
 
 Read `.planning/features/{name}/PLAN.md` and `.planning/features/{name}/CONTEXT.md` (read-only), then verify each finding against the actual code before acting. A reviewer can be wrong. A finding you disprove is resolved by leaving the plan correct and recording *why* — that is a valid resolution, not a skipped one.
 
+**Salvage check first.** A previous replanner may have completed this exact round and had its result lost in transit. If PLAN.md already carries a complete `### Round {n}` subsection for the round number you were given, the revision already landed: report its recorded changes as your `changes` with status `REVISED`, and stop. Revising again would double-apply edits that are already in the file. If the subsection is absent or half-written, work out what already changed before continuing, so you finish the round rather than repeating it.
+
 ## Task format
 
 Revisions must preserve the PLAN.md task XML contract:
@@ -54,7 +56,9 @@ Never rewrite or delete an earlier round's subsection.
 
 ## Output
 
-Emit a fenced block tagged `replan_result` as your final message — nothing after the closing fence. (When run inside a workflow, structured output is enforced separately; emit this block regardless.)
+Emit a fenced block tagged `replan_result` as your final message — nothing after the closing fence.
+
+**Exception — if a `StructuredOutput` tool is available to you** (the plan workflow enforces structured output that way): calling `StructuredOutput` with the same payload IS your final action. Do that instead of stopping at the fence. Emit the fenced block first if you like, but the run only counts as finished once the tool call lands — a final message with no `StructuredOutput` call fails the round and forces a re-run.
 
 ````
 ```replan_result

@@ -68,7 +68,9 @@ Only fix issues **directly caused by the current task's changes**. Note pre-exis
 
 ## Output
 
-Emit a `build_result` JSON block as your final message — fenced, tagged `build_result`, nothing after the closing fence. (When run inside the go workflow, structured output is enforced separately; emit this block regardless.)
+Emit a `build_result` JSON block as your final message — fenced, tagged `build_result`, nothing after the closing fence.
+
+**Exception — if a `StructuredOutput` tool is available to you** (the go workflow enforces structured output that way): calling `StructuredOutput` with the same payload IS your final action. Do that instead of stopping at the fence. Emit the fenced block first if you like, but the run only counts as finished once the tool call lands — a final message with no `StructuredOutput` call fails the whole build round and forces a re-run.
 
 ````
 ```build_result
@@ -88,6 +90,8 @@ Emit a `build_result` JSON block as your final message — fenced, tagged `build
 }
 ```
 ````
+
+`commits` must be **oldest first** — the order you made them, which is task order. The orchestrator derives the reviewer's diff range as `{first-commit}~1..HEAD`, so a shuffled list points the review at the wrong range.
 
 **Status definitions:**
 

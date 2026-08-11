@@ -180,6 +180,7 @@ with "fix({feature-name}): {short description}". Then emit an updated build_resu
    b. After the builder returns, SendMessage to the **reviewer** agent: "The builder applied fixes for your critical/high findings. New diff range: {base}..HEAD. Re-review ONLY whether each critical/high finding from your previous review is now resolved. Emit an updated review_result JSON block listing any still-unresolved findings." If this SendMessage fails or returns no parseable review_result, treat all findings from round 1 as unresolved concerns (do not loop).
    c. **One round only.** If the re-review still reports critical/high findings, record them in REVIEW.md as `unresolved`, add each to the phase's concerns list, and proceed to mark the phase done. Surface unresolved findings in the PHASE COMPLETE output under "Concerns".
 6. Update REVIEW.md outcome markers: findings fixed in step 5a get `fixed in {commit-hash}`; medium/low get `recorded`; leftover critical/high get `unresolved`.
+7. Delete `.planning/features/{name}/.review-scratch/` if the reviewer created one. It is a crash-recovery cache for a single review; once REVIEW.md carries the findings, a leftover file would let a later run's salvage retry report findings from the wrong build.
 
 **REVIEW.md format** (orchestrator-owned; create `.planning/features/{name}/REVIEW.md` on first append):
 
