@@ -32,6 +32,10 @@ anti-patterns, and write VERIFY.md. Critical or high bugs and any failing criter
 block a PASS.
 ```
 
+## Sync PM State
+
+The verifier sets CONTEXT.md status (`done` on PASS, `plan-verified` on FAIL). After it returns, run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent).
+
 ## Display Results
 
 Extract the `verify_result` JSON block from the agent's output and read `.planning/features/{name}/VERIFY.md` for the full report. Display:
