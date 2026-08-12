@@ -66,7 +66,7 @@ For each pending phase (or once for flat plans):
 
 If phased, mark the current phase `status="building"` in PLAN.md.
 
-Update CONTEXT.md frontmatter to `status: building` (if not already set).
+Update CONTEXT.md frontmatter to `status: building` (if not already set). Then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {feature-name}` to sync PM state (silent no-op when `.project-manager/` is absent).
 
 ### 2. Invoke Builder Agent
 
@@ -278,7 +278,7 @@ Recommendation: {result.recommendation}
 
 When all tasks are done (flat plan) or all phases are done (phased plan):
 
-1. Update CONTEXT.md frontmatter to `status: built`
+1. Update CONTEXT.md frontmatter to `status: built`, then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {feature-name}` to sync PM state (silent no-op when `.project-manager/` is absent)
 2. Output:
 
 ```

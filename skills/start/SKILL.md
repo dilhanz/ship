@@ -42,4 +42,6 @@ Read `${CLAUDE_PLUGIN_ROOT}/agents/ship-brainstormer.md` and follow its instruct
 
 Explore the codebase, then probe with `AskUserQuestion` until the problem, scope boundary, and 3+ testable acceptance criteria can be stated without guessing and the user has confirmed the summary, then write `.planning/features/{name}/CONTEXT.md`.
 
+Once CONTEXT.md is written, run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent).
+
 $ARGUMENTS

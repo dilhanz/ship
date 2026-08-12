@@ -137,6 +137,8 @@ mv .planning/features/{feature-name} .planning/archive/{feature-name}
 
 This preserves the full history (CONTEXT.md, PLAN.md, VERIFY.md) while keeping `.planning/features/` clean for active work.
 
+Then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {feature-name}` to sync PM state (silent no-op when `.project-manager/` is absent) — archive presence is what maps the roadmap row to `done`.
+
 ## Report
 
 ```
