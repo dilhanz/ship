@@ -107,3 +107,51 @@ describe('pm-update — feature status is read from the CONTEXT.md frontmatter',
     assert.equal(mappedStatus(tmp, 'feat-a', 'pending'), null);
   });
 });
+
+describe('pm-update — lifecycle wiring', () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const readRepo = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+  const INVOKE = /node "\$\{CLAUDE_PLUGIN_ROOT\}\/ship\/pm-update\.cjs"/;
+
+  it('the script the skills name actually exists and is executable as a module', () => {
+    const scriptRel = 'ship/pm-update.cjs';
+    assert.ok(fs.existsSync(path.join(repoRoot, scriptRel)), `${scriptRel} exists`);
+    const api = require(path.join(repoRoot, scriptRel));
+    for (const fn of ['parseRoadmap', 'mappedStatus', 'applyStatusUpdates', 'selectNext', 'generateDashboard']) {
+      assert.equal(typeof api[fn], 'function', `exports ${fn}`);
+    }
+  });
+
+  for (const skill of ['start', 'build', 'verify', 'finish', 'go']) {
+    it(`the ${skill} skill runs the updater after a status change`, () => {
+      const body = readRepo(path.join('skills', skill, 'SKILL.md'));
+      assert.match(body, INVOKE, `${skill} invokes pm-update.cjs`);
+      assert.match(body, /status/i);
+    });
+  }
+
+  for (const [file, label] of [
+    ['skills/pm/SKILL.md', 'pm skill'],
+    ['skills/pm-sync/SKILL.md', 'pm-sync skill'],
+    ['skills/pm-state/SKILL.md', 'pm-state skill'],
+    ['agents/ship-pm.md', 'ship-pm agent']
+  ]) {
+    it(`${label} routes regeneration through the script`, () => {
+      assert.match(readRepo(file), INVOKE, `${label} names the script`);
+    });
+  }
+
+  it('pm-state demotes the manual dashboard procedure to a fallback', () => {
+    const body = readRepo('skills/pm-state/SKILL.md');
+    assert.match(body, /\*\*Manual fallback\*\*/, 'manual procedure is labelled a fallback');
+    const scriptAt = body.indexOf('pm-update.cjs');
+    const fallbackAt = body.indexOf('**Manual fallback**');
+    assert.ok(scriptAt !== -1 && scriptAt < fallbackAt, 'the script comes first in the procedure');
+  });
+
+  it('pm and ship-pm take the next-item selection from --next', () => {
+    for (const file of ['skills/pm/SKILL.md', 'agents/ship-pm.md']) {
+      assert.match(readRepo(file), /pm-update\.cjs" --next/, `${file} uses --next`);
+    }
+  });
+});
