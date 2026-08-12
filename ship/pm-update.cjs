@@ -419,3 +419,52 @@ function generateDashboard(cwd) {
 }
 
 module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard };
+
+if (require.main === module) {
+  try {
+    const args = process.argv.slice(2);
+    const wantNext = args.includes('--next');
+    const slugs = args.filter(a => a !== '--next');
+    const cwd = process.cwd();
+
+    const roadmapPath = path.join(cwd, '.project-manager', 'ROADMAP.md');
+    // Absent .project-manager/ (or just no roadmap): silent success, so
+    // lifecycle skills can invoke unconditionally.
+    if (!fs.existsSync(roadmapPath)) process.exit(0);
+
+    if (wantNext) {
+      // Query only — even combined with slugs, --next suppresses all writes.
+      const rows = parseRoadmap(fs.readFileSync(roadmapPath, 'utf8'));
+      console.log(JSON.stringify(selectNext(rows)));
+      process.exit(0);
+    }
+
+    const original = fs.readFileSync(roadmapPath, 'utf8');
+    const { content, changed } = applyStatusUpdates(original, cwd, slugs);
+    if (changed) {
+      try {
+        fs.writeFileSync(roadmapPath, content);
+      } catch (e) {
+        process.stderr.write(`pm-update: failed to write ROADMAP.md: ${e.message}\n`);
+        process.exit(1);
+      }
+    }
+
+    // Always regenerate, even when no row changed, so a stale dashboard heals.
+    const html = generateDashboard(cwd);
+    if (html === null) {
+      process.stderr.write('pm-update: dashboard template unreadable — skipping dashboard regeneration\n');
+    } else {
+      try {
+        fs.writeFileSync(path.join(cwd, '.project-manager', 'dashboard.html'), html);
+      } catch (e) {
+        process.stderr.write(`pm-update: failed to write dashboard.html: ${e.message}\n`);
+        process.exit(1);
+      }
+    }
+  } catch (e) {
+    // Malformed state never crashes the caller — the parser already skips
+    // bad rows, and anything else degrades to a silent no-op.
+    process.exit(0);
+  }
+}
