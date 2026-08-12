@@ -249,7 +249,9 @@ function readOptional(filePath) {
 
 /** Extract a `## {name}` section's body from a markdown document, or ''. */
 function sectionBody(content, name) {
-  const match = content.match(new RegExp(`^## ${name}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`, 'm'));
+  // `$(?![\s\S])` is end-of-string — a bare `$` under the m flag would match
+  // the first end-of-line and truncate the body to a single line.
+  const match = content.match(new RegExp(`^## ${name}\\s*\\n([\\s\\S]*?)(?=\\n## |$(?![\\s\\S]))`, 'm'));
   return match ? match[1] : '';
 }
 
