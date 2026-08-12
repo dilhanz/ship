@@ -142,7 +142,7 @@ describe('pm-sync-nudge hook', () => {
     assert.equal(output, null, 'should produce no output when in sync');
   });
 
-  it('recorded pending but feature is building → nudge with slug and /ship:pm-sync', async () => {
+  it('recorded pending but feature is building → nudge names pm-update.cjs with the slug', async () => {
     createFeature(tmpDir, 'auth-feature', 'building');
     createRoadmap(tmpDir, [
       { item: 'Auth', status: 'pending', slug: 'auth-feature' },
@@ -153,7 +153,9 @@ describe('pm-sync-nudge hook', () => {
     assert.ok(output, 'should produce output on drift');
     const msg = output.hookSpecificOutput.additionalContext;
     assert.ok(msg.includes('auth-feature'), 'should include the drifted slug');
-    assert.ok(msg.includes('/ship:pm-sync'), 'should recommend /ship:pm-sync');
+    assert.ok(msg.includes('pm-update.cjs'), 'should recommend the updater script');
+    assert.match(msg, /pm-update\.cjs" auth-feature/, 'should pass the drifted slug to the script');
+    assert.ok(msg.includes('/ship:pm-sync'), 'should reserve /ship:pm-sync for structural drift');
   });
 
   it('recorded in-progress but feature archived → flagged as actually done', async () => {
@@ -235,7 +237,7 @@ describe('pm-sync-nudge hook — legacy 5-column roadmap', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('recorded pending but feature is building → nudge with slug and /ship:pm-sync', async () => {
+  it('recorded pending but feature is building → nudge names pm-update.cjs with the slug', async () => {
     createFeature(tmpDir, 'auth-feature', 'building');
     createRoadmap(tmpDir, [{ item: 'Auth', status: 'pending', slug: 'auth-feature' }], 'v5');
 
@@ -244,7 +246,8 @@ describe('pm-sync-nudge hook — legacy 5-column roadmap', () => {
     assert.ok(output, 'legacy table should still produce output on drift');
     const msg = output.hookSpecificOutput.additionalContext;
     assert.ok(msg.includes('auth-feature'), 'should include the drifted slug');
-    assert.ok(msg.includes('/ship:pm-sync'), 'should recommend /ship:pm-sync');
+    assert.match(msg, /pm-update\.cjs" auth-feature/, 'should pass the drifted slug to the script');
+    assert.ok(msg.includes('/ship:pm-sync'), 'should reserve /ship:pm-sync for structural drift');
   });
 
   it('recorded in-progress but feature archived → flagged as actually done', async () => {
