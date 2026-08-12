@@ -170,11 +170,15 @@ Deliberately named `CONVENTIONS.md` rather than `README.md` so it can never be c
 
 ## dashboard.html regeneration procedure
 
+1. Run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs"` from the repo root. With no slugs it regenerates `.project-manager/dashboard.html` from the state files and template, and reconciles every slugged row's Status per the status mapping table below, in one pass.
+
+**Manual fallback** — only when the script is unreadable (legacy install), fill the template by hand:
+
 1. Read the template at `${CLAUDE_PLUGIN_ROOT}/ship/templates/dashboard.html`.
 2. Replace each placeholder comment — `<!-- PM:PROJECT -->`, `<!-- PM:UPDATED -->`, `<!-- PM:NEXT -->`, `<!-- PM:INFLIGHT -->`, `<!-- PM:MILESTONES -->`, `<!-- PM:BLOCKERS -->`, `<!-- PM:DECISIONS -->` — with HTML generated **only** from the state files:
    - **PM:PROJECT** — the `project` frontmatter value.
    - **PM:UPDATED** — "Last synced {updated}".
-   - **PM:NEXT** — the recommended next item: highest-priority non-done, non-blocked item whose Depends-on items are all done; include its milestone and priority.
+   - **PM:NEXT** — the recommended next item: highest-priority non-done, non-blocked item whose Depends-on items are all done; include its milestone and priority. `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next` prints the same selection as JSON and is the single home of this rule.
    - **PM:INFLIGHT** — STATUS.md's `## In flight` entries. "No in-flight work recorded" when STATUS.md is absent or the section is empty.
    - **PM:MILESTONES** — one card per milestone: name, status badge, goal, done/total item count with a progress bar (inline styles or template CSS classes only), and the item rows, which now render Size and Source cells too.
    - **PM:BLOCKERS** — every item with Status `blocked` (item name, milestone), plus its reasoning from STATUS.md's `## Blocked` section when a matching entry exists. "No blockers" when none.
@@ -202,7 +206,7 @@ A v5.3.0 directory — three files (`ROADMAP.md`, `DECISIONS.md`, `dashboard.htm
 
 ## Status mapping table (reconciliation)
 
-How Ship reality maps onto a backlog item's recorded Status:
+How Ship reality maps onto a backlog item's recorded Status. `ship/pm-update.cjs` is the mechanical implementation of this table — skills invoke it (`node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" [slug ...]`) rather than re-deriving the mapping.
 
 | Ship reality | Item status becomes |
 |--------------|---------------------|
