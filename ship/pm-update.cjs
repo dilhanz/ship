@@ -170,4 +170,62 @@ function applyStatusUpdates(content, cwd, slugs) {
   return { content: result, changed: true };
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates };
+/**
+ * The "work on next" selection rule — the single home of the rule stated in
+ * skills/pm-state/SKILL.md (PM:NEXT): the highest-priority non-done,
+ * non-blocked item whose Depends-on items are all done.
+ *
+ * - `—`/`-`/empty Depends on means independent; otherwise every comma-separated
+ *   name must match some row's Item (exact, case-sensitive) whose Status is
+ *   `done`. An unknown name counts as unmet — never recommend an item whose
+ *   dependency cannot be verified.
+ * - Priority ranks P0 < P1 < P2 < P3; missing/invalid sorts after P3.
+ *   Ties break by document order.
+ *
+ * @param {ReturnType<typeof parseRoadmap>} rows
+ * @returns {{ item: string, milestone: string|null, priority: string|null, shipFeature: string|null }|null}
+ */
+function selectNext(rows) {
+  const doneItems = new Set(
+    rows
+      .filter(r => (r.recorded || '').toLowerCase() === 'done')
+      .map(r => r.cells.Item)
+  );
+
+  const empty = v => !v || v === '—' || v === '-';
+
+  let best = null;
+  let bestRank = Infinity;
+
+  for (const row of rows) {
+    const status = (row.recorded || '').toLowerCase();
+    if (status === 'done' || status === 'blocked') continue;
+
+    const depends = row.cells['Depends on'];
+    if (!empty(depends)) {
+      const names = depends.split(',').map(d => d.trim()).filter(d => d !== '');
+      if (!names.every(name => doneItems.has(name))) continue;
+    }
+
+    const priority = row.cells.Priority;
+    const rankMatch = typeof priority === 'string' && /^P([0-3])$/.test(priority);
+    const rank = rankMatch ? Number(priority[1]) : 4;
+
+    if (rank < bestRank) {
+      bestRank = rank;
+      best = row;
+    }
+    // ties break by document order — earlier row already won
+  }
+
+  if (!best) return null;
+  const priority = best.cells.Priority;
+  return {
+    item: best.cells.Item,
+    milestone: best.milestone,
+    priority: typeof priority === 'string' && /^P[0-3]$/.test(priority) ? priority : null,
+    shipFeature: empty(best.cells['Ship feature']) ? null : best.cells['Ship feature']
+  };
+}
+
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext };
