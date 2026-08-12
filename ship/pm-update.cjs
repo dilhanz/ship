@@ -228,4 +228,194 @@ function selectNext(rows) {
   };
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext };
+/** HTML-escape every value taken from state files before interpolation. */
+function esc(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** Read a file, returning null when absent or unreadable — never throws. */
+function readOptional(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf8');
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Extract a `## {name}` section's body from a markdown document, or ''. */
+function sectionBody(content, name) {
+  const match = content.match(new RegExp(`^## ${name}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`, 'm'));
+  return match ? match[1] : '';
+}
+
+/** Top-level bullet entries (`- ...`, with indented continuations) of a section body. */
+function bulletEntries(body) {
+  const entries = [];
+  for (const line of body.split('\n')) {
+    if (line.startsWith('- ')) {
+      entries.push(line.slice(2).trim());
+    } else if (entries.length > 0 && line.trim() !== '' && /^\s/.test(line)) {
+      entries[entries.length - 1] += ' ' + line.trim();
+    }
+  }
+  return entries;
+}
+
+/** Milestones from ROADMAP.md: heading name, status suffix, and Goal line. */
+function parseMilestones(content) {
+  const milestones = [];
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('### ')) {
+      const statusMatch = trimmed.match(/\(status:\s*([^)]*)\)\s*$/);
+      milestones.push({
+        name: trimmed.slice(4).replace(/\s*\(status:[^)]*\)\s*$/, '').trim(),
+        status: statusMatch ? statusMatch[1].trim() : '',
+        goal: null
+      });
+    } else if (milestones.length > 0 && milestones[milestones.length - 1].goal === null) {
+      const goalMatch = trimmed.match(/^Goal:\s*(.*)$/);
+      if (goalMatch) milestones[milestones.length - 1].goal = goalMatch[1].trim();
+    }
+  }
+  return milestones;
+}
+
+/** `## {date} — {title}` entries from DECISIONS.md, in document order. */
+function parseDecisions(content) {
+  const decisions = [];
+  for (const block of content.split(/^## /m).slice(1)) {
+    const lines = block.split('\n');
+    const headMatch = lines[0].match(/^(\d{4}-\d{2}-\d{2})\s+—\s+(.*)$/);
+    if (!headMatch) continue;
+    const body = lines.slice(1).map(l => l.trim()).filter(l => l !== '').join(' ');
+    decisions.push({ date: headMatch[1], title: headMatch[2].trim(), body });
+  }
+  return decisions;
+}
+
+/**
+ * Generate dashboard.html deterministically from the state files under
+ * `{cwd}/.project-manager/` and the template shipped next to this script.
+ * Returns the HTML string, or null when the template is unreadable (legacy
+ * install). Absent state files degrade per the pm-state spec, never error.
+ * No timestamps or randomness beyond what the files record — identical input
+ * produces byte-identical output.
+ *
+ * @param {string} cwd
+ * @returns {string|null}
+ */
+function generateDashboard(cwd) {
+  const template = readOptional(path.join(__dirname, 'templates', 'dashboard.html'));
+  if (template === null) return null;
+
+  const pmDir = path.join(cwd, '.project-manager');
+  const roadmap = readOptional(path.join(pmDir, 'ROADMAP.md')) || '';
+  const status = readOptional(path.join(pmDir, 'STATUS.md'));
+  const decisionsFile = readOptional(path.join(pmDir, 'DECISIONS.md'));
+
+  const rows = parseRoadmap(roadmap);
+
+  // PM:PROJECT / PM:UPDATED — ROADMAP frontmatter
+  const projectMatch = roadmap.match(/^project:\s*"?([^"\n]*)"?\s*$/m);
+  const updatedMatch = roadmap.match(/^updated:\s*"?([^"\n]*)"?\s*$/m);
+  const project = esc(projectMatch ? projectMatch[1].trim() : '');
+  const updated = `Last synced ${esc(updatedMatch ? updatedMatch[1].trim() : '')}`;
+
+  // PM:NEXT — the selectNext rule, same code path as --next
+  const next = selectNext(rows);
+  let nextHtml;
+  if (next) {
+    const meta = [next.milestone, next.priority, next.shipFeature]
+      .filter(v => v !== null && v !== '')
+      .map(esc)
+      .join(' &middot; ');
+    nextHtml = `<div class="item-name">${esc(next.item)}</div><div class="item-meta">${meta}</div>`;
+  } else {
+    nextHtml = '<p class="empty">Nothing ready — all items done or blocked</p>';
+  }
+
+  // PM:INFLIGHT — STATUS.md `## In flight` bullets
+  const inflightEntries = status === null ? [] : bulletEntries(sectionBody(status, 'In flight'));
+  const inflightHtml = inflightEntries.length > 0
+    ? `<ul>${inflightEntries.map(e => `<li>${esc(e)}</li>`).join('')}</ul>`
+    : '<p class="empty">No in-flight work recorded</p>';
+
+  // PM:MILESTONES — one card per `### ` heading
+  const milestoneCards = parseMilestones(roadmap).map(m => {
+    const mRows = rows.filter(r => r.milestone === m.name);
+    const done = mRows.filter(r => (r.recorded || '').toLowerCase() === 'done').length;
+    const total = mRows.length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    const parts = [
+      '<div class="card">',
+      `<div class="milestone-head"><h3>${esc(m.name)}</h3><span class="badge ${esc(m.status)}">${esc(m.status)}</span><span class="progress-label">${done}/${total}</span></div>`,
+      `<p class="goal">${esc(m.goal || '')}</p>`,
+      `<div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>`
+    ];
+
+    if (mRows.length > 0) {
+      const headers = mRows[0].headers;
+      const cellHtml = (row, header) => {
+        const value = row.cells[header] || '';
+        if (header === 'Status') return `<td class="status-${esc(value.toLowerCase())}">${esc(value)}</td>`;
+        if (header === 'Size') return `<td class="size">${esc(value)}</td>`;
+        if (header === 'Source') return `<td class="source">${esc(value)}</td>`;
+        return `<td>${esc(value)}</td>`;
+      };
+      parts.push('<table>');
+      parts.push(`<tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`);
+      for (const row of mRows) {
+        parts.push(`<tr>${headers.map(h => cellHtml(row, h)).join('')}</tr>`);
+      }
+      parts.push('</table>');
+    }
+
+    parts.push('</div>');
+    return parts.join('\n');
+  });
+  const milestonesHtml = milestoneCards.join('\n');
+
+  // PM:BLOCKERS — blocked rows, with STATUS.md `## Blocked` reasoning when it matches
+  const blockedReasons = new Map();
+  if (status !== null) {
+    for (const entry of bulletEntries(sectionBody(status, 'Blocked'))) {
+      const nameMatch = entry.match(/^\*\*(.+?)\*\*/);
+      if (nameMatch) blockedReasons.set(nameMatch[1], entry);
+    }
+  }
+  const blockedRows = rows.filter(r => (r.recorded || '').toLowerCase() === 'blocked');
+  const blockerHtml = blockedRows.length > 0
+    ? blockedRows.map(r => {
+        const label = `<p><strong>${esc(r.cells.Item)}</strong>${r.milestone ? ` &middot; ${esc(r.milestone)}` : ''}</p>`;
+        const reason = blockedReasons.get(r.cells.Item);
+        return reason ? `${label}\n<p class="blocker-reason">${esc(reason)}</p>` : label;
+      }).join('\n')
+    : '<p class="empty">No blockers</p>';
+
+  // PM:DECISIONS — the 5 most recent entries (newest first in the file)
+  const decisions = decisionsFile === null ? [] : parseDecisions(decisionsFile).slice(0, 5);
+  const decisionsHtml = decisions.length > 0
+    ? decisions.map(d =>
+        `<div class="decision"><span class="date">${esc(d.date)}</span> <span class="title">${esc(d.title)}</span><p>${esc(d.body)}</p></div>`
+      ).join('\n')
+    : '<p class="empty">No decisions recorded</p>';
+
+  // Replacer functions so `$`-patterns in state content are never interpreted.
+  return template
+    .replace('<!-- PM:PROJECT -->', () => project)
+    .replace('<!-- PM:UPDATED -->', () => updated)
+    .replace('<!-- PM:NEXT -->', () => nextHtml)
+    .replace('<!-- PM:INFLIGHT -->', () => inflightHtml)
+    .replace('<!-- PM:MILESTONES -->', () => milestonesHtml)
+    .replace('<!-- PM:BLOCKERS -->', () => blockerHtml)
+    .replace('<!-- PM:DECISIONS -->', () => decisionsHtml);
+}
+
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard };
