@@ -31,6 +31,15 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` first, every invocation �
 
 `.project-manager/` **aggregates**; it never duplicates `.planning/` feature detail. Acceptance criteria, task lists, and plans live in the feature directory and are referenced by slug.
 
+## The mechanical arm
+
+`node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs"` owns everything mechanical about this state — never re-derive it in prose:
+
+- **Status reconciliation and dashboard regeneration:** run it (optionally with `{slug ...}`) from the repo root before you reason about what remains. It applies the status mapping table to every slugged backlog row, bumps the frontmatter `updated` only when a Status cell actually changed, and rewrites `.project-manager/dashboard.html` deterministically from the state files. It is a silent no-op when `.project-manager/` is absent, and it never touches names, priorities, sizes, sources, or dependencies — those stay your judgment.
+- **Next-item selection:** `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next` prints `{item, milestone, priority, shipFeature}` (or `null`) and writes nothing. Use its answer rather than working the rule out yourself.
+
+The manual placeholder-filling procedure in pm-state is a fallback for legacy installs where the script is unreadable.
+
 ## Inputs
 
 You are invoked with a verb — `status`, `groom`, `check <feature>`, `handover` — or a free-text project question, and the repo root as cwd.

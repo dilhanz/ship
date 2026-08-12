@@ -42,7 +42,7 @@ Set up or update the project-manager state in `.project-manager/`.
    - `STATUS.md` — all five sections, populated from the scan and the interview.
    - `DECISIONS.md` — seed with any decisions captured in the interview; otherwise just the `# Decisions` title.
    - `CONVENTIONS.md` — seed with the confirmed conventions; otherwise the `# Conventions` title plus a starter rule noting that conventions are appended here as they are discovered.
-   - `dashboard.html` — regenerate per the pm-state procedure.
+   - `dashboard.html` — regenerate by running `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs"` from the repo root; the manual pm-state procedure is the fallback only when the script is unreadable.
 
    Create the `decisions/` subdirectory only when a spill file is actually written.
 
@@ -50,7 +50,7 @@ Set up or update the project-manager state in `.project-manager/`.
 
 1. **Re-read reality:** `.planning/features/*/CONTEXT.md` statuses, `.planning/archive/` directory names and whether each archived feature's `VERIFY.md` records a result, recent `git log --oneline -30`, and `git status` plus the current branch versus its upstream.
 
-2. **Auto-update statuses:** apply the pm-state status mapping table to every backlog item that has a Ship feature slug. Only the Status cell changes automatically — never touch names, priorities, sizes, sources, or dependencies without asking. Bump `updated` in the frontmatter to today's date.
+2. **Auto-update statuses:** run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs"` from the repo root — it applies the pm-state status mapping table to every backlog item that has a Ship feature slug and bumps the frontmatter `updated` when a Status cell actually changed. Only the Status cell changes automatically — never touch names, priorities, sizes, sources, or dependencies without asking. New rows, priorities, and structural edits stay with the interview and judgment steps below.
 
    STATUS.md's `## In flight`, `## Recently shipped`, and `## Repo hygiene` sections are also refreshed from reality — they are a snapshot, not user-authored judgment. `## Blocked` and its reasoning are **never** auto-written: blockers are a PM judgment, confirmed in the interview.
 
@@ -66,7 +66,7 @@ Set up or update the project-manager state in `.project-manager/`.
    - Decisions made since the last sync worth logging, and conventions worth recording in CONVENTIONS.md.
    - When `$ARGUMENTS` is provided, treat it as the user's hint about what to capture and start there.
 
-5. **Persist:** apply confirmed roadmap edits, refresh STATUS.md, append any new decisions to `DECISIONS.md` (newest first, spilling to `decisions/{YYYY-MM-DD}-{slug}.md` when longer than three lines), append any new conventions to `CONVENTIONS.md`, and regenerate `dashboard.html` per the pm-state procedure if anything changed. If nothing changed, say so and write nothing.
+5. **Persist:** apply confirmed roadmap edits, refresh STATUS.md, append any new decisions to `DECISIONS.md` (newest first, spilling to `decisions/{YYYY-MM-DD}-{slug}.md` when longer than three lines), append any new conventions to `CONVENTIONS.md`, and regenerate `dashboard.html` if anything changed by running `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs"` (manual pm-state procedure only as fallback when the script is unreadable). If nothing changed, say so and write nothing.
 
 ## Error handling
 
