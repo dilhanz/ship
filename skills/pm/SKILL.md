@@ -39,16 +39,16 @@ Run project-level work against the project-manager state in `.project-manager/`.
    - Each milestone with progress (done/total items) and status
    - Current blockers, with their reasoning from STATUS.md where recorded
    - Top 1–3 priorities
-   - A single "work on next" recommendation with its Ship command
+   - A single "work on next" recommendation with its Ship command, taken from `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next`
 
 6. Preserve today's routing semantics for the question shapes:
-   - **Next-style questions** ("what should I work on next?") — recommend exactly one item: the highest-priority non-done, non-blocked item whose Depends-on items are all `done`. Ground the rationale in recorded Priority, Depends on, and status. End with `/ship:start "{item}"`, or `/ship:resume` when its Ship feature is already in progress.
+   - **Next-style questions** ("what should I work on next?") — recommend exactly one item, selected by running `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next` and interpreting its JSON (`{item, milestone, priority, shipFeature}`, or `null` when nothing is eligible); do not re-derive the rule in prose (the script implements it: highest-priority non-done, non-blocked item whose Depends-on items are all `done`). Ground the rationale in recorded Priority, Depends on, and status. End with `/ship:start "{item}"`, or `/ship:resume` when its Ship feature is already in progress.
    - **Parallel-style questions** ("what can run in parallel?") — list items whose dependencies are all satisfied and that do not depend on each other, grouped as independent lanes, each ending with its Ship command.
    - **Decision/history questions** ("why did we…", "when was X decided?") — answer from DECISIONS.md and its `decisions/` spill files.
 
 ## Dashboard freshness
 
-7. After any verb that changed state, the agent regenerates `.project-manager/dashboard.html` per the pm-state procedure.
+7. After any verb that changed state, the agent regenerates `.project-manager/dashboard.html` by running `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs"` from the repo root — which also reconciles every slugged row's Status per the mapping table. The manual pm-state procedure is the fallback only when the script is unreadable.
 
 ## Hard rules
 

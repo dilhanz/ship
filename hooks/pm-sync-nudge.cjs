@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Ship PM sync nudge — PostToolUse hook (Write|Edit)
 // Compares Ship feature statuses against the statuses recorded in
-// .project-manager/ROADMAP.md and injects a nudge to run /ship:pm-sync
+// .project-manager/ROADMAP.md and injects a nudge to run ship/pm-update.cjs
+// for the drifted slugs (/ship:pm-sync is reserved for structural drift)
 // when they drift. Debounced via .project-manager/.nudge-state.json so
 // the same drift set nudges only once.
 
@@ -151,7 +152,11 @@ process.stdin.on('end', () => {
     for (const d of drifted) {
       lines.push(`- ${d.slug}: roadmap says ${d.recorded}, actually ${d.actual}`);
     }
-    lines.push('Run /ship:pm-sync to update the project manager state.');
+    const scriptPath = process.env.CLAUDE_PLUGIN_ROOT
+      ? path.join(process.env.CLAUDE_PLUGIN_ROOT, 'ship', 'pm-update.cjs')
+      : path.join(__dirname, '..', 'ship', 'pm-update.cjs');
+    lines.push(`Run \`node "${scriptPath}" ${drifted.map(d => d.slug).join(' ')}\` to apply the mechanical fix (status cells + dashboard).`);
+    lines.push('Use /ship:pm-sync for structural drift instead — work with no roadmap row, or rows needing judgment.');
 
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
