@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.5.0
+
+Minor release — a mechanical updater takes over PM state maintenance from prose instructions.
+
+### Added
+
+- **`ship/pm-update.cjs`**: a zero-dependency CLI that applies the pm-state status mapping table to `.project-manager/ROADMAP.md` rows and regenerates `dashboard.html` deterministically from the state files, replacing what used to be prose instructions telling an agent to do this by hand. `node pm-update.cjs [slug ...]` is a silent no-op when `.project-manager/` is absent. Columns are located by header name rather than position, so both the legacy 5-column table and the enriched 7-column one parse, including two differently-shaped tables in the same file.
+- **`--next` selection**: `node pm-update.cjs --next` prints the recommended next backlog item as JSON (`{item, milestone, priority, shipFeature}`, or `null`) — the highest-priority non-done, non-blocked item whose Depends-on items are all `done`. `/ship:pm`'s next-style question routing now calls this instead of re-deriving the rule in prose.
+- **Lifecycle skills call the updater directly**: `start`, `build`, `go`, `finish`, and `verify` each run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` right after they change a feature's CONTEXT.md status, so `.project-manager/` state and the dashboard stay current without a separate `/ship:pm-sync` pass.
+
+### Changed
+
+- **`pm-sync-nudge` points at the mechanical fix**: instead of telling the user to run `/ship:pm-sync`, the hook now prints the exact `node pm-update.cjs {slugs}` command for the drifted rows and reserves `/ship:pm-sync` for structural drift — work with no roadmap row, or rows needing judgment.
+- **`/ship:pm` and `/ship:pm-sync` dashboard regeneration** now shells out to `pm-update.cjs` rather than following the pm-state procedure by hand; the manual procedure remains a fallback for when the script is unreadable.
+- **`.project-manager/` is no longer tracked in git.** Like `.planning/`, it's generated per-repo local state — the checked-in files under `.project-manager/` were removed and the directory added to `.gitignore`. Existing clones keep their local files; `git pull` will show the removal.
+
 ## 5.4.2
 
 Patch release — two token-waste fixes in the `/ship:go` workflows.
