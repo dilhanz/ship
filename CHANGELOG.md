@@ -2,13 +2,10 @@
 
 ## 5.6.0
 
-Minor release — the PM layer gains a deterministic updater, and the per-phase review gate stops reporting safety it does not have.
-
-Note: 5.4.2 was merged but never tagged, so its changes (salvage retries, the precomputed reviewer diff range, the VERIFY.md head stamp) ship in this release. They stay documented under their own heading below.
+Minor release — the per-phase review gate stops reporting safety it does not have, and unresolved findings now reach the verifier instead of being dropped at the one-fix-round cap.
 
 ### Added
 
-- **Mechanical PM sync (`ship/pm-update.cjs`)**: a zero-dependency updater that applies the `pm-state` status mapping table to `.project-manager/ROADMAP.md` rows and regenerates `dashboard.html` deterministically from the state files, so routine PM bookkeeping stops depending on an agent's judgment. Its roadmap parser locates columns by header *name* rather than position, so the legacy 5-column table and the enriched 7-column one both parse — including two differently shaped tables in one file, and columns in any order. `--next` prints the recommended next item as JSON without writing anything. Every lifecycle skill (`start`, `build`, `verify`, `finish`, `go`) runs it after a CONTEXT.md status change, `/ship:pm`, `/ship:pm-sync`, and the `ship-pm` agent route their mechanical writes through it, and the `pm-sync-nudge` hook now points at it for drifted slugs. A silent no-op when `.project-manager/` is absent.
 - **Review evidence is part of the review contract**: `REVIEW_SCHEMA` now *requires* `verify_runs` (one entry per re-run verify command — `task_id`, `command`, `exit_code`, and a `pass`/`fail`/`not_runnable` verdict) and `files_reviewed`. Before this, `{status: "APPROVED", findings: []}` was the whole contract, so a review that re-ran every verify command and read the whole diff was byte-identical to one that read nothing. Both fields flow into `completed`, into REVIEW.md as `Verify:` / `Reviewed:` lines under every phase heading, and into the run report; a review that re-ran nothing and read nothing raises an "unsubstantiated verdict" concern on both the workflow and the manual path. `ship-reviewer` gained the `## What NOT to Do` section its plan-review counterpart already carried, naming rubber-stamping first.
 - **Unresolved review findings reach the verifier**: `/ship:go` marks a phase done even when critical/high findings survive its one fix round, on the stated grounds that the verifier is the backstop — but the verifier's inputs were CONTEXT.md and PLAN.md, and nothing ever read REVIEW.md, so the backstop was never told what to catch. `ship-verifier` now reads REVIEW.md and treats every `unresolved` critical/high finding as a mandatory Stage 2b target, recording `reproduced` / `not reproduced` / `not testable` for each with the command behind it in a new **Carried Review Findings** table in VERIFY.md. A reproduced finding is a critical/high bug and FAILs. Because the go skill persists REVIEW.md only *after* the build workflow returns, the workflow also passes the same findings in the verifier's prompt — the file and the prompt block are one deduplicated list — and the reconcile cross-checks that VERIFY.md accounted for each one.
 
@@ -23,6 +20,22 @@ Note: 5.4.2 was merged but never tagged, so its changes (salvage retries, the pr
 
 - **A fix round that commits nothing can no longer be recorded as a fix**: with no fix commits there is no diff range, so the re-reviewer inspected `git diff HEAD`, found a clean tree, and plausibly returned APPROVED — and the reconcile then wrote "fixed in fix round" against every finding, reporting a fix that never happened. Both orchestrators now skip the re-review when the fix builder lands no commits, leave the findings `unresolved`, and raise a concern naming it. `fixApplied` is false in that case, so REVIEW.md cannot claim otherwise.
 - **The dogfood suites no longer fail on a clean checkout**: `chore: gitignore .project-manager state` made the PM state local, per-repo working data, but three suites (`pm-state-conformance`'s two dogfood blocks and `pm-nudge-verify`'s real-ROADMAP block, 17 assertions) still read it out of the repo — so `node --test` failed anywhere the state was absent, which is every clean clone and the release job itself. They now skip with a stated reason where there is no state to conform, exactly as the v5.4.1 fix did one directory up for `.planning/`.
+
+## 5.5.0
+
+Minor release — a mechanical updater takes over PM state maintenance from prose instructions.
+
+### Added
+
+- **`ship/pm-update.cjs`**: a zero-dependency CLI that applies the pm-state status mapping table to `.project-manager/ROADMAP.md` rows and regenerates `dashboard.html` deterministically from the state files, replacing what used to be prose instructions telling an agent to do this by hand. `node pm-update.cjs [slug ...]` is a silent no-op when `.project-manager/` is absent. Columns are located by header name rather than position, so both the legacy 5-column table and the enriched 7-column one parse, including two differently-shaped tables in the same file.
+- **`--next` selection**: `node pm-update.cjs --next` prints the recommended next backlog item as JSON (`{item, milestone, priority, shipFeature}`, or `null`) — the highest-priority non-done, non-blocked item whose Depends-on items are all `done`. `/ship:pm`'s next-style question routing now calls this instead of re-deriving the rule in prose.
+- **Lifecycle skills call the updater directly**: `start`, `build`, `go`, `finish`, and `verify` each run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` right after they change a feature's CONTEXT.md status, so `.project-manager/` state and the dashboard stay current without a separate `/ship:pm-sync` pass.
+
+### Changed
+
+- **`pm-sync-nudge` points at the mechanical fix**: instead of telling the user to run `/ship:pm-sync`, the hook now prints the exact `node pm-update.cjs {slugs}` command for the drifted rows and reserves `/ship:pm-sync` for structural drift — work with no roadmap row, or rows needing judgment.
+- **`/ship:pm` and `/ship:pm-sync` dashboard regeneration** now shells out to `pm-update.cjs` rather than following the pm-state procedure by hand; the manual procedure remains a fallback for when the script is unreadable.
+- **`.project-manager/` is no longer tracked in git.** Like `.planning/`, it's generated per-repo local state — the checked-in files under `.project-manager/` were removed and the directory added to `.gitignore`. Existing clones keep their local files; `git pull` will show the removal.
 
 ## 5.4.2
 
