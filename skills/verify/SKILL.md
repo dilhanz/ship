@@ -30,6 +30,11 @@ instructions: verify acceptance criteria with the gate function, write and run
 adversarial tests for the relevant risk categories, scan the changed files for
 anti-patterns, and write VERIFY.md. Critical or high bugs and any failing criterion
 block a PASS.
+
+Also read .planning/features/{name}/REVIEW.md if it exists. Every finding marked
+unresolved there is a defect the per-phase review gate evidenced and the build's one
+fix round did not clear — each is a mandatory Stage 2b target, and a reproduced
+critical/high one is a FAIL.
 ```
 
 ## Sync PM State
