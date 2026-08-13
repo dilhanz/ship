@@ -15,6 +15,16 @@ Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runn
 
 ## Stage 2 — Bug Hunt & Quality
 
+### Carried Review Findings
+
+Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over block) — each needs a command, not an opinion.
+
+| Severity | Phase | File | Finding | Outcome | Evidence |
+|----------|-------|------|---------|---------|----------|
+| critical/high | [phase id] | [file:line] | [what the reviewer found] | reproduced / not reproduced / not testable | [command run and what it showed] |
+
+(If none were carried: "None carried." An empty table must never mean the check was skipped.)
+
 ### Adversarial Tests
 
 - **Categories tested:** [e.g. boundary, negative-input, error-handling]

@@ -24,6 +24,9 @@ Do not declare a criterion PASS without running a command that proves it. "Seems
 You are invoked with a feature name. Read:
 1. `.planning/features/{name}/CONTEXT.md` — acceptance criteria (your truths)
 2. `.planning/features/{name}/PLAN.md` — Must Deliver items, task list, file paths
+3. `.planning/features/{name}/REVIEW.md` — if present, the per-phase review log. Every finding marked `unresolved` is a defect a reviewer evidenced against the diff and the build's single fix round failed to clear. Collect them; Stage 2b makes them mandatory targets.
+
+Your prompt may also carry an **Unresolved Review Findings** block. It exists because `/ship:go` persists REVIEW.md only after the build workflow returns, so on that path the file cannot yet hold this run's findings. Treat the block and the file as one list, deduplicated — whichever source you got them from, the obligation in Stage 2b is the same.
 
 ## Stage 0 — Salvage Check
 
@@ -71,7 +74,15 @@ git diff --name-only "$BASE"..HEAD
 ```
 (If git fails **or the diff is empty** — e.g. the feature was built directly on main, making the merge-base HEAD itself — fall back to the files named in the feature's commits (`git log --grep "({name})" --format= --name-only | sort -u`) or PLAN.md's `<files>`, and note it.)
 
-Pick 2–5 genuinely relevant risk categories — don't pad for coverage:
+**Unresolved review findings come first, and they are not optional.** Before you pick risk categories, take every finding you collected from REVIEW.md or the prompt block and give each one a direct test or reproduction attempt against the real code. These are the cheapest bugs you will ever find — someone already read the diff, located the defect, and named the file and line. A phase is marked done even when its findings survive the fix round, so "the phase is done" proves nothing about them. For each, record one of:
+
+- **reproduced** — it is a real bug. Carry it into Bug Findings at the reviewer's severity or higher; critical/high means the feature FAILs.
+- **not reproduced** — your test passes against current code. Say what you ran, and note whether that means the fix round did land after all or the original finding was wrong.
+- **not testable** — no command can decide it. Record it in Gaps with the reason; do not silently drop it.
+
+Never resolve one of these by inspection alone. A finding you cannot reproduce with a command is `not testable`, not fixed.
+
+Then pick 2–5 genuinely relevant risk categories for the rest of the hunt — don't pad for coverage:
 happy-path, boundary, negative-input, error-handling, concurrency, security.
 
 Write focused tests against the real implementation (not mocks of internal code). Run them and capture full output. If a test fails, decide whether it found a real bug or the test itself is wrong (fix the test, max 3 retries per file). Commit each passing test file atomically (`test({feature-name}): ...`, stage only the test file — never `git add .`), per the `git-commits` skill.
@@ -84,10 +95,12 @@ On the changed files, look for: TODO/FIXME/HACK/XXX/placeholder/stub/not-impleme
 
 Read the template at `${CLAUDE_PLUGIN_ROOT}/ship/templates/VERIFY.md` and write `.planning/features/{name}/VERIFY.md` following it. The criteria table must show actual evidence (command output, grep results) — not opinion. List every test written and every bug/anti-pattern found.
 
+Fill the **Carried Review Findings** table with one row per unresolved finding you collected, showing the outcome and the command behind it. If nothing was carried, write "None carried" — that section empty must mean nothing was handed to you, never that you skipped the check.
+
 Fill the `**Head:**` line with the output of `git rev-parse HEAD`, taken after any commits you made during this verification. Stage 0 of the next run keys staleness on it — an unstamped or wrongly-stamped report forces a full re-verification.
 
 **Overall status** (first match wins):
-- **FAIL** — any criterion FAIL, or any critical/high bug found.
+- **FAIL** — any criterion FAIL, or any critical/high bug found (a reproduced carried review finding is such a bug).
 - **INCONCLUSIVE** — no FAIL, but at least one criterion INCONCLUSIVE.
 - **PASS** — all criteria PASS, no INCONCLUSIVE, no critical/high bugs. Medium/low bugs and quality notes are recorded as recommendations.
 
