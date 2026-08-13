@@ -62,14 +62,19 @@ function parseRoadmapRows(content) {
 
 /**
  * Coarse actual status for a slug: 'done', 'in-progress', or 'unknown'.
+ * A cell that is not a single path segment is not a slug — it never reaches
+ * path.join, so no unrelated directory can decide a row's status.
  */
 function actualStatus(cwd, slug, activeSlugs) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug)) return 'unknown';
   if (fs.existsSync(path.join(cwd, '.planning', 'archive', slug))) return 'done';
   const contextPath = path.join(cwd, '.planning', 'features', slug, 'CONTEXT.md');
   if (fs.existsSync(contextPath)) {
     try {
       const content = fs.readFileSync(contextPath, 'utf8');
-      const statusMatch = content.match(/^status:\s*(.+)$/m);
+      // Frontmatter only — a `status:` line in the body is prose, not state.
+      const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+      const statusMatch = fm ? fm[1].match(/^status:\s*(.+)$/m) : null;
       if (statusMatch && statusMatch[1].trim() === 'done') return 'done';
     } catch (e) {
       // fall through to scanFeatures check

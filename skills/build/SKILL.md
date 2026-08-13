@@ -163,6 +163,11 @@ Emit your review_result JSON block when done.
 ```
 
 3. Parse the fenced `review_result` JSON block from the reviewer's output. **If the Agent call errors, or no valid review_result block is found:** do NOT retry. Append to REVIEW.md (format below) a "Review skipped — reviewer failed or returned no parseable result" line for this phase, add "review skipped for phase {id}" to the phase's concerns, and proceed to mark the phase done. A broken reviewer must never block a working build.
+**Before branching on `status`, check the review's own evidence.** The block carries `verify_runs` (one entry per re-run verify command, each `pass` / `fail` / `not_runnable`) and `files_reviewed`. Both go into REVIEW.md, and both are read literally:
+
+- If **both are empty**, the reviewer re-ran nothing and read nothing — its verdict is unsubstantiated. Record it in REVIEW.md as given, and add "phase {id} review reported no verify runs and no files reviewed — verdict unsubstantiated" to the phase's concerns. Do not treat it as a clean review, and do not re-run the reviewer.
+- If any entry is `not_runnable`, add "phase {id}: {N} of {M} verify command(s) not re-runnable in this environment" to the phase's concerns.
+
 4. **If status is "APPROVED":** append all findings (if any) to REVIEW.md marked `recorded`. Proceed to mark the phase done.
 5. **If status is "NEEDS_FIXES":** append all findings to REVIEW.md, then run exactly one fix round:
    a. SendMessage to the **builder** agent (the same agent from step 2 of the phase loop):
@@ -177,9 +182,10 @@ For each fix: implement it, re-run the affected task's <verify> command, and com
 with "fix({feature-name}): {short description}". Then emit an updated build_result JSON block.
 ```
 
-   b. After the builder returns, SendMessage to the **reviewer** agent: "The builder applied fixes for your critical/high findings. New diff range: {base}..HEAD. Re-review ONLY whether each critical/high finding from your previous review is now resolved. Emit an updated review_result JSON block listing any still-unresolved findings." If this SendMessage fails or returns no parseable review_result, treat all findings from round 1 as unresolved concerns (do not loop).
-   c. **One round only.** If the re-review still reports critical/high findings, record them in REVIEW.md as `unresolved`, add each to the phase's concerns list, and proceed to mark the phase done. Surface unresolved findings in the PHASE COMPLETE output under "Concerns".
-6. Update REVIEW.md outcome markers: findings fixed in step 5a get `fixed in {commit-hash}`; medium/low get `recorded`; leftover critical/high get `unresolved`.
+   b. **Check the fix round produced commits before re-reviewing.** If the builder's `build_result` lists no commits (or no parseable result came back), nothing verifiable was fixed: skip the re-review, mark every round-1 critical/high finding `unresolved` in REVIEW.md, add "phase {id} fix builder landed no commits — {N} finding(s) unresolved, no re-review ran" to the phase's concerns, and go to step 6. Sending a reviewer at an empty diff is worse than sending none — it finds a clean tree and approves, which would record those findings as fixed.
+   c. With fix commits in hand, SendMessage to the **reviewer** agent: "The builder applied fixes for your critical/high findings. Fix commits: {hashes}. New diff range: {base}..HEAD. Two jobs: (1) confirm from the code whether each critical/high finding from your previous review is actually resolved, re-running the verify commands it touched; (2) review the fix commits as a diff in their own right and report any NEW critical/high problem they introduced, marked `"new_issue": true`. Do not re-review the rest of the phase. Emit an updated review_result JSON block." If this SendMessage fails or returns no parseable review_result, treat all findings from round 1 as unresolved concerns (do not loop).
+   d. **One round only.** If the re-review still reports critical/high findings, record them in REVIEW.md as `unresolved` (or `new (round 2)` where `new_issue` is true), add each to the phase's concerns list, and proceed to mark the phase done. Surface unresolved findings in the PHASE COMPLETE output under "Concerns".
+6. Update REVIEW.md outcome markers: findings fixed in step 5a get `fixed in {commit-hash}`; medium/low get `recorded`; leftover critical/high get `unresolved`; re-review findings flagged `new_issue` get `new (round 2)`.
 7. Delete `.planning/features/{name}/.review-scratch/` if the reviewer created one. It is a crash-recovery cache for a single review; once REVIEW.md carries the findings, a leftover file would let a later run's salvage retry report findings from the wrong build.
 
 **REVIEW.md format** (orchestrator-owned; create `.planning/features/{name}/REVIEW.md` on first append):
@@ -189,8 +195,12 @@ with "fix({feature-name}): {short description}". Then emit an updated build_resu
 
 ## Phase {id} — {phase-name} (round {1|2})
 Status: {APPROVED | NEEDS_FIXES | SKIPPED}
-- [{severity}] {file}: {description} — {fixed in {hash} | unresolved | recorded}
+Verify: {N} re-run — {P} pass, {F} fail, {X} not runnable
+Reviewed: {M} file(s)
+- [{severity}] {file}: {description} — {fixed in {hash} | unresolved | new (round 2) | recorded}
 ```
+
+The `Verify` and `Reviewed` lines come straight from the review's `verify_runs` and `files_reviewed`. They are what makes a verdict auditable after the fact: `Verify: 0 re-run` under an APPROVED heading records that the phase was approved without a single command being executed. The `unresolved` markers are read later — `ship-verifier` treats each one as a mandatory verification target, so the marker is a live handoff, not an archive note.
 
 After the Review Gate completes:
 - If phased, mark the current phase `status="done"` in PLAN.md
@@ -205,6 +215,7 @@ Tasks completed: {result.tasks_completed} / {result.tasks_total} in this phase
 Overall progress: [done_across_all_phases] / [total_across_all_phases] tasks
 Commits: {result.commits joined with ", "}
 Review: {APPROVED | {N} findings ({M} fixed, {K} unresolved) | skipped}
+Review evidence: {P} verify command(s) re-run ({F} failed, {X} not runnable), {M} file(s) reviewed
 ```
 
 - For COMPLETE_WITH_CONCERNS, also surface the `concerns` array plus any review concerns:
@@ -217,6 +228,7 @@ Phase: [M] / [total] — [phase name]
 Tasks completed: {result.tasks_completed} / {result.tasks_total} in this phase
 Commits: {result.commits joined with ", "}
 Review: {APPROVED | {N} findings ({M} fixed, {K} unresolved) | skipped}
+Review evidence: {P} verify command(s) re-run ({F} failed, {X} not runnable), {M} file(s) reviewed
 
 Concerns flagged by builder:
 - {each item from result.concerns}

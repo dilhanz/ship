@@ -95,6 +95,29 @@ describe('pm-update — feature status is read from the CONTEXT.md frontmatter',
     assert.equal(mappedStatus(tmp, 'feat-a', 'pending'), 'in-progress');
   });
 
+  it('a body `status: done` with no frontmatter block cannot mark the row done', () => {
+    const dir = path.join(tmp, '.planning', 'features', 'feat-a');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'CONTEXT.md'), '# feat-a\n\nstatus: done\n');
+    // The feature directory exists, so the mapping table says `in-progress` —
+    // the body line is prose and never reaches the `done` branch.
+    assert.equal(mappedStatus(tmp, 'feat-a', 'pending'), 'in-progress');
+  });
+
+  it('reads the frontmatter status from a CRLF CONTEXT.md', () => {
+    const dir = path.join(tmp, '.planning', 'features', 'feat-a');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'CONTEXT.md'), '---\r\nstatus: done\r\n---\r\n\r\nbody\r\n');
+    assert.equal(mappedStatus(tmp, 'feat-a', 'pending'), 'done');
+  });
+
+  it('a slug that is not a single path segment leaves the row unchanged', () => {
+    fs.mkdirSync(path.join(tmp, '.planning', 'features', 'feat-a'), { recursive: true });
+    for (const slug of ['..', '../feat-a', '.planning/features/feat-a', '/etc', '.hidden', '']) {
+      assert.equal(mappedStatus(tmp, slug, 'pending'), null, `rejected: ${slug}`);
+    }
+  });
+
   it('an archived feature overrides a recorded blocked status, per the mapping table', () => {
     // `blocked` is never auto-overridden *while the feature is active*; an
     // archived feature is the documented exception (archive presence → done).

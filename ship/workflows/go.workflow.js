@@ -50,14 +50,34 @@ const BUILD_SCHEMA = {
   },
 }
 
+// `verify_runs` and `files_reviewed` are required, not decorative: without them
+// an APPROVED review with no findings is byte-identical whether the reviewer
+// re-ran every verify command and read the whole diff or read nothing at all.
+// They are the only evidence the gate actually ran, and they carry the
+// not_runnable count — the widest escape hatch in the reviewer's contract.
 const REVIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['feature', 'status', 'findings'],
+  required: ['feature', 'status', 'findings', 'verify_runs', 'files_reviewed'],
   properties: {
     feature: { type: 'string' },
     scope: { type: 'string' },
     status: { enum: ['APPROVED', 'NEEDS_FIXES'] },
+    verify_runs: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['command', 'verdict'],
+        properties: {
+          task_id: { type: ['string', 'null'] },
+          command: { type: 'string' },
+          exit_code: { type: ['number', 'null'] },
+          verdict: { enum: ['pass', 'fail', 'not_runnable'] },
+        },
+      },
+    },
+    files_reviewed: { type: 'array', items: { type: 'string' } },
     findings: {
       type: 'array',
       items: {
@@ -70,6 +90,9 @@ const REVIEW_SCHEMA = {
           file: { type: 'string' },
           description: { type: 'string' },
           recommendation: { type: 'string' },
+          // Re-reviews only: true marks a problem the fix round introduced, so
+          // the reconcile records it as new rather than as a leftover.
+          new_issue: { type: 'boolean' },
         },
       },
     },
@@ -241,7 +264,12 @@ ${findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.file} — ${f.descriptio
 
 ${rangeInstruction(diffRange(fixCommits))}
 
-You have no memory of that review — verify from the code. Re-run the affected verify commands and review ONLY whether each finding above is now resolved. Report any still-unresolved findings in your review_result.`
+You have no memory of that review — verify from the code. Two jobs, per the Re-Reviews section of your instructions:
+
+1. Re-run the affected verify commands and confirm from the code whether each finding above is actually resolved. Report every one that is not, at its original severity.
+2. Review the fix commits as a diff in their own right and report any NEW critical/high problem the fixes introduced, marked \`"new_issue": true\`.
+
+Do not re-review the rest of the phase.`
 
 // Salvage retry: a lost structured result is a transport failure, not proof the
 // review never happened. The previous reviewer wrote its findings to a scratch
@@ -254,8 +282,9 @@ A reviewer just completed this exact review, but its structured result was lost 
 
 Read \`.planning/features/${feature}/.review-scratch/${scope}.json\`.
 
-- **If it exists, its \`scope\` is \`${scope}\`, and its \`head\` matches \`git rev-parse HEAD\`:** report those findings verbatim as your result and stop. Do NOT re-run verify commands, do NOT re-read the diff, do NOT revise the findings. An empty findings array is a valid result — report it as APPROVED.
-- **If it is missing, empty, malformed, or stamped with a different scope or head:** it is not this review. Fall back to the full review below.
+- **If it exists, its \`scope\` is \`${scope}\`, its \`head\` matches \`git rev-parse HEAD\`, and its \`stage\` is \`complete\`:** report its findings, \`verify_runs\`, and \`files_reviewed\` verbatim as your result and stop. Do NOT re-run verify commands, do NOT re-read the diff, do NOT revise the findings. An empty findings array is a valid result — report it as APPROVED.
+- **If it matches but its \`stage\` is \`verify-only\`:** the previous reviewer finished the verify re-runs and died before reviewing the diff. Carry its \`verify_runs\` forward verbatim, skip Step 1, and do Step 2 only.
+- **If it is missing, empty, malformed, stamped with a different scope or head, or carries no \`stage\` key at all:** it is not this review (an unstamped record predates this contract). Fall back to the full review below.
 
 ---
 
@@ -399,6 +428,7 @@ for (let i = 0; i < phases.length; i++) {
 
   let fixRound = null
   let rereview = null
+  let fixSkipped = null
   // Trust the findings over the verdict: an APPROVED review that still lists
   // critical/high findings is contradictory and must not skip the fix round.
   const blocking = review
@@ -409,21 +439,54 @@ for (let i = 0; i < phases.length; i++) {
     fixRound = await safeAgent(fixPrompt(ph, blocking), {
       agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, label: `fix:${label}`, phase: 'Build',
     })
-    const rereviewFull = rereviewPrompt(ph, blocking, (fixRound && fixRound.commits) || [])
-    rereview = await safeAgent(rereviewFull, {
-      agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build',
-      retryPrompt: salvageReviewPrompt(ph, `${reviewScope}-rereview`, rereviewFull),
-    })
+    const fixCommits = (fixRound && fixRound.commits) || []
+    // A fix round that committed nothing fixed nothing anyone can point at, and
+    // sending a re-reviewer after it is worse than sending none: with no fix
+    // commits there is no range, so it inspects `git diff HEAD`, finds a clean
+    // tree, and plausibly returns APPROVED — which the reconcile would record
+    // as "fixed in fix round" against every finding. Mark them unresolved
+    // instead and let the verifier (which now reads REVIEW.md) test them.
+    if (!fixCommits.length) {
+      fixSkipped = fixRound ? 'reported no commits' : 'returned no result'
+      log(`fix:${label} ${fixSkipped} — skipping the re-review and marking ${blocking.length} finding(s) unresolved`)
+    } else {
+      const rereviewFull = rereviewPrompt(ph, blocking, fixCommits)
+      rereview = await safeAgent(rereviewFull, {
+        agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build',
+        retryPrompt: salvageReviewPrompt(ph, `${reviewScope}-rereview`, rereviewFull),
+      })
+    }
   }
 
-  // If blocking findings existed but the re-review produced no result, we
-  // could not confirm resolution — report them as unresolved rather than
-  // silently claiming a clean phase.
-  const unresolved = blocking.length && !rereview
-    ? blocking
-    : rereview
-      ? rereview.findings.filter((f) => f.severity === 'critical' || f.severity === 'high')
-      : []
+  // If blocking findings existed but no re-review confirmed them resolved —
+  // because it was skipped for want of fix commits, or because it produced no
+  // result — report them as unresolved rather than claiming a clean phase.
+  const surviving = rereview
+    ? rereview.findings.filter((f) => f.severity === 'critical' || f.severity === 'high')
+    : []
+  const unresolved = blocking.length && !rereview ? blocking : surviving
+  // Subset of `unresolved`, for labelling only: problems the fix round created
+  // rather than leftovers it failed to clear.
+  const introducedByFix = surviving.filter((f) => f.new_issue === true)
+
+  const verifyRuns = (review && review.verify_runs) || []
+  const filesReviewed = (review && review.files_reviewed) || []
+  const notRunnable = verifyRuns.filter((v) => v.verdict === 'not_runnable').length
+
+  // Everything here is a way the gate can report safety it does not have, so
+  // each one travels the concerns channel the go skill already surfaces.
+  const reviewConcerns = []
+  if (!review) {
+    reviewConcerns.push(`phase ${label} review never ran (no result after retry) — the diff went unreviewed`)
+  } else if (!verifyRuns.length && !filesReviewed.length) {
+    reviewConcerns.push(`phase ${label} review re-ran no verify commands and reviewed no files — treat its ${review.status} verdict as unsubstantiated`)
+  }
+  if (notRunnable) {
+    reviewConcerns.push(`phase ${label}: ${notRunnable} of ${verifyRuns.length} verify command(s) could not be re-run in this environment`)
+  }
+  if (fixSkipped) {
+    reviewConcerns.push(`phase ${label} fix builder ${fixSkipped} — ${blocking.length} critical/high finding(s) left unresolved, no re-review ran`)
+  }
 
   completed.push({
     phaseId: ph.id, phaseName: ph.name,
@@ -432,21 +495,40 @@ for (let i = 0; i < phases.length; i++) {
     // finished by a fresh continuation builder.
     builderRounds: build.rounds || 1,
     commits: build.commits || [],
-    // A dead reviewer must not read as a clean phase — surface it through the
-    // concerns channel the go skill already reports to the user.
-    concerns: review
-      ? build.concerns || []
-      : [...(build.concerns || []), `phase ${label} review never ran (no result after retry) — the diff went unreviewed`],
+    concerns: [...(build.concerns || []), ...reviewConcerns],
     reviewStatus: review ? review.status : 'SKIPPED',
     findings: review ? review.findings : [],
-    fixApplied: !!fixRound, unresolved,
+    verifyRuns, filesReviewed,
+    fixApplied: !!fixRound && !fixSkipped, unresolved, introducedByFix,
   })
 }
+
+// A phase is marked done even when its critical/high findings survive the one
+// fix round, on the stated grounds that the verifier is the backstop. That only
+// holds if the verifier is told what to catch. It cannot read this run's
+// REVIEW.md — the go skill persists that after this workflow returns — so the
+// findings travel in the prompt. (On the manual /ship:verify path REVIEW.md is
+// already on disk, which is why the verifier reads it there.)
+const carried = completed.flatMap((p) =>
+  (p.unresolved || []).map((f) => {
+    const origin = (p.introducedByFix || []).includes(f) ? ' (introduced by the fix round)' : ''
+    return `- [${f.severity}] phase ${p.phaseId} — ${f.file}: ${f.description}${origin}`
+  }))
+
+const carriedBlock = carried.length
+  ? `
+
+## Unresolved Review Findings — mandatory targets
+
+The per-phase review gate found these critical/high defects and the single fix round did not clear them. They are not speculation: a reviewer read the diff and evidenced each one. Target every finding below directly in Stage 2b — write a test or attempt a reproduction — and record the outcome for each in VERIFY.md, including the ones you cannot reproduce. A phase carrying unresolved findings is still marked done, so "the phase is done" is not evidence that any of these were fixed.
+
+${carried.join('\n')}`
+  : ''
 
 let verdict = null
 if (!stoppedAt) {
   phase('Verify')
-  const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.`
+  const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}`
   verdict = await safeAgent(verifyFull, {
     agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
     retryPrompt: salvageVerifyPrompt(verifyFull),

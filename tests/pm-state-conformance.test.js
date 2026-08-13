@@ -5,6 +5,13 @@
  * `.project-manager/` state in this repo actually obeys it, and that the
  * generated dashboard is genuinely offline and genuinely derived from state.
  * A format nobody can follow is a format that does not exist.
+ *
+ * They run only where that state exists. `.project-manager/` is gitignored —
+ * local, per-repo working data present only on a machine that has run
+ * /ship:pm-sync — so on a clean checkout there is no state to conform, and
+ * asserting against it fails the release run rather than catching a real
+ * defect. This is the same trap the v5.4.1 fix closed one directory up, when
+ * `.planning/` became gitignored and broke the v5.4.0 release.
  */
 
 const { describe, it } = require('node:test');
@@ -17,6 +24,13 @@ const pm = (rel) => path.join(repoRoot, '.project-manager', rel);
 const read = (rel) => fs.readFileSync(pm(rel), 'utf8');
 
 const HEADER = '| Item | Status | Priority | Size | Depends on | Source | Ship feature |';
+
+// Gate both dogfood suites on the state being present at all — see the file
+// header. A skipped suite says "nothing to check here"; a failing one would
+// claim this repo's PM state is malformed when it simply is not checked in.
+const dogfood = fs.existsSync(path.join(repoRoot, '.project-manager'))
+  ? {}
+  : { skip: 'no .project-manager/ in this checkout — it is gitignored local state' };
 
 function backlogRows(content) {
   const rows = [];
@@ -39,7 +53,7 @@ function backlogRows(content) {
   return rows;
 }
 
-describe('dogfood — .project-manager/ conforms to the pm-state format', () => {
+describe('dogfood — .project-manager/ conforms to the pm-state format', dogfood, () => {
   it('all five state files exist and are non-empty', () => {
     for (const f of ['ROADMAP.md', 'STATUS.md', 'DECISIONS.md', 'CONVENTIONS.md', 'dashboard.html']) {
       assert.ok(fs.existsSync(pm(f)), `${f} exists`);
@@ -168,7 +182,7 @@ describe('dogfood — .project-manager/ conforms to the pm-state format', () => 
   });
 });
 
-describe('dogfood — dashboard.html is offline and derived from state', () => {
+describe('dogfood — dashboard.html is offline and derived from state', dogfood, () => {
   it('contains no external reference of any kind and no JavaScript', () => {
     const c = read('dashboard.html');
     for (const bad of ['http://', 'https://', '@import', 'url(', '<iframe', '<script', '<link', 'srcset']) {
