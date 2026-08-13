@@ -38,11 +38,10 @@ afterEach(() => {
 });
 
 describe('pm-update adversarial — line endings and row layout', () => {
-  // KNOWN BUG: applyStatusUpdates locates the frontmatter with /^---\n...\n---/,
-  // which never matches a CRLF file, so the `updated` value silently stays stale
-  // while the Status cells do update. This repo checks out with core.autocrlf=true,
-  // so a ROADMAP.md that has ever passed through git on Windows hits this.
-  it('CRLF roadmap: status cell is edited and the frontmatter updated line still bumps', { todo: 'frontmatter bump does not handle CRLF' }, () => {
+  // A ROADMAP.md that has ever passed through git on Windows (core.autocrlf=true)
+  // arrives CRLF, so the frontmatter match and the `updated` replacement both have
+  // to tolerate \r — the latter without eating it and rewriting the line ending.
+  it('CRLF roadmap: status cell is edited and the frontmatter updated line still bumps', () => {
     const lf = [
       '---',
       'project: "Ship"',
@@ -67,6 +66,12 @@ describe('pm-update adversarial — line endings and row layout', () => {
       'frontmatter updated must bump on a CRLF roadmap too'
     );
     assert.doesNotMatch(content, /updated: "2020-01-01"/, 'stale updated value must not survive');
+    assert.match(content, /^updated: "\d{4}-\d{2}-\d{2}"\r$/m, 'the bumped line keeps its CRLF terminator');
+    assert.equal(
+      (content.match(/\n/g) || []).length,
+      (content.match(/\r\n/g) || []).length,
+      'every line ending stays CRLF — no LF-only line is introduced'
+    );
   });
 
   it('indented and padded rows keep every non-Status byte identical', () => {
@@ -116,10 +121,7 @@ describe('pm-update adversarial — line endings and row layout', () => {
     assert.match(content, /in-progress/);
   });
 
-  // KNOWN BUG: mappedStatus path.joins the raw slug cell under .planning/archive/,
-  // so a slug containing `..` resolves outside the feature tree and any existing
-  // directory marks the row `done`. Reads only — no write escapes the repo.
-  it('a slug containing path separators cannot escape .planning/ and match a directory', { todo: 'slug is not validated before path.join' }, () => {
+  it('a slug containing path separators cannot escape .planning/ and match a directory', () => {
     // ../.. would resolve to the tmp parent; the row must stay unchanged rather
     // than being marked done because some unrelated directory happens to exist.
     const before = [

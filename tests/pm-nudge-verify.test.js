@@ -189,7 +189,16 @@ describe('pm-sync-nudge — header-context lifecycle', () => {
   });
 });
 
-describe('pm-sync-nudge — against the real dogfooded ROADMAP.md', () => {
+// `.project-manager/` is gitignored — local, per-repo state that exists only on
+// a machine which has run /ship:pm-sync. These two read this repo's own
+// ROADMAP.md to prove the hook parses real state, so on a clean checkout there
+// is nothing to read and the assertions would fail the release run instead of
+// catching a defect (the trap the v5.4.1 fix closed for `.planning/`).
+const dogfood = fs.existsSync(path.join(repoRoot, '.project-manager', 'ROADMAP.md'))
+  ? {}
+  : { skip: 'no .project-manager/ROADMAP.md in this checkout — it is gitignored local state' };
+
+describe('pm-sync-nudge — against the real dogfooded ROADMAP.md', dogfood, () => {
   let tmpDir;
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-nudge-real-'));
