@@ -89,10 +89,35 @@ function parseRoadmap(content) {
 }
 
 /**
+ * A Ship feature slug is one directory name under `.planning/features/`, so it
+ * must be a single path segment. A cell holding `..`, a separator, or a drive
+ * letter is not a slug — joining it would resolve outside the feature tree and
+ * let any unrelated directory decide a row's status.
+ *
+ * @param {string} slug
+ * @returns {boolean}
+ */
+function isValidSlug(slug) {
+  return typeof slug === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(slug);
+}
+
+/**
+ * Read the leading YAML frontmatter block, or null when there is none.
+ * CRLF-tolerant — a file that has passed through git on Windows still parses.
+ *
+ * @param {string} content
+ * @returns {string|null}
+ */
+function frontmatter(content) {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  return match ? match[1] : null;
+}
+
+/**
  * The pm-state status mapping table, mechanically applied.
  * Returns the status the row should record, or null for "unchanged"
- * (recorded `blocked` on an active feature, or slug found nowhere).
- * Never invents a status.
+ * (recorded `blocked` on an active feature, slug found nowhere, or a slug
+ * that is not a usable path segment). Never invents a status.
  *
  * @param {string} cwd
  * @param {string} slug
@@ -100,6 +125,8 @@ function parseRoadmap(content) {
  * @returns {string|null}
  */
 function mappedStatus(cwd, slug, recorded) {
+  if (!isValidSlug(slug)) return null; // not a slug — never let it reach path.join
+
   try {
     if (fs.existsSync(path.join(cwd, '.planning', 'archive', slug))) return 'done';
   } catch (e) {
@@ -115,7 +142,11 @@ function mappedStatus(cwd, slug, recorded) {
   }
   if (content === null) return null; // slug found nowhere — .planning/ may be gitignored or pruned
 
-  const statusMatch = content.match(/^status:\s*(.+)$/m);
+  // Status is frontmatter state, so only the frontmatter block is searched — a
+  // `status:` line in the body is prose. A CONTEXT.md with no frontmatter status
+  // still means the feature exists, which the mapping table calls `in-progress`.
+  const fm = frontmatter(content);
+  const statusMatch = fm === null ? null : fm.match(/^status:\s*(.+)$/m);
   const featureStatus = statusMatch ? statusMatch[1].trim() : null;
   if (featureStatus === 'done') return 'done';
 
@@ -158,12 +189,13 @@ function applyStatusUpdates(content, cwd, slugs) {
 
   let result = lines.join('\n');
 
-  // Bump frontmatter `updated` — within the leading --- block only.
-  const fmMatch = result.match(/^---\n([\s\S]*?)\n---/);
+  // Bump frontmatter `updated` — within the leading --- block only, CRLF or LF.
+  const fmMatch = result.match(/^---\r?\n[\s\S]*?\r?\n---/);
   if (fmMatch) {
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const bumped = fmMatch[0].replace(/^updated:\s*.*$/m, `updated: "${today}"`);
+    // `.` excludes \r, so a CRLF line's terminator survives the replacement intact.
+    const bumped = fmMatch[0].replace(/^updated:.*$/m, `updated: "${today}"`);
     result = bumped + result.slice(fmMatch[0].length);
   }
 
