@@ -1,11 +1,16 @@
 {
   "name": "ship",
-  "version": "5.6.0",
+  "version": "5.7.0",
   "description": "A feature-centric development framework for Claude Code",
   "bin": "./install.js",
   "engines": {
     "node": ">=18"
   },
-  "keywords": ["claude-code", "ai", "development", "framework"],
+  "keywords": [
+    "claude-code",
+    "ai",
+    "development",
+    "framework"
+  ],
   "license": "MIT"
 }
