@@ -2,7 +2,7 @@
 
 A feature-centric development framework for Claude Code.
 
-**Ship** guides every piece of work — feature or fix — through a structured flow: brainstorm → plan → build → verify. Each feature gets its own directory with full context.
+Every piece of work — feature or fix — gets its own directory with full context, a verified plan, atomic commits, and a real verification gate. You describe the work once; Ship runs the rest.
 
 ## Install
 
@@ -16,102 +16,88 @@ Or from the marketplace:
 /plugin marketplace add dilhanz/ship
 ```
 
-No dependencies, no build step — just Claude Code's native plugin system. Skills are auto-namespaced as `ship:skill-name`.
+Zero dependencies, no build step.
 
-### Legacy Installation
-
-```bash
-cd your-project
-npx github:dilhanz/ship
-```
-
-> **Note:** The npx installer is deprecated. Use the plugin system for automatic updates and clean uninstall.
-
-## Usage
+## Quick start
 
 ```
-/ship:start "your idea"     Brainstorm → CONTEXT.md
-/ship:design                Compare architecture approaches (optional)
-/ship:plan                  Plan tasks → PLAN.md
-/ship:plan-verify           Verify plan against codebase patterns
-/ship:build                 Implement with atomic commits
-/ship:verify                Check acceptance criteria + adversarial bug hunt → VERIFY.md
-/ship:finish                Complete feature (create PR, merge, or keep branch)
-                            Use --accept-inconclusive "reason" to override INCONCLUSIVE verdicts
+/ship:start "your idea"     Interactive brainstorm → CONTEXT.md
+/ship:go                    Everything else: plan → review loop → build → verify
+/ship:finish                PR, merge, or keep — then archive
 ```
 
-Or let Ship run everything automatically:
+That's the whole loop. `/ship:start` is the only step that needs you at the keyboard — it probes until the problem, scope, and testable acceptance criteria are pinned down and confirmed. From there, `/ship:go` takes over.
+
+## /ship:go
+
+One command that drives a feature from brainstormed to verified:
+
+1. **Plan** — explores the codebase and writes PLAN.md: concrete tasks with exact files, runnable verify commands, and the contracts pinned (schemas, endpoints, error behavior).
+2. **Plan review loop** — an independent reviewer checks every claim in the plan against the real code. Critical findings trigger a replan, then a re-review — up to 5 rounds. Only an approved plan proceeds to build.
+3. **Build** — a builder agent implements each phase: one atomic commit per task, verify command green before every commit. After each phase, a read-only reviewer re-runs the phase's verify commands and reviews the diff; critical findings get one fix round.
+4. **Verify** — a verifier checks every acceptance criterion against running code, writes and runs adversarial tests against the actual diff, and records everything in VERIFY.md. PASS means proven, not plausible.
+
+The heavy lifting runs in background workflows, so agent output never floods your conversation. `/ship:go` interrupts you exactly twice: the "Ready to build?" gate, and any question the plan loop genuinely can't settle itself. Pass `--auto` to skip the build gate for a fully hands-off run.
+
+If verify fails, fix tasks are written back into the plan and `/ship:go` picks them up again. If a builder runs out of turns mid-phase, a fresh one resumes from the first pending task — progress is never lost.
+
+## The project manager
+
+Ship includes a project layer above individual features, stored in `.project-manager/` (roadmap, status, decisions, conventions, plus a generated `dashboard.html` you can open in a browser).
 
 ```
-/ship:start "your idea"     Brainstorm first (interactive)
-/ship:go                    Then auto-run: plan → plan-verify → build → verify
-/ship:finish                Complete the feature
+/ship:pm-sync               Set up the PM (first run), reconcile it afterwards
+/ship:pm                    Project brief: milestones, blockers, what to work on next
+/ship:pm status             Reconstruct the true state and fix the files to match
+/ship:pm groom              Re-check, re-prioritise, re-size the backlog
+/ship:pm check <feature>    Audit whether a "shipped" feature was genuinely verified
+/ship:pm handover           Close out a session: update state, commit, write a handover
+/ship:pm <question>         "what should I work on next?", "why did we choose X?"
 ```
 
-`/ship:go` runs the build→verify spine in a background Workflow so per-agent output stays out of the main conversation context; plan, plan-verify, the plan-approval gate, and finish run interactively.
+The PM never writes application code — it keeps the roadmap honest (every backlog item needs a traceable source), catches verification debt (features marked shipped whose verify gate never ran), and always ends with the Ship command to run next. Lifecycle commands sync it automatically, and a hook nudges you when the roadmap drifts from reality.
 
-## Utility Commands
+**Works across git worktrees.** Run parallel feature lanes in linked worktrees and the PM still sees one project: when `.project-manager/` is gitignored, all PM state anchors to the main worktree root, and `/ship:pm` sweeps every lane to report who's working where — branch, feature, stage, task progress — in the brief, STATUS.md, and the dashboard's Lanes panel. It also warns when two in-flight plans are about to touch the same files, and `/ship:finish` archives from any lane back to the main root so history survives `git worktree remove`.
 
-```
-/ship:status            Show all features and their status
-/ship:resume            Pick up where you left off
-/ship:help              Full command reference
-```
-
-## What Ship Does
-
-**Start / Brainstorm:** Probes until the problem, scope boundary, and testable acceptance criteria can be stated without guessing — and you've confirmed the summary. Question count is judgment: a narrow bug fix may need two questions, a complex feature many rounds. Reads your codebase directly to ask smarter questions, probing the NFR dimensions the codebase makes relevant (performance, observability, rollout/migration, security, error handling) and skipping the ones that plainly don't apply. Captures everything in a `CONTEXT.md` with problem statement, decisions, acceptance criteria, and scope boundaries.
-
-**Design (optional):** Identifies the 2-3 genuinely distinct viable approaches for your feature from its actual decision axes — each concrete: what changes, key files, tradeoffs, rough task count. Presents the trade-offs; you choose the approach before planning.
-
-**Plan:** Explores the codebase at a depth scaled to uncertainty — reusing the brainstormer's Codebase Notes when present, exploring inline for small or familiar surfaces, fanning out parallel exploration sub-agents only for large or unfamiliar ones. Asks targeted follow-up questions informed by what exploration found. Then writes a concrete task list that pins the load-bearing contracts (schemas, endpoint shapes, error behavior, library choices, integration points) with runnable verify commands, leaving internals to the builder. Self-checks acceptance-criteria coverage and runs an adversarial review. The plan is then independently reviewed by a fresh-context subagent (`ship-plan-reviewer`) against the actual codebase before building. Under `/ship:go` that review runs as a capped revision loop: review → replan → re-review, at most 5 rounds, with a convergence guard that stops as soon as a round's CRITICAL findings repeat. It interrupts you only on `NEEDS_INPUT` — a decision the replanner cannot settle from CONTEXT.md, the codebase, or existing conventions — and answers you give are carried back into the loop. A plan that ends `STUCK`, `UNRESOLVED`, or `BLOCKED` stays at `planned` and never proceeds to build. `/ship:plan-verify` remains single-shot: one review, one verdict, you decide. `/ship:go --auto` additionally skips the "Ready to build?" gate for a fully hands-off run.
-
-**Build:** Reads key files from the plan to build rich context before starting. Implements tasks sequentially with test-driven development (RED-GREEN-REFACTOR) when tasks have test-based verify commands. Runs the verify command after each task, commits atomically (`feat(feature-name): description`) with specific files staged. Larger plans (>4 tasks) are automatically grouped into phases — build executes one phase at a time. If the builder exhausts its turn budget mid-phase, the phase continues with a fresh builder that resumes from the first pending task in PLAN.md — up to 5 rounds in `/ship:go`, 4 in `/ship:build` — stopping only when a round lands no new tasks. Applies 3 deviation rules when reality diverges from plan, with structured debugging (read error → trace cause → one fix at a time) before each retry. The builder reports 5 statuses: COMPLETE, COMPLETE_WITH_CONCERNS (done but flagging doubts), PARTIAL (turn budget spent, completed work committed — hands off to a continuation builder), NEEDS_CONTEXT (triggers AskUserQuestion — the orchestrator collects the missing info and SendMessages it back to the still-alive builder, capped at 2 rounds per phase), and CHECKPOINT (hard block). After the builder claims COMPLETE, a **per-phase review gate** runs: a read-only `ship-reviewer` agent re-runs every phase verify command and reviews the phase diff; critical/high findings go back to the builder for one fix round; all findings persist to `REVIEW.md`.
-
-**Verify:** The single post-build quality gate. Reads acceptance criteria from CONTEXT.md as truths and emits **per-criterion verdicts** of PASS, FAIL, or **INCONCLUSIVE** (when no runnable `<verify>` command exists — grep-only evidence cannot upgrade to PASS) using a gate function that runs commands rather than reasoning about correctness. In the same pass it hunts bugs: auto-discovers the test framework, picks relevant risk categories (boundary, negative, error handling, concurrency, security — skips categories that don't apply), writes and commits adversarial test files against the **actual git diff**, runs them, and scans the changed files for anti-patterns. Critical/high bugs or any failing criterion block a PASS; if gaps exist, writes fix tasks back to PLAN.md and reverts status to `plan-verified`.
-
-**Finish:** Runs after verification passes. Presents 3 options: create a pull request (push + `gh pr create`), merge locally to the base branch, or keep the branch as-is for manual handling. Runs tests before proceeding. If VERIFY.md contains any INCONCLUSIVE verdict, `/ship:finish` blocks until you pass `--accept-inconclusive "reason"`; the override and operator email are recorded in VERIFY.md.
-
-## Feature Directory
-
-Each feature gets its own directory under `.planning/features/`:
+## Feature directory
 
 ```
-.planning/features/
-├── user-auth/
-│   ├── CONTEXT.md    Problem, decisions, acceptance criteria, scope
-│   ├── PLAN.md       Tasks with inline status tracking
-│   ├── REVIEW.md     Per-phase review findings (fixed and unresolved)
-│   └── VERIFY.md     Verification report (criteria + bug hunt)
-├── fix-login-bug/
-│   ├── CONTEXT.md
-│   └── ...
-└── ...
+.planning/features/user-auth/
+├── CONTEXT.md    Problem, decisions, acceptance criteria, scope
+├── PLAN.md       Tasks with inline status tracking
+├── REVIEW.md     Per-phase review findings
+└── VERIFY.md     Verification report (criteria + bug hunt)
 ```
 
-Status is tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `done`. If verify finds critical/high bugs or a failing criterion, it writes fix tasks to PLAN.md and rolls status back to `plan-verified`; `/ship:resume` then routes to `/ship:build`, after which `/ship:verify` runs again.
+Status lives in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `done`. Finished features move to `.planning/archive/`.
 
-## Core Principles
+## All commands
 
-**Intensive brainstorming.** The brainstormer probes until the problem, scope, and acceptance criteria are testable and confirmed — question count is judgment, not quota. It reads your codebase to avoid asking about things it can already see.
+| Command | What it does |
+|---------|--------------|
+| `/ship:start "idea"` | Intensive brainstorm → CONTEXT.md |
+| `/ship:go [--auto]` | Auto-run everything from plan to verify |
+| `/ship:pm [verb\|question]` | Project manager: brief, status, groom, check, handover |
+| `/ship:pm-sync` | Bootstrap or reconcile the PM state |
+| `/ship:design` | Compare 2–3 architecture approaches before planning (optional) |
+| `/ship:plan` | Plan tasks manually → PLAN.md |
+| `/ship:plan-verify` | Single-shot independent plan review |
+| `/ship:build` | Build manually, phase by phase, with the review gate |
+| `/ship:verify` | Acceptance criteria + adversarial bug hunt → VERIFY.md |
+| `/ship:finish` | PR / merge / keep, then archive the feature |
+| `/ship:status` | All features and where they stand |
+| `/ship:resume` | Pick up where you left off |
+| `/ship:help` | Full command reference |
 
-**Goal-backward verification.** Acceptance criteria are written before code. The verifier checks reality against what the user asked for — not whether tasks were executed.
+## Under the hood
 
-**Atomic commits.** One commit per task. Specific files staged. Verify command must pass before committing.
+**Seven specialized agents**, each with a single job: `ship-brainstormer` (requirements interview), `ship-plan-reviewer` (read-only plan review), `ship-replanner` (plan revision against critical findings), `ship-builder` (task execution with atomic commits), `ship-reviewer` (per-phase diff review), `ship-verifier` (acceptance criteria + bug hunt), and `ship-pm` (project-level state work).
 
-**Phased builds.** Plans with more than 4 tasks are automatically grouped into phases (3-5 tasks each). Build executes one phase at a time; `/ship:go` loops through all phases automatically. An approval gate pauses before building to show the plan summary and ask for confirmation.
+**Four reference skills** preloaded into agents: `deviation-rules` (what to do when reality diverges from the plan), `git-commits` (atomic commit discipline), `tdd` (RED-GREEN-REFACTOR when tasks are test-backed), and `pm-state` (the `.project-manager/` file formats).
 
-**Test-driven development.** When a task's verify command runs tests, the builder follows RED-GREEN-REFACTOR: write a failing test first, implement minimal code to pass, then clean up. Skipped for non-test tasks (config, wiring, templates).
+**Hooks** keep sessions honest: Ship awareness is injected at session start and after context compaction, `git add .` is blocked to enforce atomic commits, context-usage warnings fire before the window fills, and a PM drift nudge fires when the roadmap falls behind feature reality.
 
-**Deviation rules.** 3 rules for when reality diverges from plan: fix and continue for small issues, fix with limits and structured debugging for verify failures (max 3 attempts), stop and report for architectural conflicts. If each fix reveals a new problem in a different place, it skips straight to stop — that's an architectural mismatch, not a bug.
-
-**No ceremony.** No milestones, no FEAT-XX IDs. Just features with context, plans, and verification.
-
-## Status Line
-
-Ship includes a rich status line showing model, current task, directory@branch, context usage bar, rate limits, and session cost.
-
-The plugin system doesn't support status line registration natively, so after installing the plugin you need to add this to your `~/.claude/settings.json`:
+**Status line** (optional) — model, current task, context bar, session cost. The plugin system can't register it automatically, so add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -122,18 +108,6 @@ The plugin system doesn't support status line registration natively, so after in
 }
 ```
 
-This path is stable across plugin updates.
+### Legacy install
 
-## Hooks
-
-4 event hooks (plus the statusline) are declared in `hooks/hooks.json` for automatic registration by the plugin system:
-
-| Hook | Trigger | Purpose |
-|------|---------|---------|
-| `guide` | SessionStart | Injects Ship awareness so Claude proactively suggests commands when it detects feature work |
-| `context-monitor` | PostToolUse | Injects warnings into the agent's context when usage exceeds thresholds |
-| `safety-gate` | PreToolUse | Blocks `git add .` and `git add -A` to enforce atomic commits |
-| `post-compact` | PostCompact | Re-injects feature state after context compaction so progress isn't lost |
-
-Hooks use `matcher` fields (e.g., `Bash`, `Write|Edit|Bash|Agent`) to only fire on relevant tool calls. The context monitor warns the agent to save state before the context window fills up, preventing lost progress.
-
+`npx github:dilhanz/ship` still works but is deprecated — use the plugin system for automatic updates and clean uninstall.
