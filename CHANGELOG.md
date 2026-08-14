@@ -1,5 +1,23 @@
 # Changelog
 
+## 5.7.0
+
+Minor release — PM state is anchored to the main worktree so it stays shared across all git worktree lanes, and a new fleet sweep gives the PM agent a cross-lane view of in-flight features.
+
+### Added
+
+- **`ship/resolve-state-root.cjs`**: resolves `.project-manager/` to the main worktree root when the directory is gitignored. All mechanical scripts (`pm-update.cjs`, `lane-sweep.cjs`) and the `pm-sync-nudge` hook delegate root resolution here so `.project-manager/` state is always read from and written to one shared location regardless of which worktree the command runs in.
+- **`ship/lane-sweep.cjs`**: CLI that enumerates all git worktrees (lanes), scans each lane's `.planning/features/` for active features, extracts each in-flight `PLAN.md`'s `<files>` claims, and reports cross-lane file overlaps. Prints `{ lanes, overlaps }` JSON to stdout; zero dependencies. The pure functions (`parseWorktrees`, `planFiles`, `findOverlaps`) are exported for fixture tests; `sweep(cwd)` never throws — git failure degrades to `{ lanes: [], overlaps: [], error }`.
+- **Fleet sweep in `ship-pm` agent**: `status`, `handover`, and the bare brief now run the lane sweep when `.project-manager/` is gitignored. Adds a **Lanes** section to the status report (branch, active feature, stage, task progress per worktree), populates or refreshes the ROADMAP `Lane` column from sweep data, and surfaces every `overlaps` entry as a collision warning. When recommending parallel work the agent grounds the lane suggestion in sweep data and records the assigned lane in the ROADMAP `Lane` column.
+- **Test suites**: `tests/lane-sweep.test.js`, `tests/resolve-state-root.test.js`, `tests/multi-worktree-doctrine.test.js`, and `tests/multi-worktree-integration.test.js` cover the new modules and cross-lane scenarios.
+
+### Changed
+
+- **`pm-sync-nudge` hook** resolves ROADMAP.md and `.nudge-state.json` paths through `resolve-state-root.cjs` so the nudge always reads and updates the shared PM state at the main worktree root.
+- **`ship-pm` handover** refreshes the `## Lanes` section in `STATUS.md` from lane sweep data and guards `git worktree prune` — prune is skipped for any lane whose feature is not done, and `git worktree remove --force` is never suggested.
+- **Dashboard template** (`ship/templates/dashboard.html`) updated to accommodate the enriched PM state shape with lane information.
+- **`skills/finish/SKILL.md`**, **`skills/pm-state/SKILL.md`**, **`skills/pm-sync/SKILL.md`**, and **`skills/pm/SKILL.md`** updated to document the shared-state model and lane conventions.
+
 ## 5.6.0
 
 Minor release — the per-phase review gate stops reporting safety it does not have, and unresolved findings now reach the verifier instead of being dropped at the one-fix-round cap.
