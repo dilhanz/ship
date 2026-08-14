@@ -5,10 +5,15 @@
 // for the drifted slugs (/ship:pm-sync is reserved for structural drift)
 // when they drift. Debounced via .project-manager/.nudge-state.json so
 // the same drift set nudges only once.
+//
+// .project-manager/ paths resolve to the main worktree root when the
+// directory is gitignored (resolve-state-root.cjs); feature scanning stays
+// lane-local to the invoking worktree's .planning/.
 
 const fs = require('fs');
 const path = require('path');
 const { scanFeatures } = require('./scan-features.cjs');
+const { resolveStateRoot } = require(path.join(__dirname, '..', 'ship', 'resolve-state-root.cjs'));
 
 /**
  * Parse ROADMAP.md backlog table rows into { slug, recorded } pairs.
@@ -97,7 +102,11 @@ process.stdin.on('end', () => {
       // no/invalid stdin JSON — fall back to process.cwd()
     }
 
-    const roadmapPath = path.join(cwd, '.project-manager', 'ROADMAP.md');
+    // Shared PM state lives at the resolved root; a resolver failure already
+    // degrades to cwd, so the hook still never throws.
+    const { root } = resolveStateRoot(cwd);
+
+    const roadmapPath = path.join(root, '.project-manager', 'ROADMAP.md');
     if (!fs.existsSync(roadmapPath)) process.exit(0);
 
     const rows = parseRoadmapRows(fs.readFileSync(roadmapPath, 'utf8'));
@@ -118,7 +127,7 @@ process.stdin.on('end', () => {
       // recorded 'blocked' never drifts against an in-progress feature
     }
 
-    const statePath = path.join(cwd, '.project-manager', '.nudge-state.json');
+    const statePath = path.join(root, '.project-manager', '.nudge-state.json');
     let lastDrift = '';
     try {
       lastDrift = JSON.parse(fs.readFileSync(statePath, 'utf8')).lastDrift || '';

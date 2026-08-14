@@ -70,10 +70,11 @@ function createArchivedFeature(tmpDir, name) {
 
 /**
  * Write .project-manager/ROADMAP.md with a milestone heading and a backlog
- * table built from rows: array of { item, status, priority, size, depends, source, slug }.
+ * table built from rows: array of { item, status, priority, size, depends, source, slug, lane }.
  *
  * shape: 'v7' (default) emits the enriched header with Size and Source;
- *        'v5' emits the legacy v5.3.0 header, which must keep parsing.
+ *        'v5' emits the legacy v5.3.0 header, which must keep parsing;
+ *        'v8' appends the Lane column, which must also keep parsing.
  */
 function createRoadmap(tmpDir, rows, shape = 'v7') {
   const pmDir = path.join(tmpDir, '.project-manager');
@@ -98,6 +99,14 @@ function createRoadmap(tmpDir, rows, shape = 'v7') {
     for (const r of rows) {
       lines.push(
         `| ${r.item} | ${r.status} | ${r.priority || 'P1'} | ${r.depends || '—'} | ${r.slug || '—'} |`
+      );
+    }
+  } else if (shape === 'v8') {
+    lines.push('| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane |');
+    lines.push('| --- | --- | --- | --- | --- | --- | --- | --- |');
+    for (const r of rows) {
+      lines.push(
+        `| ${r.item} | ${r.status} | ${r.priority || 'P1'} | ${r.size || '—'} | ${r.depends || '—'} | ${r.source || 'test fixture'} | ${r.slug || '—'} | ${r.lane || '—'} |`
       );
     }
   } else {
@@ -269,5 +278,33 @@ describe('pm-sync-nudge hook — legacy 5-column roadmap', () => {
     const { code, output } = await runHook(tmpDir);
     assert.equal(code, 0);
     assert.equal(output, null, 'blocked is a PM judgment, never drift');
+  });
+});
+
+describe('pm-sync-nudge hook — v8 Lane-bearing roadmap', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-pm-nudge-v8-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('drift still detected with a populated Lane column, nudge names the slug', async () => {
+    createFeature(tmpDir, 'auth-feature', 'building');
+    createRoadmap(
+      tmpDir,
+      [{ item: 'Auth', status: 'pending', slug: 'auth-feature', lane: 'feature/auth @ C:/lanes/auth' }],
+      'v8'
+    );
+
+    const { code, output } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.ok(output, 'Lane-bearing table should still produce output on drift');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('auth-feature'), 'should include the drifted slug');
+    assert.match(msg, /pm-update\.cjs" auth-feature/, 'should pass the drifted slug to the script');
   });
 });
