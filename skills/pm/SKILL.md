@@ -12,7 +12,7 @@ Run project-level work against the project-manager state in `.project-manager/`.
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` for the five state-file formats (ROADMAP.md, STATUS.md, DECISIONS.md, CONVENTIONS.md, dashboard.html), the status mapping table, and the hard rules.
 
-2. If `.project-manager/ROADMAP.md` is missing or unparseable, say the project manager isn't set up (or its state is damaged), point at `/ship:pm-sync` to bootstrap or repair it, and stop. Do not create state files here.
+2. If `.project-manager/ROADMAP.md` is missing or unparseable, say the project manager isn't set up (or its state is damaged), point at `/ship:pm-sync` to bootstrap or repair it, and stop. Do not create state files here. (When `.project-manager/` is gitignored, the mechanical scripts resolve it to the main worktree root via `ship/resolve-state-root.cjs` — from a linked worktree, check there before declaring it missing.)
 
 ## Route on $ARGUMENTS
 
@@ -38,12 +38,13 @@ Run project-level work against the project-manager state in `.project-manager/`.
 5. Delegate a read-mostly brief to the agent:
    - Each milestone with progress (done/total items) and status
    - Current blockers, with their reasoning from STATUS.md where recorded
+   - **Lanes** — per-lane branch, active feature, and stage from the fleet sweep (`node "${CLAUDE_PLUGIN_ROOT}/ship/lane-sweep.cjs"`), plus a collision warning for every `overlaps` entry (two lanes' in-flight plans naming the same file). When `.project-manager/` is tracked (not gitignored), the agent skips the sweep and says fleet aggregation is unavailable — per-worktree state only.
    - Top 1–3 priorities
    - A single "work on next" recommendation with its Ship command, taken from `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next`
 
 6. Preserve today's routing semantics for the question shapes:
    - **Next-style questions** ("what should I work on next?") — recommend exactly one item, selected by running `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next` and interpreting its JSON (`{item, milestone, priority, shipFeature}`, or `null` when nothing is eligible); do not re-derive the rule in prose (the script implements it: highest-priority non-done, non-blocked item whose Depends-on items are all `done`). Ground the rationale in recorded Priority, Depends on, and status. End with `/ship:start "{item}"`, or `/ship:resume` when its Ship feature is already in progress.
-   - **Parallel-style questions** ("what can run in parallel?") — list items whose dependencies are all satisfied and that do not depend on each other, grouped as independent lanes, each ending with its Ship command.
+   - **Parallel-style questions** ("what can run in parallel?") — list items whose dependencies are all satisfied and that do not depend on each other, grouped as independent lanes, each ending with its Ship command. Ground lane suggestions in the sweep data: which lanes are free, and which items' files don't overlap any in-flight plan.
    - **Decision/history questions** ("why did we…", "when was X decided?") — answer from DECISIONS.md and its `decisions/` spill files.
 
 ## Dashboard freshness
