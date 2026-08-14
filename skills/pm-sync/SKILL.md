@@ -12,7 +12,15 @@ Set up or update the project-manager state in `.project-manager/`.
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` first — it defines the five state-file formats (ROADMAP.md, STATUS.md, DECISIONS.md, CONVENTIONS.md, dashboard.html), the `decisions/` spill-file convention, the status mapping table, and the hard rules. Everything below assumes those formats.
 
-2. Check for `.project-manager/ROADMAP.md`:
+2. **Resolve the state root:** `.project-manager/` may live at the main worktree root rather than the cwd. Resolve it with:
+
+   ```bash
+   node -e "console.log(JSON.stringify(require(process.argv[1]).resolveStateRoot(process.cwd())))" "${CLAUDE_PLUGIN_ROOT}/ship/resolve-state-root.cjs"
+   ```
+
+   (equivalently: `git rev-parse --path-format=absolute --git-common-dir` → its dirname is the main worktree root). When `.project-manager/` is **gitignored**, bootstrap and reconcile target the resolver's `root` — the **main worktree** root, one canonical copy shared by every lane. When it is **tracked**, operate on the cwd exactly as today (per-worktree state) and include one explicit line in the wrap-up noting the fleet view is unavailable while `.project-manager/` is tracked.
+
+3. Check for `{root}/.project-manager/ROADMAP.md` at the resolved state root:
    - Missing → run the **Bootstrap flow**.
    - Present and parseable → run the **Reconcile flow**.
    - Present but malformed → see **Error handling**.
@@ -37,8 +45,8 @@ Set up or update the project-manager state in `.project-manager/`.
    - Ask whether any decisions are worth recording (what was decided and why).
    - Ask whether any project conventions are worth writing down — rules a fresh session should follow (for CONVENTIONS.md).
 
-4. **Write state** (all inside `.project-manager/`) — five files:
-   - `ROADMAP.md` per the pm-state format, with `project`, today's date as `updated`, and the 7-column backlog table.
+4. **Write state** (all inside `.project-manager/` at the resolved state root) — five files:
+   - `ROADMAP.md` per the pm-state format, with `project`, today's date as `updated`, and the 8-column backlog table (new `Lane` cells initialize to `—` — the PM populates them from sweep data, never the user by hand).
    - `STATUS.md` — all five sections, populated from the scan and the interview.
    - `DECISIONS.md` — seed with any decisions captured in the interview; otherwise just the `# Decisions` title.
    - `CONVENTIONS.md` — seed with the confirmed conventions; otherwise the `# Conventions` title plus a starter rule noting that conventions are appended here as they are discovered.
@@ -52,10 +60,10 @@ Set up or update the project-manager state in `.project-manager/`.
 
 2. **Auto-update statuses:** run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs"` from the repo root — it applies the pm-state status mapping table to every backlog item that has a Ship feature slug and bumps the frontmatter `updated` when a Status cell actually changed. Only the Status cell changes automatically — never touch names, priorities, sizes, sources, or dependencies without asking. New rows, priorities, and structural edits stay with the interview and judgment steps below.
 
-   STATUS.md's `## In flight`, `## Recently shipped`, and `## Repo hygiene` sections are also refreshed from reality — they are a snapshot, not user-authored judgment. `## Blocked` and its reasoning are **never** auto-written: blockers are a PM judgment, confirmed in the interview.
+   STATUS.md's `## In flight`, `## Recently shipped`, and `## Repo hygiene` sections are also refreshed from reality — they are a snapshot, not user-authored judgment. Refresh `## Lanes` the same way, from `node "${CLAUDE_PLUGIN_ROOT}/ship/lane-sweep.cjs"` output (one line per worktree: branch, path, active feature + stage; "single lane" when only the main worktree exists) — snapshot data, same class as In flight / Repo hygiene. `## Blocked` and its reasoning are **never** auto-written: blockers are a PM judgment, confirmed in the interview.
 
-3. **Growth path (v5.3.0 → enriched):** if ROADMAP.md parses but carries the legacy 5-column header (`| Item | Status | Priority | Depends on | Ship feature |`), or `STATUS.md` / `CONVENTIONS.md` are absent, this is a **legacy directory, not damage**. Report exactly what is missing, then ask once via AskUserQuestion whether to grow it.
-   - **On confirmation:** rewrite each backlog table to the 7-column header, preserving every existing cell value; set `Size` to `—` for every existing row; and fill `Source` per row from the interview. Never fabricate a Source — where the user cannot name one, mark the item for review in the wrap-up report rather than inventing provenance. Then create the missing files (`STATUS.md`, `CONVENTIONS.md`) per the Bootstrap write step.
+3. **Growth path (v5.3.0 → enriched):** if ROADMAP.md parses but carries the legacy 5-column header (`| Item | Status | Priority | Depends on | Ship feature |`) or the 7-column header (`| Item | Status | Priority | Size | Depends on | Source | Ship feature |`), or `STATUS.md` / `CONVENTIONS.md` are absent, this is a **legacy directory, not damage**. Report exactly what is missing, then ask once via AskUserQuestion whether to grow it.
+   - **On confirmation:** rewrite each backlog table to the 8-column header (`| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane |`), preserving every existing cell value; the `Lane` column arrives on this same confirmed reconcile that adds Size/Source — new `Lane` cells initialize to `—` (the PM populates them from sweep data, never the user by hand); set `Size` to `—` for every existing row lacking one; and fill `Source` per row from the interview. Never fabricate a Source — where the user cannot name one, mark the item for review in the wrap-up report rather than inventing provenance. Then create the missing files (`STATUS.md`, `CONVENTIONS.md`) per the Bootstrap write step.
    - **On decline:** leave the directory untouched and continue the reconcile against the legacy shape, which stays fully supported.
 
 4. **Interview only about genuine gaps** (AskUserQuestion, skip anything already settled):
@@ -90,6 +98,7 @@ End with a short summary block:
 
 Changed: {what changed, or "nothing — state already in sync"}
 Grown: {what the growth path added, omit this line when it did not run}
+Fleet: {omit when gitignored; when `.project-manager/` is tracked: "fleet view unavailable — .project-manager/ is tracked, so PM state is per-worktree"}
 Top priority: {highest-priority actionable item}
 Next: {suggested Ship command, e.g. /ship:start "{item}"}
 ```
