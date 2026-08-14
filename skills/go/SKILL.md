@@ -3,18 +3,22 @@ name: ship:go
 description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, Skill, AskUserQuestion
-argument-hint: "[feature-name] [--auto]"
+argument-hint: "[feature-name] [--auto] [--headless]"
 ---
 
 Auto-run all remaining steps for the active feature. Round-1 planning and the finish step run inline here; the plan revision loop and the build→verify spine each run in a Workflow, so per-agent output never enters this conversation.
 
 Pass `--auto` for a fully hands-off run: it skips the "Ready to build?" approval gate. Everything else is unchanged — `--auto` never suppresses a `NEEDS_INPUT` question, which is the one interruption the plan loop can raise.
 
+Pass `--headless` for unattended runs (e.g. a spawned `claude -p`) where no interactive prompt can fire. `--headless` implies `--auto`, and additionally degrades every interactive point deterministically per the contract in `${CLAUDE_PLUGIN_ROOT}/ship/docs/headless.md` — read that file when the flag is present; it is the contract of record for QUESTIONS.md, OUTCOME.json, and the outcome vocabulary.
+
 ## 1. Find the Active Feature
 
-First parse flags out of `$ARGUMENTS`: strip `--auto` (recording whether it was present) *before* resolving the feature name, so `/ship:go my-feature --auto`, `/ship:go --auto my-feature`, and `/ship:go --auto` all work.
+First parse flags out of `$ARGUMENTS`: strip `--auto` and `--headless` (recording whether each was present, in any argument order) *before* resolving the feature name, so `/ship:go my-feature --auto`, `/ship:go --auto my-feature`, `/ship:go --headless my-feature`, and `/ship:go --auto` all work. `--headless` sets `--auto`.
 
-Feature state is injected at session start ("SHIP ACTIVE FEATURES"). If the remaining `$ARGUMENTS` names a feature, use it. Otherwise pick the one feature whose CONTEXT.md `status` is not `done`. If several are unfinished, ask which. If none exist, tell the user to run `/ship:start`.
+Feature state is injected at session start ("SHIP ACTIVE FEATURES"). If the remaining `$ARGUMENTS` names a feature, use it. Otherwise pick the one feature whose CONTEXT.md `status` is not `done`. If several are unfinished, ask which. If none exist, tell the user to run `/ship:start`. Under `--headless`, resolution must never ask: if several features are unfinished and none was named, or none exist, terminate with outcome `error` and a detail line naming the problem (per the headless termination rule in section 6).
+
+**Headless preamble:** when `--headless` is present, immediately after resolving the feature delete `.planning/features/{name}/OUTCOME.json` if it exists — the run's first act. A fresh one is written as the run's last act, so a missing file after the process exits signals a mid-flight death. From here on, every terminal path in this skill must end via the **headless termination** rule defined in section 6.
 
 ## 2. Advance Pre-Build Steps (inline)
 
@@ -24,11 +28,17 @@ Route on the feature's `status` and run these inline, in order, until the featur
 |--------|--------|
 | `brainstormed` | Invoke the `/ship:plan` skill. On success the status becomes `planned`. |
 | `planned` | Run the plan loop (section 2a). |
-| `done` | Invoke `/ship:finish` and stop. |
+| `done` | Invoke `/ship:finish` and stop. Under `--headless`, do NOT invoke `/ship:finish` — terminate with outcome `done` and detail "feature already done; finish is never attempted headlessly". |
 
 (`brainstormed` requires that `/ship:start` already ran — `go` does not brainstorm; an interview can't run unattended.)
 
 ## 2a. Plan Loop (workflow)
+
+**Headless pre-check:** under `--headless`, before invoking the workflow, check for `.planning/features/{name}/QUESTIONS.md`:
+
+- **Present, every `**Answer:**` line non-empty** — build a Q/A transcript ("Q: {question}\nA: {answer}" per section), invoke the plan workflow with `args: { feature: "{name}", answers: "<transcript>", roundOffset: <the frontmatter roundOffset> }`, and once the workflow has been invoked rename the file to `QUESTIONS-{roundOffset}.answered.md` (the `roundOffset` from its own frontmatter — strictly increasing across re-invocations, so the archive name never collides).
+- **Present, any `**Answer:**` line still empty** — terminate immediately as `needs-input` (detail: "QUESTIONS.md awaiting answers", `questions_file` set) without re-running the loop. Re-invoking with an unanswered file is idempotent.
+- **Absent** — invoke the workflow normally.
 
 Invoke the Workflow tool:
 
@@ -59,18 +69,21 @@ Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ens
 ### Branch on `status`
 
 - **`APPROVED`** — set CONTEXT.md `status: plan-verified`, then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent). The outcome block additionally lists the examined files and any WARNING/SUGGESTION findings. Continue to the approval gate (section 3).
-- **`NEEDS_INPUT`** — ask each entry in `questions` via AskUserQuestion (one question per entry, using its `options`; the automatic Other option covers anything else). Then RE-INVOKE the same workflow with `args: { feature: "{name}", answers: "<Q/A transcript>", roundOffset: <total rounds spent so far across all invocations> }` and re-branch on the new status. The `roundOffset` is what keeps the replanner's `### Round {n}` headings unique across re-invocations — without it a second run restarts at `### Round 1` and collides with the first run's subsection, which the replanner is forbidden to rewrite. Do **not** use `resumeFromRunId`. Cap this at 2 re-invocations; if a third `NEEDS_INPUT` arrives, report it and stop.
+- **`NEEDS_INPUT`** — split on `--headless`:
+  - **Interactive (no `--headless`)** — ask each entry in `questions` via AskUserQuestion (one question per entry, using its `options`; the automatic Other option covers anything else). Then RE-INVOKE the same workflow with `args: { feature: "{name}", answers: "<Q/A transcript>", roundOffset: <total rounds spent so far across all invocations> }` and re-branch on the new status. The `roundOffset` is what keeps the replanner's `### Round {n}` headings unique across re-invocations — without it a second run restarts at `### Round 1` and collides with the first run's subsection, which the replanner is forbidden to rewrite. Do **not** use `resumeFromRunId`. Cap this at 2 re-invocations; if a third `NEEDS_INPUT` arrives, report it and stop.
+  - **Headless** — do NOT call AskUserQuestion. Write `.planning/features/{name}/QUESTIONS.md` in the format specified in `ship/docs/headless.md`: YAML frontmatter (`feature`, `roundOffset`: total plan-loop rounds spent so far across all invocations, `created` ISO date); one `### Q{n}: {question}` section per `questions` entry with `**Why blocking:** {why_blocking}`, an `Options:` bullet list of its options, and an empty `**Answer:**` line; then the raw `needs_input` JSON array in a fenced json block. Leave CONTEXT.md at `planned` and terminate as `needs-input` with `questions_file` set.
+  - **Cap (headless)** — the 2 re-invocation cap counts answered-file resumes too (a resume exists iff the archived file's `roundOffset` > 0; the recorded rounds-spent count is checkable from the files alone). A 3rd `NEEDS_INPUT` under `--headless` terminates as `needs-input` with detail "re-invocation cap reached — escalate to a human" — and still writes the new QUESTIONS.md so the questions are not lost.
 - **`STUCK`** — leave CONTEXT.md `status: planned`. Report the surviving CRITICAL findings and the round count, tell the user to run `/ship:plan {name}`, and stop.
 - **`UNRESOLVED`** — same as `STUCK`, additionally reporting that all 5 rounds were spent. Stop.
 - **`BLOCKED`** — leave CONTEXT.md `status: planned`. Report that an agent produced no result after retry (a plan is never approved without a completed review) and that the run stopped; suggest `/ship:plan-verify {name}` to review once manually. Stop.
 
 **Invariant:** only `APPROVED` advances the status machine. `STUCK`, `UNRESOLVED`, and `BLOCKED` all leave CONTEXT.md at `planned` and never proceed to build.
 
-On every terminal outcome except `NEEDS_INPUT` (whose re-invocation still needs them), delete `.planning/features/{name}/.review-scratch/plan-round-*.json` — the plan reviewers' crash-recovery cache for the loop that just ended. Leaving them is not dangerous (each is fingerprinted with the PLAN.md hash it reviewed, so a salvage retry rejects one that reviewed a different plan) but they serve no further purpose. On `APPROVED`, section 6 clears the whole directory anyway.
+On every terminal outcome except `NEEDS_INPUT` (whose re-invocation still needs them — including a headless park, which is terminal for this process but leaves the loop live, so the files are kept exactly as on interactive `NEEDS_INPUT`), delete `.planning/features/{name}/.review-scratch/plan-round-*.json` — the plan reviewers' crash-recovery cache for the loop that just ended. Leaving them is not dangerous (each is fingerprinted with the PLAN.md hash it reviewed, so a salvage retry rejects one that reviewed a different plan) but they serve no further purpose. On `APPROVED`, section 6 clears the whole directory anyway.
 
 ## 3. Plan Approval Gate (interactive)
 
-Fires when status is `plan-verified` (whether the plan loop just approved it or the feature was already there). Skip it when resuming from `building`, and skip it when `--auto` was passed — without the flag the gate always fires.
+Fires when status is `plan-verified` (whether the plan loop just approved it or the feature was already there). Skip it when resuming from `building`, and skip it when `--auto` was passed — without the flag the gate always fires. (`--headless` implies `--auto`, so the gate is always skipped headlessly.)
 
 1. Read `.planning/features/{name}/PLAN.md`; count tasks and phases.
 2. Show a compact summary: feature, task count (and phase count), Must Deliver items, the task list grouped by phase, and the count of any plan-review warnings.
@@ -136,8 +149,31 @@ Verify: {PASS | FAIL | INCONCLUSIVE — criteria_passed/criteria_total, bugs by 
 [If any phase has builderRounds > 1:] Note: phase {id} needed {builderRounds} builder rounds (tasks are large enough to outlive one turn budget).
 ```
 
+Under `--headless`, the fenced `ship_outcome` block (headless termination rule below) follows the GO COMPLETE report and is the final message's last content.
+
+### Headless termination (every terminal path)
+
+Under `--headless`, EVERY terminal path in this skill — the resolution/`done` routing in sections 1–2, the plan-loop terminals in 2a, build stops, verify verdicts, and errors — ends the same way. As the run's LAST act, write `.planning/features/{name}/OUTCOME.json` per the schema in `ship/docs/headless.md`: `schema_version: 1`, `feature`, `outcome` (from the table below), `status` (the settled CONTEXT.md status), `timestamp` (ISO 8601 UTC), `head` (`git rev-parse HEAD` at write time), `detail` (one-line human note), plus `questions_file` on `needs-input`. Then end the final message with a fenced block tagged `ship_outcome` containing the exact same JSON. Interactive runs never write this file.
+
+| Terminal | Outcome |
+|----------|---------|
+| Plan loop `APPROVED` | not terminal — continue to build |
+| Plan loop `NEEDS_INPUT` | `needs-input` |
+| Plan loop `STUCK` | `stuck` |
+| Plan loop `UNRESOLVED` | `unresolved` |
+| Plan loop `BLOCKED` | `blocked` |
+| Build `stoppedAt` NEEDS_CONTEXT | `needs-context` |
+| Build `stoppedAt` EXHAUSTED | `exhausted` |
+| Build `stoppedAt` CHECKPOINT | `checkpoint` |
+| Verdict PASS / INCONCLUSIVE | `done` |
+| Verdict FAIL | `verify-fail` — fix tasks are already in PLAN.md; go never auto-retries, the caller decides |
+| Null verdict, nothing stopped | `error` — detail names the manual `/ship:verify {name}` follow-up |
+| Unrecoverable skill-level failure (workflow crash, unresolvable feature) | `error` |
+
 ## 7. Finish (interactive)
 
 If the verdict is PASS or INCONCLUSIVE, offer to run `/ship:finish` (PR/merge/keep is outward-facing — confirm before acting). Do not finish automatically without the user's go-ahead.
+
+Under `--headless`, skip this section entirely: PASS/INCONCLUSIVE terminates as `done` with the finish offer suppressed — PR/merge stays human-gated, and the `detail` notes `/ship:finish` is the manual next step.
 
 $ARGUMENTS
