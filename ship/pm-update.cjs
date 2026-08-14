@@ -7,9 +7,14 @@
 // Zero dependencies. Invoked by lifecycle skills after CONTEXT.md status
 // changes: `node pm-update.cjs [slug ...]` — a silent no-op when
 // .project-manager/ is absent.
+//
+// .project-manager/ paths resolve to the main worktree root when the
+// directory is gitignored (see resolve-state-root.cjs); feature status is
+// still read from the invoking worktree's .planning/.
 
 const fs = require('fs');
 const path = require('path');
+const { resolveStateRoot } = require('./resolve-state-root.cjs');
 
 /**
  * Parse ROADMAP.md backlog tables into row records.
@@ -260,6 +265,38 @@ function selectNext(rows) {
   };
 }
 
+/**
+ * Write a file atomically: write `{file}.tmp-{pid}` in the same directory,
+ * then rename over the target — an atomic same-volume replace on both POSIX
+ * and Windows, so no reader ever observes a partial file. On failure the
+ * temp file is removed best-effort and the original error rethrown; there is
+ * never a fallback to a non-atomic write.
+ *
+ * @param {string} filePath
+ * @param {string} content
+ */
+function writeFileAtomic(filePath, content) {
+  const tmpPath = `${filePath}.tmp-${process.pid}`;
+  try {
+    fs.writeFileSync(tmpPath, content);
+    try {
+      fs.renameSync(tmpPath, filePath);
+    } catch (e) {
+      // Windows can transiently EPERM a replace while the target is briefly
+      // locked (antivirus, indexer) — retry once, then give up atomically.
+      if (e.code !== 'EPERM') throw e;
+      fs.renameSync(tmpPath, filePath);
+    }
+  } catch (err) {
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch (e) {
+      // best effort — the temp may never have been created
+    }
+    throw err;
+  }
+}
+
 /** HTML-escape every value taken from state files before interpolation. */
 function esc(value) {
   return String(value == null ? '' : value)
@@ -335,20 +372,25 @@ function parseDecisions(content) {
 
 /**
  * Generate dashboard.html deterministically from the state files under
- * `{cwd}/.project-manager/` and the template shipped next to this script.
+ * `{root}/.project-manager/` and the template shipped next to this script.
  * Returns the HTML string, or null when the template is unreadable (legacy
  * install). Absent state files degrade per the pm-state spec, never error.
  * No timestamps or randomness beyond what the files record — identical input
  * produces byte-identical output.
  *
- * @param {string} cwd
+ * The Lanes panel renders from `laneData` (a lane-sweep result) passed by the
+ * caller — this function never shells out to git itself, so it stays
+ * deterministic and unit-testable.
+ *
+ * @param {string} root - resolved state root (equals cwd in a single-worktree repo)
+ * @param {{ lanes: object[], overlaps: object[] }|null} [laneData] - lane-sweep result
  * @returns {string|null}
  */
-function generateDashboard(cwd) {
+function generateDashboard(root, laneData) {
   const template = readOptional(path.join(__dirname, 'templates', 'dashboard.html'));
   if (template === null) return null;
 
-  const pmDir = path.join(cwd, '.project-manager');
+  const pmDir = path.join(root, '.project-manager');
   const roadmap = readOptional(path.join(pmDir, 'ROADMAP.md')) || '';
   const status = readOptional(path.join(pmDir, 'STATUS.md'));
   const decisionsFile = readOptional(path.join(pmDir, 'DECISIONS.md'));
@@ -379,6 +421,41 @@ function generateDashboard(cwd) {
   const inflightHtml = inflightEntries.length > 0
     ? `<ul>${inflightEntries.map(e => `<li>${esc(e)}</li>`).join('')}</ul>`
     : '<p class="empty">No in-flight work recorded</p>';
+
+  // PM:LANES — one row per active feature per lane, then one warning line
+  // per cross-lane file overlap. All values come from the caller's sweep data.
+  const sweepLanes = laneData && Array.isArray(laneData.lanes) ? laneData.lanes : [];
+  const laneRows = [];
+  for (const lane of sweepLanes) {
+    const label = lane.isMain ? 'main' : `${lane.branch || 'detached'} @ ${lane.path}`;
+    for (const feature of lane.features || []) {
+      const tasks = feature.tasks ? `${feature.tasks.done}/${feature.tasks.total}` : '—';
+      laneRows.push(
+        `<tr><td>${esc(label)}</td><td>${esc(feature.name)}</td>` +
+        `<td class="status-${esc(String(feature.status || '').toLowerCase())}">${esc(feature.status)}</td>` +
+        `<td>${esc(tasks)}</td></tr>`
+      );
+    }
+  }
+  let lanesHtml;
+  if (laneRows.length === 0) {
+    lanesHtml = '<p class="empty">No lanes recorded</p>';
+  } else {
+    const parts = [
+      '<table>',
+      '<tr><th>Lane</th><th>Feature</th><th>Stage</th><th>Tasks</th></tr>',
+      ...laneRows,
+      '</table>'
+    ];
+    const overlaps = laneData && Array.isArray(laneData.overlaps) ? laneData.overlaps : [];
+    for (const overlap of overlaps) {
+      const claims = (overlap.claims || [])
+        .map(c => `${esc(c.feature)}@${esc(c.lane)}`)
+        .join(' and ');
+      parts.push(`<p class="status-blocked">&#9888; ${esc(overlap.file)} claimed by ${claims}</p>`);
+    }
+    lanesHtml = parts.join('\n');
+  }
 
   // PM:MILESTONES — one card per `### ` heading
   const milestoneCards = parseMilestones(roadmap).map(m => {
@@ -447,12 +524,13 @@ function generateDashboard(cwd) {
     .replace('<!-- PM:UPDATED -->', () => updated)
     .replace('<!-- PM:NEXT -->', () => nextHtml)
     .replace('<!-- PM:INFLIGHT -->', () => inflightHtml)
+    .replace('<!-- PM:LANES -->', () => lanesHtml)
     .replace('<!-- PM:MILESTONES -->', () => milestonesHtml)
     .replace('<!-- PM:BLOCKERS -->', () => blockerHtml)
     .replace('<!-- PM:DECISIONS -->', () => decisionsHtml);
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard };
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard, writeFileAtomic };
 
 if (require.main === module) {
   try {
@@ -460,8 +538,11 @@ if (require.main === module) {
     const wantNext = args.includes('--next');
     const slugs = args.filter(a => a !== '--next');
     const cwd = process.cwd();
+    // Shared state lives at the resolved root; feature status stays
+    // lane-local, so applyStatusUpdates below keeps cwd by design.
+    const { root } = resolveStateRoot(cwd);
 
-    const roadmapPath = path.join(cwd, '.project-manager', 'ROADMAP.md');
+    const roadmapPath = path.join(root, '.project-manager', 'ROADMAP.md');
     // Absent .project-manager/ (or just no roadmap): silent success, so
     // lifecycle skills can invoke unconditionally.
     if (!fs.existsSync(roadmapPath)) process.exit(0);
@@ -477,20 +558,28 @@ if (require.main === module) {
     const { content, changed } = applyStatusUpdates(original, cwd, slugs);
     if (changed) {
       try {
-        fs.writeFileSync(roadmapPath, content);
+        writeFileAtomic(roadmapPath, content);
       } catch (e) {
         process.stderr.write(`pm-update: failed to write ROADMAP.md: ${e.message}\n`);
         process.exit(1);
       }
     }
 
+    // Fleet sweep for the dashboard's Lanes panel — best effort, never fatal.
+    let laneData = null;
+    try {
+      laneData = require('./lane-sweep.cjs').sweep(cwd);
+    } catch (e) {
+      laneData = null; // absent module or sweep crash → panel degrades
+    }
+
     // Always regenerate, even when no row changed, so a stale dashboard heals.
-    const html = generateDashboard(cwd);
+    const html = generateDashboard(root, laneData);
     if (html === null) {
       process.stderr.write('pm-update: dashboard template unreadable — skipping dashboard regeneration\n');
     } else {
       try {
-        fs.writeFileSync(path.join(cwd, '.project-manager', 'dashboard.html'), html);
+        writeFileAtomic(path.join(root, '.project-manager', 'dashboard.html'), html);
       } catch (e) {
         process.stderr.write(`pm-update: failed to write dashboard.html: ${e.message}\n`);
         process.exit(1);

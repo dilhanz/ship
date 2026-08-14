@@ -128,16 +128,23 @@ Do NOT archive the feature directory for this option.
 
 ## Archive Feature
 
-After Option 1 or Option 2 completes successfully, move the feature directory to the archive:
+After Option 1 or Option 2 completes successfully, move the feature directory to the **main worktree's** archive. Resolve the main worktree root first:
 
 ```bash
-mkdir -p .planning/archive
-mv .planning/features/{feature-name} .planning/archive/{feature-name}
+MAIN_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+mkdir -p "$MAIN_ROOT/.planning/archive"
+mv .planning/features/{feature-name} "$MAIN_ROOT/.planning/archive/{feature-name}"
 ```
 
-This preserves the full history (CONTEXT.md, PLAN.md, VERIFY.md) while keeping `.planning/features/` clean for active work.
+In the main worktree, `MAIN_ROOT` resolves to the current root — behavior unchanged. From a linked worktree, this moves the record to the main worktree so the audit trail (CONTEXT.md, PLAN.md, VERIFY.md) survives `git worktree remove`. If `git rev-parse` fails (not a git repo), fall back to the local `.planning/archive/` exactly as before.
 
-Then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {feature-name}` to sync PM state (silent no-op when `.project-manager/` is absent) — archive presence is what maps the roadmap row to `done`.
+Then run pm-update **from the main root** so its archive check sees the moved directory (`mappedStatus` runs against its cwd):
+
+```bash
+cd "$MAIN_ROOT" && node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {feature-name}
+```
+
+This syncs PM state (silent no-op when `.project-manager/` is absent — pm-update finds the main root's `.project-manager/` itself via the resolver) — archive presence at the main root is what maps the roadmap row to `done`.
 
 ## Report
 
