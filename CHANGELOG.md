@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.8.0
+
+Minor release — the PM layer aggregates state across parallel worktree lanes, and `/ship:go` gains a headless mode for unattended runs.
+
+### Added
+
+- **Multi-worktree PM aggregation**: `.project-manager/` now anchors to the main worktree root via a shared resolver (`ship/resolve-state-root.cjs`, `git rev-parse --path-format=absolute --git-common-dir`), applied only when `.project-manager/` is gitignored so pm-state's git-neutrality rule stays intact — a tracked `.project-manager/` degrades per-worktree with an explicit cannot-aggregate message instead of faking a shared view. `.planning/` stays worktree-local; the `ship-pm` agent becomes the sole aggregator, sweeping `git worktree list --porcelain` (`ship/lane-sweep.cjs`) to report a Lanes section (branch, feature, stage, task progress) in the brief, STATUS.md, and a new `dashboard.html` Lanes panel. The ROADMAP backlog table gains a derived `Lane` column, and in-flight PLAN.md files across lanes are cross-read to warn when two lanes are about to touch the same file paths. `pm-update.cjs` writes ROADMAP.md via temp-then-rename so no partial file is ever observable. `/ship:finish` now archives to the main worktree's root so a feature's audit trail survives `git worktree remove`, and the PM's prune guard no longer removes a lane unconditionally during handover.
+- **`--headless` flag for `/ship:go`**: implies `--auto`; under it every interactive point in the go workflow degrades deterministically instead of prompting. A plan-loop `NEEDS_INPUT` parks the replanner's structured questions to `.planning/features/{name}/QUESTIONS.md` (frontmatter + per-question sections + embedded JSON) rather than calling AskUserQuestion, leaves the feature at `planned`, and ends the run; a re-invocation with filled-in answers feeds them back through `args.answers` and the recorded `roundOffset`, then archives the file. Every terminal path — success or not — writes a machine-readable `.planning/features/{name}/OUTCOME.json` (deleted at run start, written last) and ends the final message with a matching fenced outcome block, covering a 10-outcome vocabulary (`done`, `needs-input`, `stuck`, `unresolved`, `blocked`, `verify-fail`, `needs-context`, `exhausted`, `checkpoint`, `error`). `/ship:finish` is never invoked headlessly — a `done` status routes straight to a `done` outcome instead. The contract is documented in `ship/docs/headless.md`. Interactive (non-`--headless`) behavior is byte-identical to before.
+
 ## 5.6.0
 
 Minor release — the per-phase review gate stops reporting safety it does not have, and unresolved findings now reach the verifier instead of being dropped at the one-fix-round cap.
