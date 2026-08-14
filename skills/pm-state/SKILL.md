@@ -32,11 +32,12 @@ YAML frontmatter with exactly two fields (`project`, `updated`), then a `## Mile
 - **Depends on** — comma-separated item names from any milestone, or `—` when independent
 - **Source** — where the item came from: a `VERIFY.md` line reference, a DECISIONS.md entry title, or a `file:line`. **Mandatory, never `—`. Do not add an item you cannot point at.**
 - **Ship feature** — the feature slug matching `.planning/features/{slug}` (or `.planning/archive/{slug}`), or `—` when no Ship feature exists yet
+- **Lane** — `{branch} @ {worktree-path}` (forward slashes) while the item's feature is in flight in a worktree, `—` otherwise. Derived data written only by the PM layer from sweep results — never hand-maintained.
 
 The table header must be exactly:
 
 ```
-| Item | Status | Priority | Size | Depends on | Source | Ship feature |
+| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane |
 ```
 
 ### Detail sections
@@ -59,11 +60,11 @@ updated: "2026-08-10"
 
 Goal: Users can sign up, log in, and stay logged in across sessions.
 
-| Item | Status | Priority | Size | Depends on | Source | Ship feature |
-|------|--------|----------|------|------------|--------|--------------|
-| User model | done | P1 | M | — | 2026-07-02 — Auth owns identity | user-model |
-| Session tokens | in-progress | P1 | L | User model | session-tokens VERIFY.md L14 | session-tokens |
-| Password reset | pending | P2 | — | Session tokens | src/auth/reset.ts:41 | — |
+| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane |
+|------|--------|----------|------|------------|--------|--------------|------|
+| User model | done | P1 | M | — | 2026-07-02 — Auth owns identity | user-model | — |
+| Session tokens | in-progress | P1 | L | User model | session-tokens VERIFY.md L14 | session-tokens | feature/session-tokens @ C:/lanes/session-tokens |
+| Password reset | pending | P2 | — | Session tokens | src/auth/reset.ts:41 | — | — |
 
 #### Session tokens
 
@@ -75,10 +76,10 @@ the rotation path; the issue/verify path shipped.
 
 Goal: Paid plans with usage-based invoicing.
 
-| Item | Status | Priority | Size | Depends on | Source | Ship feature |
-|------|--------|----------|------|------------|--------|--------------|
-| Stripe integration | pending | P1 | L | Session tokens | 2026-08-01 — Billing waits for auth | — |
-| Usage metering | blocked | P2 | M | — | docs/billing-brief.md:12 | — |
+| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane |
+|------|--------|----------|------|------------|--------|--------------|------|
+| Stripe integration | pending | P1 | L | Session tokens | 2026-08-01 — Billing waits for auth | — | — |
+| Usage metering | blocked | P2 | M | — | docs/billing-brief.md:12 | — | — |
 ```
 
 ## STATUS.md
@@ -92,6 +93,7 @@ A `# {project} — Status` title, frontmatter with `updated: "{YYYY-MM-DD}"`, th
 - `## Blocked` — each blocker with its reasoning: what is blocked, on what, and what would unblock it.
 - `## Recently shipped` — with any missing verify gate called out explicitly.
 - `## Repo hygiene` — branches, worktrees, divergence from origin.
+- `## Lanes` — one line per worktree from the fleet sweep: branch, path, active feature and its stage; "single lane" when only the main worktree exists. Written by the PM from sweep results. An absent section is legacy, not damage — degrade silently.
 
 ### Complete example
 
@@ -122,6 +124,11 @@ None recorded.
 ## Repo hygiene
 
 - `main` clean, in sync with origin. No stale worktrees.
+
+## Lanes
+
+- `main` @ C:/src/acme-api — no active feature.
+- `feature/session-tokens` @ C:/lanes/session-tokens — session-tokens (built), 8/10 tasks.
 ```
 
 ## DECISIONS.md
@@ -195,18 +202,21 @@ The output must stay a single file: inline CSS only, no JavaScript required, no 
 3. **Git-neutral:** whether `.project-manager/` is committed or gitignored is the repo owner's choice — never impose it, never suggest one over the other.
 4. **Write boundary:** the PM layer writes `.project-manager/**`, `.planning/**`, `.claude/**`, and root `*.md`, and runs git (`add`, `commit`, `push`, `status`, `log`, `diff`, `worktree prune`) for the files it owns. It never edits application source and never rewrites published history (`reset --hard`, `push --force`, `rebase`). Claude Code cannot scope a subagent's writes by path, so this is discipline, not machinery — being about to edit source is the signal to hand off.
 5. **Never invent status:** any claim not verifiable from a file, a command, or git is reported as `unverified` with a named next step that would settle it.
+6. **Writer ownership:** lanes (builder sessions) write only their own worktree's `.planning/features/{slug}/`; only the PM layer writes the shared `.project-manager/` files. `pm-update.cjs` writes them via temp-then-rename, so a crashed write never leaves a partial file.
+7. **Fleet view requires gitignored state:** the cross-worktree view exists only when `.project-manager/` is gitignored — shared, untracked, one canonical copy at the main worktree root. When it is tracked, PM state is per-worktree and the PM must say it cannot aggregate rather than fake a fleet view. Rule 3 still holds: the resolver adapts to the owner's choice, never changes it.
 
 ## Backwards compatibility
 
 A v5.3.0 directory — three files (`ROADMAP.md`, `DECISIONS.md`, `dashboard.html`), a 5-column backlog table, priorities P1–P3 — stays valid and readable.
 
-- Readers key off the **table header**, never a fixed column count, so both the 5-column and 7-column shapes parse.
+- Readers key off the **table header**, never a fixed column count, so the 5-column, 7-column (`| Item | Status | Priority | Size | Depends on | Source | Ship feature |`), and 8-column shapes all parse.
+- The `Lane` column arrives only via a confirmed `/ship:pm-sync` reconcile — the same growth pattern that took v5.3.0 tables from 5 to 7 columns. A 7-column table without it stays valid indefinitely.
 - Missing `STATUS.md`, `CONVENTIONS.md`, and `decisions/` mean absent, not broken. Degrade gracefully; never report a legacy directory as damaged.
 - `/ship:pm-sync` reconcile is the only path that grows an old directory into the new shape, and it does so with the user's confirmation. Nothing auto-migrates.
 
 ## Status mapping table (reconciliation)
 
-How Ship reality maps onto a backlog item's recorded Status. `ship/pm-update.cjs` is the mechanical implementation of this table — skills invoke it (`node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" [slug ...]`) rather than re-deriving the mapping.
+How Ship reality maps onto a backlog item's recorded Status. `ship/pm-update.cjs` is the mechanical implementation of this table — skills invoke it (`node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" [slug ...]`) rather than re-deriving the mapping. When `.project-manager/` is gitignored, `pm-update.cjs` resolves it to the **main worktree root** (via `ship/resolve-state-root.cjs`) while reading feature status from the invoking worktree's `.planning/` — so a lane updates the canonical roadmap from its own local feature state.
 
 | Ship reality | Item status becomes |
 |--------------|---------------------|
