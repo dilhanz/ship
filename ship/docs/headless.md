@@ -15,7 +15,25 @@ The contract of record for `/ship:go --headless`. The go skill conforms to this 
 - **Any argument order.** `--headless`, `--auto`, and the feature name may appear in any order; flags are stripped before the feature name is resolved.
 - **`--auto` alone keeps its attended-but-hands-off meaning**: the build gate is skipped but NEEDS_INPUT is still asked interactively. Only `--headless` degrades the interactive points.
 
-## 2. Outcome vocabulary
+## 2. Run completion — the turn never ends mid-workflow
+
+`/ship:go` does its heavy work in two Workflow-engine scripts: the plan loop and the build→verify spine. **The Workflow tool does not return the workflow's result.** It launches the workflow in the background and returns a Task ID immediately; the result arrives later as a completion notification.
+
+Interactively that is correct and stays unchanged — the session outlives the turn, progress is visible in `/workflows`, and the notification lands back in the same session. Headlessly there is no session to come back to: `claude -p` exits when the model's turn ends. A turn that ends while a workflow is in flight kills or orphans it, and the run reports "the workflow is running, I'll report when it completes" as its final message — a clean exit that produced no outcome, left `CONTEXT.md` mid-flight, and can leave agent processes still writing to the worktree after the caller believes the run is over.
+
+**Rule.** Under `--headless`, go MUST NOT end its turn while a workflow it launched is still running. After every Workflow invocation it blocks on the returned Task ID:
+
+- Call `TaskOutput` with `{ task_id, block: true, timeout: 600000 }`. 600000 ms is that tool's maximum, not a tuning choice.
+- A build spine routinely runs longer than ten minutes, so a single call is not enough: **repeat** the blocking call while `<status>` is still running, up to 12 calls — a 2-hour ceiling.
+- The blocking call is also how the result arrives. On `<status>completed</status>` the reply's `<output>` carries `result` — the workflow's own return value — so go reconciles from it directly rather than waiting for a notification as well. It is a compact run summary, not an agent transcript.
+- If the completion notification already arrived inside the launching turn (short workflows do finish that fast), the result is in hand and no blocking is needed.
+- `TaskOutput` and `TaskStop` are deferred tools in some harness builds. Load them with `ToolSearch` (`select:TaskOutput,TaskStop`) before the first call.
+
+**On exceeding the ceiling**, call `TaskStop` on the Task ID *before* terminating, then terminate as `error` with a detail naming the cap. Terminating without stopping the task recreates the orphan this rule exists to prevent.
+
+This changes only *when* the final message is produced. The outcome vocabulary, `OUTCOME.json`, and the fenced block are identical, so no caller needs to change to benefit from it.
+
+## 3. Outcome vocabulary
 
 Every headless run terminates with exactly one of these 11 outcomes. Build-stop cases stay distinct (not collapsed into `blocked`) so callers can distinguish "needs a human answer" from "needs smaller tasks".
 
@@ -33,7 +51,7 @@ Every headless run terminates with exactly one of these 11 outcomes. Build-stop 
 | `checkpoint` | Builder hit an architectural conflict or persistent verification failure. | `building` |
 | `error` | Unrecoverable skill-level failure: workflow crash, unresolvable feature name, or a null verdict with nothing stopped. | unchanged |
 
-## 3. OUTCOME.json
+## 4. OUTCOME.json
 
 **Path:** `.planning/features/{name}/OUTCOME.json`
 
@@ -68,7 +86,7 @@ Example:
 }
 ```
 
-## 4. Fenced outcome block
+## 5. Fenced outcome block
 
 The run's final message ends with a fenced block tagged `ship_outcome` whose body is the exact OUTCOME.json content. The channel is dual on purpose: the file survives output truncation; the block is convenient for `claude -p` callers reading the transcript. Both carry the same JSON, so consumers parse one shape.
 
@@ -88,7 +106,7 @@ Example (the run's last output):
 ```
 ````
 
-## 5. QUESTIONS.md
+## 6. QUESTIONS.md
 
 **Path:** `.planning/features/{name}/QUESTIONS.md`
 
@@ -146,7 +164,7 @@ Options:
 ```
 ```
 
-## 6. Answer round-trip
+## 7. Answer round-trip
 
 The caller (or a human) fills each `**Answer:**` line and re-invokes `/ship:go --headless {name}`. Go checks for the file **before** running the plan loop:
 
@@ -156,12 +174,12 @@ The caller (or a human) fills each `**Answer:**` line and re-invokes `/ship:go -
 
 **Cap:** answered-file resumes count against the existing 2-re-invocation cap. A 3rd NEEDS_INPUT terminates as `needs-input` with a cap-reached `detail` ("re-invocation cap reached — escalate to a human"); the new QUESTIONS.md is still written so the questions are not lost. The caller escalates to a human.
 
-## 7. Never-headless actions
+## 8. Never-headless actions
 
 - **`/ship:finish` is never invoked.** Routing on status `done` reports a `done` outcome instead of finishing; after a passing verify, the post-verify finish offer is suppressed and the run terminates as `done` with a `detail` noting `/ship:finish` is the manual next step. PR/merge is outward-facing and stays human-gated.
 - **Verify FAIL terminates as `verify-fail`.** Fix tasks are already in PLAN.md; go never auto-retries a FAIL — the caller owns the retry decision.
 
-## 8. Compatibility
+## 9. Compatibility
 
 - Interactive (non-headless) runs never write OUTCOME.json or QUESTIONS.md — behavior without `--headless` is byte-identical to a Ship without this contract.
 - Callers' prompt-level contracts (e.g. solo-core's wrapper-prompt park instructions) remain the fallback for older Ship versions; this contract supersedes them when present. Ship-side changes must not require a lockstep caller release.
