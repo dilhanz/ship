@@ -17,7 +17,7 @@ Run project-level work against the project-manager state in `.project-manager/`.
 ## Route on $ARGUMENTS
 
 3. Parse the first token:
-   - `status`, `groom`, `check`, `handover` → the matching verb. `check` takes a feature slug; if the slug is missing, list the candidate features from `.planning/features/` and `.planning/archive/` and ask which one. This is the one place `/ship:pm` stops for input.
+   - `status`, `groom`, `check`, `apply`, `handover` → the matching verb. `check` takes a feature slug; if the slug is missing, list the candidate features from `.planning/features/` and `.planning/archive/` and ask which one. This is the one place `/ship:pm` stops for input. `apply` takes an optional feature slug; with none, it applies every pending handoff.
    - Empty → the **bare brief** below.
    - Anything else → treat the whole argument string as a free-text project question.
 
@@ -31,6 +31,8 @@ Run project-level work against the project-manager state in `.project-manager/`.
 
    > **check {feature}** — Audit whether the feature is genuinely done. One `- [PROVEN|UNPROVEN] {criterion} — {evidence}` line per acceptance criterion, evidence being a named artifact. File every unproven criterion into ROADMAP.md as verification debt at P0 (live/customer-facing risk) or P1. End with a one-line verdict.
 
+   > **apply** — Perform the pending PM handoffs: shared `.project-manager/` edits raised by lanes that no lane may write. Take them from the fleet sweep's `pendingHandoffs`, apply each with PM judgment (the proposed content is a proposal, not a patch), stamp `applied: yes` on the handoff, and record the application in DECISIONS.md. Report each edit made and each handoff you could not reach.
+
    > **handover** — Update STATUS.md to the true state, record decisions in DECISIONS.md, make atomic tracking commits, push, prune stale worktrees, and write a handover a fresh session could start cold from.
 
 ## Bare brief (no arguments)
@@ -39,6 +41,7 @@ Run project-level work against the project-manager state in `.project-manager/`.
    - Each milestone with progress (done/total items) and status
    - Current blockers, with their reasoning from STATUS.md where recorded
    - **Lanes** — per-lane branch, active feature, and stage from the fleet sweep (`node "${CLAUDE_PLUGIN_ROOT}/ship/lane-sweep.cjs"`), plus a collision warning for every `overlaps` entry (two lanes' in-flight plans naming the same file). When `.project-manager/` is tracked (not gitignored), the agent skips the sweep and says fleet aggregation is unavailable — per-worktree state only.
+   - **Pending PM handoffs** — one line per `pendingHandoffs` entry from the same sweep: feature, lane, and how many edits wait. This is work only this layer can do, so it belongs in every brief until it is applied. End the section with `/ship:pm apply` when any are pending.
    - Top 1–3 priorities
    - A single "work on next" recommendation with its Ship command, taken from `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next`
 
