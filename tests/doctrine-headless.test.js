@@ -144,3 +144,105 @@ describe('headless doctrine — interactive behavior unchanged', () => {
       'doc section 8 must state interactive runs write neither file');
   });
 });
+
+/**
+ * The workflow wait rule. The Workflow tool launches in the background and
+ * returns a Task ID, not a result — so a headless turn that ends right after
+ * invoking it exits having reconciled nothing, whatever the workflow later
+ * does. These assertions pin the mechanism (blocking call, its maximum
+ * timeout, repetition, the TaskStop-before-terminate ordering) rather than the
+ * prose around it, and pin that the rule stays scoped to --headless.
+ */
+describe('headless doctrine — the turn never ends mid-workflow', () => {
+  it('go declares TaskOutput and TaskStop in allowed-tools', () => {
+    const fm = readSrc('skills/go/SKILL.md').split('---')[1];
+    assert.ok(/allowed-tools:.*\bTaskOutput\b/.test(fm),
+      'the skill cannot block on a workflow without TaskOutput in allowed-tools');
+    assert.ok(/allowed-tools:.*\bTaskStop\b/.test(fm),
+      'the wait-cap path calls TaskStop, so it must be in allowed-tools');
+  });
+
+  it('go names the wait rule and states the tool returns a Task ID, not a result', () => {
+    const go = readSrc('skills/go/SKILL.md');
+    assert.ok(go.includes('### Headless workflow wait'),
+      'the wait rule must be a findable named section');
+    assert.ok(go.includes('does not return the workflow’s result')
+      || go.includes("does not return the workflow's result"),
+      'the rule must state that Workflow does not return the result');
+    assert.ok(/Task ID/.test(go), 'the rule must name the Task ID as what comes back');
+  });
+
+  it('go blocks with TaskOutput at the tool maximum timeout', () => {
+    const go = readSrc('skills/go/SKILL.md');
+    assert.ok(/TaskOutput/.test(go), 'the blocking primitive is TaskOutput');
+    assert.ok(/block:\s*true/.test(go), 'the call must block');
+    assert.ok(/600000/.test(go), '600000ms is the documented maximum for one TaskOutput call');
+  });
+
+  it('go repeats the blocking call rather than trusting a single 10-minute wait', () => {
+    const go = readSrc('skills/go/SKILL.md');
+    assert.ok(/while the status is still running, repeat step 3/.test(go),
+      'a build spine outlasts one TaskOutput call, so the rule must repeat it');
+    assert.ok(/12\*{0,2} calls/.test(go), 'the repetition must be bounded at 12 calls');
+    assert.ok(/2-hour ceiling/.test(go), 'the bound must be stated as a 2-hour ceiling');
+  });
+
+  it('go reconciles from the blocking call rather than waiting for a notification too', () => {
+    const go = readSrc('skills/go/SKILL.md');
+    assert.ok(/`<status>`/.test(go), 'the loop condition is the reply status');
+    assert.ok(/`<output>` carries `result`/.test(go),
+      'the blocking reply carries the workflow return value; go must know to read it');
+    assert.ok(/do not wait for a separate notification/.test(go),
+      'waiting for a notification on top of a completed TaskOutput would re-strand the turn');
+  });
+
+  it('go loads the deferred TaskOutput/TaskStop schemas before calling them', () => {
+    assert.ok(readSrc('skills/go/SKILL.md').includes('select:TaskOutput,TaskStop'),
+      'both tools may be deferred; the rule must say how to load them');
+  });
+
+  it('go stops the task before terminating on the wait ceiling', () => {
+    const go = readSrc('skills/go/SKILL.md');
+    assert.ok(/TaskStop[^.]*\*\*before\*\* terminating/.test(go),
+      'terminating without TaskStop recreates the orphan the rule exists to prevent');
+    assert.ok(go.includes('workflow exceeded the 2-hour headless wait cap'),
+      'the cap must terminate with a specific, caller-readable detail string');
+  });
+
+  it('the wait ceiling reuses the existing error outcome rather than adding a 12th word', () => {
+    const go = readSrc('skills/go/SKILL.md');
+    assert.ok(/2-hour wait ceiling \| `error`/.test(go),
+      'the cap maps to `error`; a new outcome word would force a lockstep caller release');
+  });
+
+  it('both Workflow invocation sites point at the wait rule', () => {
+    const go = readSrc('skills/go/SKILL.md');
+    const pointers = go.match(/see \*\*Headless workflow wait\*\* above/g) || [];
+    assert.equal(pointers.length, 2,
+      'section 2a (plan loop) and section 5 (build spine) must each point at the rule');
+  });
+
+  it('the rule is scoped to --headless so interactive runs still return promptly', () => {
+    const go = readSrc('skills/go/SKILL.md');
+    assert.ok(go.includes('Interactively that is fine and **must not change**'),
+      'the rule must protect the interactive path explicitly');
+    assert.ok(/Blocking an interactive run for the length of a build would be a worse bug/.test(go),
+      'the reason interactive must not block belongs in the doctrine, not just the commit');
+    const pointerLines = go.split('\n').filter((l) => l.includes('Headless workflow wait** above'));
+    for (const line of pointerLines) {
+      assert.ok(line.includes('--headless'),
+        `each pointer must be conditioned on --headless: ${line}`);
+    }
+  });
+
+  it('the contract doc carries the completion rule', () => {
+    const doc = readSrc('ship/docs/headless.md');
+    assert.ok(/##\s*2\.\s*Run completion/.test(doc),
+      'the contract of record must document run completion');
+    assert.ok(doc.includes('TaskOutput') && doc.includes('600000'),
+      'the doc must specify the blocking call and its maximum timeout');
+    assert.ok(doc.includes('TaskStop'), 'the doc must specify stopping the task at the ceiling');
+    assert.ok(/no caller needs to change/.test(doc),
+      'the doc must state the result shape is unchanged for callers');
+  });
+});
