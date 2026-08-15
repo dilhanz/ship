@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Ship PM fleet sweep — enumerates git worktrees (lanes), scans each lane's
 // .planning/features/ for active features, extracts every in-flight PLAN.md's
-// <files> claims, and reports cross-lane file overlaps. The ship-pm agent
-// consumes the CLI's single JSON document: `node lane-sweep.cjs` prints
-// { lanes, overlaps } to stdout.
+// <files> claims, reports cross-lane file overlaps, and collects pending PM
+// handoffs (shared .project-manager/ edits a lane could not make). The ship-pm
+// agent consumes the CLI's single JSON document: `node lane-sweep.cjs` prints
+// { lanes, overlaps, pendingHandoffs } to stdout.
 //
 // Zero dependencies. The pure functions (parseWorktrees, planFiles,
-// findOverlaps) are exported for fixture tests; sweep(cwd) never throws —
-// git failure degrades to { lanes: [], overlaps: [], error }.
+// parseHandoff, laneHandoffs, findOverlaps) are exported for fixture tests;
+// sweep(cwd) never throws — git failure degrades to
+// { lanes: [], overlaps: [], pendingHandoffs: [], error }.
 
 const fs = require('fs');
 const path = require('path');
@@ -87,6 +89,96 @@ function planFiles(planContent) {
 }
 
 /**
+ * Parse a PM-HANDOFF.md into a record, or null when it is not one.
+ *
+ * A handoff is identified by its frontmatter, not its path — `feature` and
+ * `applied` are the required keys. `applied` is truthy only for the exact
+ * value `yes`; anything else (including a missing key) counts as pending, so
+ * a malformed stamp is never mistaken for applied work.
+ *
+ * @param {string} content
+ * @returns {{ feature: string, applied: boolean, raised: string|null,
+ *             lane: string|null, head: string|null, summaries: string[] }|null}
+ */
+function parseHandoff(content) {
+  const match = String(content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return null;
+
+  const field = (name) => {
+    const m = match[1].match(new RegExp(`^${name}:\\s*(.*)$`, 'm'));
+    return m ? m[1].trim().replace(/^["']|["']$/g, '') : null;
+  };
+
+  const feature = field('feature');
+  if (!feature) return null;
+
+  // Each requested edit is a `### {n}. {summary}` heading in the body.
+  const summaries = [];
+  for (const line of String(content).split(/\r?\n/)) {
+    const heading = line.match(/^###\s+\d+\.\s+(.*)$/);
+    if (heading) summaries.push(heading[1].trim());
+  }
+
+  return {
+    feature,
+    applied: field('applied') === 'yes',
+    raised: field('raised'),
+    lane: field('lane'),
+    head: field('head'),
+    summaries
+  };
+}
+
+/**
+ * Every PM handoff recorded in one lane, from both `.planning/features/` and
+ * `.planning/archive/`.
+ *
+ * This deliberately does not go through `scanFeatures`: that helper drops
+ * features with status `done`, and a deferred feature is `done` by design —
+ * its code work finished and only the PM-layer edits remain. Keying off it
+ * would hide exactly the handoffs this exists to surface.
+ *
+ * @param {string} lanePath
+ * @returns {{ feature: string, path: string, archived: boolean, applied: boolean,
+ *             raised: string|null, summaries: string[] }[]}
+ */
+function laneHandoffs(lanePath) {
+  const handoffs = [];
+
+  for (const [dir, archived] of [['features', false], ['archive', true]]) {
+    const base = path.join(lanePath, '.planning', dir);
+    let entries = [];
+    try {
+      entries = fs.readdirSync(base, { withFileTypes: true });
+    } catch (e) {
+      continue; // absent tree — nothing to report, never an error
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const file = path.join(base, entry.name, 'PM-HANDOFF.md');
+      let parsed = null;
+      try {
+        if (fs.existsSync(file)) parsed = parseHandoff(fs.readFileSync(file, 'utf8'));
+      } catch (e) {
+        parsed = null; // unreadable handoff degrades to absent
+      }
+      if (!parsed) continue;
+      handoffs.push({
+        feature: parsed.feature,
+        path: toForwardSlashes(file),
+        archived,
+        applied: parsed.applied,
+        raised: parsed.raised,
+        summaries: parsed.summaries
+      });
+    }
+  }
+
+  return handoffs;
+}
+
+/**
  * Find files claimed by in-flight features in two or more distinct lanes.
  * Path comparison is case-insensitive with normalized slashes (Windows);
  * features with status `done` claim nothing, and two features sharing a file
@@ -129,17 +221,22 @@ function findOverlaps(lanes) {
  * Never throws — git failure or a non-repo degrades to an empty sweep with
  * an `error` field the PM agent reports.
  *
+ * Pending PM handoffs are collected across every lane into `pendingHandoffs`
+ * — deferred PM-layer edits no lane may perform (see parseHandoff).
+ *
  * @param {string} cwd
  * @returns {{ lanes: { path: string, branch: string|null, isMain: boolean,
  *             features: { name: string, status: string, currentPhase: string|null,
- *                         tasks: object|null, files: string[] }[] }[],
- *             overlaps: ReturnType<typeof findOverlaps>, error?: string }}
+ *                         tasks: object|null, files: string[] }[],
+ *             handoffs: ReturnType<typeof laneHandoffs> }[],
+ *             overlaps: ReturnType<typeof findOverlaps>,
+ *             pendingHandoffs: object[], error?: string }}
  */
 function sweep(cwd) {
   try {
     const result = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' });
     if (!result || result.status !== 0 || !result.stdout || result.stdout.trim() === '') {
-      return { lanes: [], overlaps: [], error: 'not a git repository or git unavailable' };
+      return { lanes: [], overlaps: [], pendingHandoffs: [], error: 'not a git repository or git unavailable' };
     }
 
     const lanes = parseWorktrees(result.stdout).map(wt => {
@@ -159,16 +256,33 @@ function sweep(cwd) {
           files
         };
       });
-      return { path: wt.path, branch: wt.branch, isMain: wt.isMain, features };
+      return {
+        path: wt.path,
+        branch: wt.branch,
+        isMain: wt.isMain,
+        features,
+        handoffs: laneHandoffs(wt.path)
+      };
     });
 
-    return { lanes, overlaps: findOverlaps(lanes) };
+    // Pending PM handoffs are fleet-level, not lane-level: whichever lane
+    // raised one, only the PM layer at the main root can apply it. Hoisting
+    // them here means the PM never has to walk every lane to find them.
+    const pendingHandoffs = [];
+    for (const lane of lanes) {
+      for (const handoff of lane.handoffs) {
+        if (handoff.applied) continue;
+        pendingHandoffs.push({ ...handoff, lane: lane.path, branch: lane.branch, isMain: lane.isMain });
+      }
+    }
+
+    return { lanes, overlaps: findOverlaps(lanes), pendingHandoffs };
   } catch (e) {
-    return { lanes: [], overlaps: [], error: 'not a git repository or git unavailable' };
+    return { lanes: [], overlaps: [], pendingHandoffs: [], error: 'not a git repository or git unavailable' };
   }
 }
 
-module.exports = { parseWorktrees, planFiles, findOverlaps, sweep };
+module.exports = { parseWorktrees, planFiles, parseHandoff, laneHandoffs, findOverlaps, sweep };
 
 if (require.main === module) {
   process.stdout.write(JSON.stringify(sweep(process.cwd())) + '\n');

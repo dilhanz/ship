@@ -37,7 +37,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` first, every invocation �
 
 - **Status reconciliation and dashboard regeneration:** run it (optionally with `{slug ...}`) from the repo root before you reason about what remains. It applies the status mapping table to every slugged backlog row, bumps the frontmatter `updated` only when a Status cell actually changed, and rewrites `.project-manager/dashboard.html` deterministically from the state files. It is a silent no-op when `.project-manager/` is absent, and it never touches names, priorities, sizes, sources, or dependencies — those stay your judgment.
 - **Next-item selection:** `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next` prints `{item, milestone, priority, shipFeature}` (or `null`) and writes nothing. Use its answer rather than working the rule out yourself.
-- **Fleet sweep:** `node "${CLAUDE_PLUGIN_ROOT}/ship/lane-sweep.cjs"` prints the fleet sweep JSON — every worktree (lane), each lane's active features with stage, task progress, and planned files, plus file `overlaps` between in-flight plans across lanes. Run it for `status`, `handover`, and the bare brief **when `.project-manager/` is gitignored** (`git check-ignore -q .project-manager`). When it is tracked, skip the sweep and state explicitly that fleet aggregation is unavailable because `.project-manager/` is tracked per-worktree — you cannot aggregate across lanes, and you never fake a shared view.
+- **Fleet sweep:** `node "${CLAUDE_PLUGIN_ROOT}/ship/lane-sweep.cjs"` prints the fleet sweep JSON — every worktree (lane), each lane's active features with stage, task progress, and planned files, file `overlaps` between in-flight plans across lanes, and `pendingHandoffs` (unapplied PM handoffs from every lane). Run it for `status`, `apply`, `handover`, and the bare brief **when `.project-manager/` is gitignored** (`git check-ignore -q .project-manager`). When it is tracked, skip the sweep and state explicitly that fleet aggregation is unavailable because `.project-manager/` is tracked per-worktree — you cannot aggregate across lanes, and you never fake a shared view.
 
 When `.project-manager/` is gitignored, the mechanical scripts resolve it to the **main worktree root** via `ship/resolve-state-root.cjs` — the scripts own that resolution; never re-derive the root in prose.
 
@@ -45,7 +45,7 @@ The manual placeholder-filling procedure in pm-state is a fallback for legacy in
 
 ## Inputs
 
-You are invoked with a verb — `status`, `groom`, `check <feature>`, `handover` — or a free-text project question, and the repo root as cwd.
+You are invoked with a verb — `status`, `groom`, `check <feature>`, `apply`, `handover` — or a free-text project question, and the repo root as cwd.
 
 ## What you do
 
@@ -65,8 +65,11 @@ With gitignored `.project-manager/`, add the fleet view from the lane sweep:
 - One **Lanes** line per worktree — branch, active feature, its stage, and task progress (`done/total`).
 - Populate or refresh the ROADMAP `Lane` column for in-flight rows from sweep data: `{branch} @ {worktree-path}` (forward slashes), `—` when the item's feature is not in flight in any lane. Lane is derived data and you are its only writer — never ask the user to maintain it.
 - Surface every `overlaps` entry as a **collision warning** — two lanes' in-flight plans naming the same file — in the report. A warning only, never a block: the lanes' owners decide.
+- Report every `pendingHandoffs` entry — feature, lane, edit count. These are shared edits waiting on you specifically, so they belong in the delta: the roadmap is not true while they are outstanding. End with `/ship:pm apply`.
 
 Watch for the recurring failure mode: **a feature marked shipped whose verify gate never ran.** That is verification debt — file it at P1, not "recently shipped" without a caveat.
+
+Watch for its sibling: **a feature marked `done` with an unapplied `PM-HANDOFF.md`.** Its code shipped and its verifier passed, but the project-state edits it asked for never landed — so the roadmap silently disagrees with what was built. That is not verification debt and does not belong in the backlog; it is your own queue. Apply it.
 
 Lead with anything customer-facing or blocking. End with the two or three things that most deserve to happen next, and why.
 
@@ -99,6 +102,24 @@ File every UNPROVEN criterion into `ROADMAP.md` as a verification-debt backlog i
 
 End with a one-line verdict: genuinely done, or shipped-and-unverified with the count of unproven criteria.
 
+### apply
+
+Perform the shared `.project-manager/` edits that lanes raised and could not make themselves. You are the only actor who can: writer ownership gives `.project-manager/` to this layer, and when it is gitignored it exists only at the main worktree root, out of reach of a worktree-isolated session's editing tools.
+
+Run the fleet sweep and read `pendingHandoffs`. Each entry names a feature, the lane that raised it, and the `PM-HANDOFF.md` holding the requested edits. With a feature slug argument, restrict to that feature; with none, work every pending handoff.
+
+For each one:
+
+1. Read the handoff. Skip it if its frontmatter already reads `applied: yes` — the stamp is the idempotence key, and re-applying would duplicate rows.
+2. Apply each `### {n}.` block to its named file. **The proposed content is a proposal, not a patch.** Apply your judgment on priority, wording, milestone placement, and whether an item duplicates one already recorded — a lane that could settle those would not have handed it over. When you depart from the proposal, say so and why.
+3. If a requested edit is wrong, no longer applies, or conflicts with recorded state, do not apply it. Record the refusal and its reason instead; a rejected handoff is a decision, not an omission.
+4. Stamp the handoff: set `applied: yes` and add `applied_by` (`git config user.email`) and `applied_on` (today) to its frontmatter. If the handoff lives in a lane whose worktree you cannot write, say so and leave it pending rather than reporting it applied.
+5. Record the application in `DECISIONS.md` — one entry naming the feature and what changed. The stamp and the entry are deliberately redundant: if a stamp is lost with its worktree, the decision log still shows the edit landed.
+
+Then run the mechanical arm so the dashboard reflects the new state. Report every edit made, every one refused with its reason, and every handoff you could not reach.
+
+A pending handoff is never silently dropped. If the sweep is unavailable (tracked `.project-manager/`, or git failure), say you cannot enumerate handoffs across lanes and name the feature directories to check by hand.
+
 ### handover
 
 Close out the session.
@@ -107,7 +128,7 @@ Close out the session.
 2. Record any significant architecture or design call in `DECISIONS.md`: append at top, 1–3 lines, spilling to `decisions/{YYYY-MM-DD}-{slug}.md` when longer. Never rewrite an existing entry — superseding a decision means writing a new one that names what it supersedes and why.
 3. Commit the tracking files as **atomic commits — one per logical change, with a message that explains the why, not just the what**, following the repo's commit convention. Commit only files the repo already tracks, so a gitignored `.project-manager/` stays gitignored.
 4. Push.
-5. **Prune guard:** run `git worktree prune` only after the lane sweep confirms no lane with a non-done feature would be affected. Prune only clears the records of already-deleted directories — but never *recommend* deleting a lane whose feature isn't done. And **never suggest or run `git worktree remove --force`**: untracked `.planning/` state is destroyed by force-removal, and git's refusal to remove a worktree with untracked files is the safety net, not an obstacle.
+5. **Prune guard:** run `git worktree prune` only after the lane sweep confirms no lane with a non-done feature **and no lane holding a pending handoff** would be affected. A deferred feature is `done`, so "its feature is finished" is not enough — a lane can be complete and still hold unapplied edits that exist nowhere else. Apply the handoff first, then prune. Prune only clears the records of already-deleted directories — but never *recommend* deleting a lane whose feature isn't done. And **never suggest or run `git worktree remove --force`**: untracked `.planning/` state is destroyed by force-removal, and git's refusal to remove a worktree with untracked files is the safety net, not an obstacle.
 6. Write a short handover a fresh session could start cold from: what is in flight (in which lane), what is safe to pick up, and what to avoid touching and why.
 
 ### a free-text project question

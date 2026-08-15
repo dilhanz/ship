@@ -204,6 +204,41 @@ The output must stay a single file: inline CSS only, no JavaScript required, no 
 5. **Never invent status:** any claim not verifiable from a file, a command, or git is reported as `unverified` with a named next step that would settle it.
 6. **Writer ownership:** lanes (builder sessions) write only their own worktree's `.planning/features/{slug}/`; only the PM layer writes the shared `.project-manager/` files. `pm-update.cjs` writes them via temp-then-rename, so a crashed write never leaves a partial file.
 7. **Fleet view requires gitignored state:** the cross-worktree view exists only when `.project-manager/` is gitignored — shared, untracked, one canonical copy at the main worktree root. When it is tracked, PM state is per-worktree and the PM must say it cannot aggregate rather than fake a fleet view. Rule 3 still holds: the resolver adapts to the owner's choice, never changes it.
+8. **Deferral, not failure:** when a lane's work requires an authored `.project-manager/` edit, it records a `PM-HANDOFF.md` (below) and the verifier marks that acceptance criterion `DEFERRED`. It is never a `FAIL` and never produces a Fix Task — no builder can clear it, so a fix round would re-run into the same wall and change nothing. `pm-update.cjs` is the exception that proves the rule: mechanical status and dashboard reconciliation runs from any lane through Node, so a criterion satisfied by running it verifies normally.
+
+## PM-HANDOFF.md
+
+`.planning/features/{slug}/PM-HANDOFF.md` — a lane's record of shared `.project-manager/` edits it may not make. It lives inside the lane's own worktree, which is the point: that path is always writable, whereas the main root's `.project-manager/` is not reachable from a worktree-isolated session.
+
+Written by the lane (verifier, or builder when it hits the wall mid-task). Applied by `/ship:pm apply` at the main worktree root — never by the lane, never by `/ship:finish`.
+
+```markdown
+---
+feature: {slug}
+lane: {branch} @ {worktree-path}
+head: {git rev-parse HEAD when raised}
+raised: {YYYY-MM-DD}
+applied: no
+---
+
+# PM Handoff — {slug}
+
+## Requested Edits
+
+### 1. {one-line summary}
+
+- **File:** .project-manager/ROADMAP.md
+- **Criterion:** {the acceptance criterion this satisfies, verbatim from CONTEXT.md}
+- **Intent:** {what must change and why}
+- **Proposed content:** {the exact row, entry, or prose where the lane can state it}
+```
+
+Rules:
+
+- **`applied` is the idempotence key.** Only the literal value `yes` counts as applied; anything else — including a missing key — is pending, so a malformed stamp never hides unapplied work.
+- **One file per feature**, appending numbered blocks. A second deferral adds `### 2.`; it never overwrites the first.
+- **Proposed content is a proposal, not a patch.** The PM applies its judgment — priority, wording, whether the row belongs in this milestone. A lane that could decide those things would not need to hand them over.
+- **The record travels with the feature directory**, so `/ship:finish`'s archive move carries it to the main root at no extra cost. An unfinished lane keeps its handoff, which is why the fleet sweep reports `pendingHandoffs` across every lane.
 
 ## Backwards compatibility
 

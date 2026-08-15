@@ -19,7 +19,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const readSrc = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
 
 const OUTCOMES = [
-  'done', 'needs-input', 'stuck', 'unresolved', 'blocked',
+  'done', 'deferred', 'needs-input', 'stuck', 'unresolved', 'blocked',
   'verify-fail', 'needs-context', 'exhausted', 'checkpoint', 'error',
 ];
 
@@ -53,7 +53,7 @@ describe('headless doctrine — contract doc exists and is referenced', () => {
       'the go skill must point at ship/docs/headless.md');
   });
 
-  it('doc carries all 10 outcome words', () => {
+  it('doc carries all 11 outcome words', () => {
     const doc = readSrc('ship/docs/headless.md');
     for (const word of OUTCOMES) {
       assert.ok(doc.includes('`' + word + '`'), `doc must define the \`${word}\` outcome`);

@@ -1,5 +1,26 @@
 # Changelog
 
+## 5.9.0
+
+Minor release — a lane can now finish work that requires shared project-manager edits it is structurally forbidden to make, instead of failing on it forever.
+
+### Added
+
+- **Deferred-to-PM outcome**: an acceptance criterion whose target is an authored `.project-manager/` file could not be satisfied by the lane that owned the feature, and nothing in Ship could say so. Two independent facts made the write impossible — writer ownership (pm-state rule 6) gives shared state to the PM layer, and a gitignored `.project-manager/` exists only at the main worktree root, outside a worktree-isolated session's Write/Edit scope — so the verifier's only available verdict was `FAIL`, which appended Fix Tasks and sent the feature back for a build round that re-ran a builder into the same wall. `ship-verifier` gains a fourth per-criterion verdict, **`DEFERRED`**, with a deliberately narrow trigger (the criterion's *target* is a `.project-manager/` file) and an explicit carve-out for `ship/pm-update.cjs`, whose mechanical status and dashboard reconciliation reaches the main root through Node from any lane. It never writes a Fix Task, leaves CONTEXT.md `status: done`, and ranks below `INCONCLUSIVE` in the overall precedence — an unprovable criterion is a hole in the evidence, a deferred one is understood work with a named owner, so the weaker guarantee reports first. The lane records the requested edits in `.planning/features/{slug}/PM-HANDOFF.md`, inside its own worktree and therefore always writable; a deferral without that record is a dropped criterion, and both the agent and the VERIFY.md template say so. `pm-state` gains hard rule 8 and the PM-HANDOFF.md format, with `applied: yes` as the idempotence key — only that literal value counts, so a malformed stamp never hides unapplied work.
+- **`/ship:pm apply`**: a new verb on `/ship:pm` and the `ship-pm` agent that performs pending handoffs at the main worktree root — the one place the edits are both permitted and reachable. Proposed content is treated as a proposal, not a patch: the PM applies its own judgment on priority, wording, and milestone placement, and records a refusal with its reason rather than silently skipping. Each application stamps the handoff and writes a `DECISIONS.md` entry; the redundancy is deliberate, so an edit is still traceable if a stamp is lost with its worktree.
+- **`pendingHandoffs` in the fleet sweep**: `ship/lane-sweep.cjs` now parses every lane's `PM-HANDOFF.md` from both `.planning/features/` and `.planning/archive/`, and hoists the unapplied ones to a top-level `pendingHandoffs` list. Discovery deliberately bypasses `scanFeatures`, which drops features with status `done` — and a deferred feature *is* `done`, so keying off the feature scan would have hidden precisely the case the list exists to surface. `/ship:pm status` and the bare brief report pending handoffs as part of the delta: the roadmap is not true while they are outstanding.
+- **`deferred` headless outcome**: the headless vocabulary grows from 10 words to 11. A `DEFERRED` verdict terminates as `deferred`, never `done`, with an optional `handoff_file` field pointing at the record — a fleet runner that read `done` would archive the lane and let the handoff rot. `ship/docs/headless.md` documents both.
+
+### Changed
+
+- **`ship-builder` defers rather than fights**: a task whose `<files>` name `.project-manager/` state is no longer retried, routed around with a shell command, or debugged as a Rule 2 verify failure for three attempts. The builder appends the request to `PM-HANDOFF.md`, reports it as a concern, and moves on — the wall is structural, and three more attempts hit the same one.
+- **`/ship:finish` carries the handoff without applying it**: the archive move already relocates the whole feature directory to the main worktree root, so the record arrives there at no extra cost. Finish surfaces an unapplied handoff in its report and names `/ship:pm apply`; it holds no Write or Edit tool, so it structurally cannot apply one itself. Option 3 (keep as-is) now warns that the handoff is still sitting in the lane.
+- **The handover prune guard covers pending handoffs**: the guard checked whether a lane's feature was done — but a deferred feature is `done`, so a lane could be complete and still hold unapplied edits that exist nowhere else. `git worktree prune` now waits on the handoff as well as the feature.
+
+### Fixed
+
+- **A headless doctrine test asserted a count it never checked**: `doctrine-headless.test.js` iterated a hardcoded outcome list while its name claimed full coverage, so a newly documented outcome would pass unverified. The list is now the assertion's actual subject.
+
 ## 5.8.0
 
 Minor release — the PM layer aggregates state across parallel worktree lanes, and `/ship:go` gains a headless mode for unattended runs.
