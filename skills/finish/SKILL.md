@@ -144,7 +144,15 @@ Then run pm-update **from the main root** so its archive check sees the moved di
 cd "$MAIN_ROOT" && node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {feature-name}
 ```
 
-This syncs PM state (silent no-op when `.project-manager/` is absent — pm-update finds the main root's `.project-manager/` itself via the resolver) — archive presence at the main root is what maps the roadmap row to `done`.
+This syncs PM state (silent no-op when `.project-manager/` is absent — pm-update finds the main root's `.project-manager/` itself via the resolver) — archive presence at the main root is what maps the roadmap row to `done`. It is mechanical only: status cells and the dashboard. Authored `.project-manager/` edits are never applied here.
+
+## Carry the PM Handoff
+
+Check for `PM-HANDOFF.md` in the feature directory — at its archived location after Option 1 or 2, or in place under `.planning/features/{name}/` after Option 3.
+
+The archive `mv` above moves the whole feature directory, so on Options 1 and 2 the handoff reaches the main worktree root with the rest of the record and needs no separate step. Do not attempt to apply it: the edits belong to the PM layer, and this skill has no Write or Edit tool by design.
+
+If the handoff exists and its frontmatter reads `applied: no`, surface it in the report below. On Option 3 (keep as-is), say explicitly that the handoff is still sitting in this worktree — if the lane is later removed without finishing, an unapplied handoff goes with it.
 
 ## Report
 
@@ -156,6 +164,7 @@ Action: {PR created / Merged to main / Kept as-is}
 {If PR:} PR: {url}
 {If merged:} Branch merged and tests passing
 Archived: .planning/archive/{name}
+{If an unapplied PM-HANDOFF.md exists:} PM handoff pending: {N} shared .project-manager/ edit(s) at {path} — run /ship:pm apply
 ```
 
 $ARGUMENTS

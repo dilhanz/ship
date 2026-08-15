@@ -39,7 +39,9 @@ critical/high one is a FAIL.
 
 ## Sync PM State
 
-The verifier sets CONTEXT.md status (`done` on PASS, `plan-verified` on FAIL). After it returns, run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent).
+The verifier sets CONTEXT.md status (`done` on PASS/INCONCLUSIVE/DEFERRED, `plan-verified` on FAIL). After it returns, run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent).
+
+This is mechanical reconciliation only — status cells and the dashboard, which the script performs from any lane. It never applies a PM handoff: authored `.project-manager/` edits belong to `/ship:pm apply`.
 
 ## Display Results
 
@@ -51,7 +53,7 @@ Extract the `verify_result` JSON block from the agent's output and read `.planni
 Feature: {result.feature}
 Status: {result.status}
 
-Criteria: {result.criteria_passed} / {result.criteria_total} passed ({result.criteria_inconclusive} inconclusive)
+Criteria: {result.criteria_passed} / {result.criteria_total} passed ({result.criteria_inconclusive} inconclusive, {result.criteria_deferred} deferred to PM)
 Tests: {result.tests_written} written, {result.tests_passed} passed
 Bugs: {by severity from result.bugs}
 Anti-patterns: {result.anti_patterns} found
@@ -60,8 +62,13 @@ Anti-patterns: {result.anti_patterns} found
 Gaps:
 - {each item from result.gaps}
 
-[If result.status is "PASS" or "INCONCLUSIVE":] Next: /ship:finish
+[If result.pm_handoff is non-null:]
+PM handoff: {result.pm_handoff.edits} shared .project-manager/ edit(s) recorded in {result.pm_handoff.path} — apply with /ship:pm apply
+
+[If result.status is "PASS", "INCONCLUSIVE", or "DEFERRED":] Next: /ship:finish
 [If result.status is "FAIL":] Next: /ship:build (fix tasks added to PLAN.md)
 ```
+
+A DEFERRED verdict is not a failure and must not be reported as one. The code work is complete; what remains is PM-layer work with a written owner. If `result.criteria_deferred` is non-zero but `result.pm_handoff` is null, say so — a deferral with no record is a dropped criterion.
 
 $ARGUMENTS

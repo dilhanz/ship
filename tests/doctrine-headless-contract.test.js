@@ -21,7 +21,7 @@ const doc = readSrc('ship/docs/headless.md');
 const go = readSrc('skills/go/SKILL.md');
 
 const OUTCOMES = [
-  'done', 'needs-input', 'stuck', 'unresolved', 'blocked',
+  'done', 'deferred', 'needs-input', 'stuck', 'unresolved', 'blocked',
   'verify-fail', 'needs-context', 'exhausted', 'checkpoint', 'error',
 ];
 const REQUIRED_FIELDS = ['schema_version', 'feature', 'outcome', 'status', 'timestamp', 'head', 'detail'];
@@ -37,7 +37,7 @@ describe('headless contract — OUTCOME.json example is schema-valid', () => {
       assert.ok(f in example, `example must carry required field ${f}`);
     }
     assert.equal(example.schema_version, 1, 'schema_version is the integer 1');
-    assert.ok(OUTCOMES.includes(example.outcome), 'outcome must be one of the 10 words');
+    assert.ok(OUTCOMES.includes(example.outcome), 'outcome must be one of the 11 words');
     assert.ok(!Number.isNaN(Date.parse(example.timestamp)), 'timestamp must be parseable ISO 8601');
     assert.match(example.head, /^[0-9a-f]{40}$/, 'head is a full git SHA');
   });
@@ -90,7 +90,7 @@ describe('headless contract — QUESTIONS.md embedded needs_input example', () =
 });
 
 describe('headless contract — doc and skill agree on contract-bearing strings', () => {
-  it('the doc outcome table lists all 10 outcomes as rows', () => {
+  it('the doc outcome table lists all 11 outcomes as rows', () => {
     for (const word of OUTCOMES) {
       assert.match(doc, new RegExp('^\\| `' + word + '` \\|', 'm'), `outcome table must row \`${word}\``);
     }

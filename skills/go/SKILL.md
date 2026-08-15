@@ -125,7 +125,9 @@ From the returned result:
 
    The workflow already handed those findings to the verifier in its prompt, as mandatory Stage 2b targets — REVIEW.md is written here, *after* the workflow returns, so on this path the verifier could not have read them off disk. That ordering is why the handoff lives in the prompt. When a `verdict` is present, cross-check it: an unresolved critical/high finding should appear in VERIFY.md's Carried Review Findings table as reproduced, not reproduced, or not testable. If the table is missing or does not account for one, say so in the report — the backstop did not close.
 5. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, or `EXHAUSTED`): leave CONTEXT.md `status: building` and report the blocker, including `stoppedAt.build.commits` — a stopped phase is usually partially built, and those commits are real. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run). For `EXHAUSTED`, the phase outlived several builders without finishing: report `tasks_completed / tasks_total`, and suggest `/ship:build {name}` to continue or `/ship:plan {name}` to split the remaining tasks into smaller ones.
-6. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE, `plan-verified` + fix tasks on FAIL). Report it.
+6. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE/DEFERRED, `plan-verified` + fix tasks on FAIL). Report it.
+
+   A `DEFERRED` verdict means one or more acceptance criteria target shared `.project-manager/` state, which no lane may write — the requested edits are recorded in `verdict.pm_handoff`. Report it as a completed build with pending PM work, never as a failure, and never re-run the workflow to "fix" it: no builder can clear a deferral, so a retry would spend a full build→verify cycle to arrive back here unchanged. If `verdict.criteria_deferred` is non-zero but `verdict.pm_handoff` is null, say so — the deferral went unrecorded.
 7. **If `verdict` is null and nothing stopped:** all phases built but the verifier produced no result (it crashed or was skipped — the workflow retries once, then degrades to null). Set CONTEXT.md `status: built`, check `git log` to confirm the build commits landed, and tell the user to run `/ship:verify {name}` manually.
 8. Whatever the outcome, run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` once here to sync PM state against the settled CONTEXT.md status (silent no-op when `.project-manager/` is absent) — this covers the status the verifier set inside the workflow.
 
@@ -135,7 +137,7 @@ From the returned result:
 Feature: {name}
 Final status: {status}
 Phases built: {N} / {total}   Review fixes applied: {count}
-Verify: {PASS | FAIL | INCONCLUSIVE — criteria_passed/criteria_total, bugs by severity}
+Verify: {PASS | FAIL | INCONCLUSIVE | DEFERRED — criteria_passed/criteria_total, bugs by severity}
 
 [If any unresolved review findings:] Unresolved review findings (marked done anyway, one fix round only — handed to the verifier as mandatory targets):
 - {phase id}: [{severity}] {file} — {description} → {verifier outcome from VERIFY.md, or "not accounted for in VERIFY.md"}
@@ -143,7 +145,9 @@ Verify: {PASS | FAIL | INCONCLUSIVE — criteria_passed/criteria_total, bugs by 
 - {phase id}: {concern}
 [If any phase has an empty verifyRuns and empty filesReviewed:] Unsubstantiated review verdicts: phase {id} approved with no verify re-runs and no files reviewed.
 
-[If verdict PASS/INCONCLUSIVE:] Ready to finish — run /ship:finish (or I can run it now).
+[If verdict DEFERRED:] Deferred to the PM layer ({verdict.criteria_deferred} criteria): {verdict.pm_handoff.edits} shared .project-manager/ edit(s) recorded in {verdict.pm_handoff.path}. No lane can apply these — run /ship:pm apply from the main worktree.
+
+[If verdict PASS/INCONCLUSIVE/DEFERRED:] Ready to finish — run /ship:finish (or I can run it now).
 [If FAIL:] Fix tasks were appended to PLAN.md as a pending fix phase. Review them, then /ship:go to continue (or /ship:build for manual control).
 [If stoppedAt:] Stopped at phase {id}. Reason: {status}{, tasks_completed/tasks_total if EXHAUSTED}. Commits landed: {stoppedAt.build.commits}. Next: {suggested action}.
 [If any phase has builderRounds > 1:] Note: phase {id} needed {builderRounds} builder rounds (tasks are large enough to outlive one turn budget).
@@ -153,7 +157,7 @@ Under `--headless`, the fenced `ship_outcome` block (headless termination rule b
 
 ### Headless termination (every terminal path)
 
-Under `--headless`, EVERY terminal path in this skill — the resolution/`done` routing in sections 1–2, the plan-loop terminals in 2a, build stops, verify verdicts, and errors — ends the same way. As the run's LAST act, write `.planning/features/{name}/OUTCOME.json` per the schema in `ship/docs/headless.md`: `schema_version: 1`, `feature`, `outcome` (from the table below), `status` (the settled CONTEXT.md status), `timestamp` (ISO 8601 UTC), `head` (`git rev-parse HEAD` at write time), `detail` (one-line human note), plus `questions_file` on `needs-input`. Then end the final message with a fenced block tagged `ship_outcome` containing the exact same JSON. Interactive runs never write this file.
+Under `--headless`, EVERY terminal path in this skill — the resolution/`done` routing in sections 1–2, the plan-loop terminals in 2a, build stops, verify verdicts, and errors — ends the same way. As the run's LAST act, write `.planning/features/{name}/OUTCOME.json` per the schema in `ship/docs/headless.md`: `schema_version: 1`, `feature`, `outcome` (from the table below), `status` (the settled CONTEXT.md status), `timestamp` (ISO 8601 UTC), `head` (`git rev-parse HEAD` at write time), `detail` (one-line human note), plus `questions_file` on `needs-input` and `handoff_file` on `deferred`. Then end the final message with a fenced block tagged `ship_outcome` containing the exact same JSON. Interactive runs never write this file.
 
 | Terminal | Outcome |
 |----------|---------|
@@ -166,14 +170,15 @@ Under `--headless`, EVERY terminal path in this skill — the resolution/`done` 
 | Build `stoppedAt` EXHAUSTED | `exhausted` |
 | Build `stoppedAt` CHECKPOINT | `checkpoint` |
 | Verdict PASS / INCONCLUSIVE | `done` |
+| Verdict DEFERRED | `deferred` — build complete, shared `.project-manager/` edits pending; set `handoff_file` to the PM-HANDOFF.md path and name `/ship:pm apply` in `detail`. Never `done`: a caller that reads `done` archives the lane and the handoff rots |
 | Verdict FAIL | `verify-fail` — fix tasks are already in PLAN.md; go never auto-retries, the caller decides |
 | Null verdict, nothing stopped | `error` — detail names the manual `/ship:verify {name}` follow-up |
 | Unrecoverable skill-level failure (workflow crash, unresolvable feature) | `error` |
 
 ## 7. Finish (interactive)
 
-If the verdict is PASS or INCONCLUSIVE, offer to run `/ship:finish` (PR/merge/keep is outward-facing — confirm before acting). Do not finish automatically without the user's go-ahead.
+If the verdict is PASS, INCONCLUSIVE, or DEFERRED, offer to run `/ship:finish` (PR/merge/keep is outward-facing — confirm before acting). Do not finish automatically without the user's go-ahead.
 
-Under `--headless`, skip this section entirely: PASS/INCONCLUSIVE terminates as `done` with the finish offer suppressed — PR/merge stays human-gated, and the `detail` notes `/ship:finish` is the manual next step.
+Under `--headless`, skip this section entirely: PASS/INCONCLUSIVE terminates as `done` and DEFERRED as `deferred`, with the finish offer suppressed — PR/merge stays human-gated, and the `detail` notes `/ship:finish` is the manual next step.
 
 $ARGUMENTS

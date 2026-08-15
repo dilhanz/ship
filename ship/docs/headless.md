@@ -17,11 +17,12 @@ The contract of record for `/ship:go --headless`. The go skill conforms to this 
 
 ## 2. Outcome vocabulary
 
-Every headless run terminates with exactly one of these 10 outcomes. Build-stop cases stay distinct (not collapsed into `blocked`) so callers can distinguish "needs a human answer" from "needs smaller tasks".
+Every headless run terminates with exactly one of these 11 outcomes. Build-stop cases stay distinct (not collapsed into `blocked`) so callers can distinguish "needs a human answer" from "needs smaller tasks".
 
 | Outcome | Meaning | CONTEXT.md status left behind |
 |---------|---------|-------------------------------|
 | `done` | Verify passed (PASS or INCONCLUSIVE), or the feature was already done at routing. Finish is never attempted headlessly. | `done` |
+| `deferred` | Verify returned DEFERRED — the build is complete, but one or more acceptance criteria target shared `.project-manager/` state that no lane may write. The requested edits are recorded in the feature's `PM-HANDOFF.md`; `/ship:pm apply` performs them at the main worktree root. | `done` |
 | `needs-input` | Plan loop hit NEEDS_INPUT — questions parked in QUESTIONS.md awaiting answers (or the re-invocation cap was reached). | `planned` |
 | `stuck` | Plan loop convergence guard fired — a round's CRITICAL set repeated. | `planned` |
 | `unresolved` | Plan loop exhausted its 5 rounds without approval. | `planned` |
@@ -44,12 +45,13 @@ Every headless run terminates with exactly one of these 10 outcomes. Build-stop 
 |-------|------|-------------|
 | `schema_version` | integer | Currently `1`. Callers check this before parsing the rest. |
 | `feature` | string | The feature slug. |
-| `outcome` | string | One of the 10 outcome words above. |
+| `outcome` | string | One of the 11 outcome words above. |
 | `status` | string | The settled CONTEXT.md status. |
 | `timestamp` | string | ISO 8601 UTC at write time. |
 | `head` | string | `git rev-parse HEAD` at write time. |
 | `detail` | string | One-line human note (e.g. cap-reached, criteria counts). |
 | `questions_file` | string (optional) | Present only on `needs-input`: repo-relative path to QUESTIONS.md. |
+| `handoff_file` | string (optional) | Present only on `deferred`: repo-relative path to PM-HANDOFF.md. A `deferred` outcome without it means the deferral went unrecorded — treat that as `error`, not as pending work. |
 
 Example:
 
