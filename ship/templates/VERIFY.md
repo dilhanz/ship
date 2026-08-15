@@ -3,15 +3,25 @@
 **Feature:** {feature-name}
 **Verified:** {date}
 **Head:** {git rev-parse HEAD at verification time}
-**Overall Status:** PASS | FAIL | INCONCLUSIVE
+**Overall Status:** PASS | FAIL | INCONCLUSIVE | DEFERRED
 
 ## Stage 1 — Acceptance Criteria
 
-Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runnable verify command was available; grep-only file existence does not upgrade to PASS.
+Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE, DEFERRED}. INCONCLUSIVE means no runnable verify command was available; grep-only file existence does not upgrade to PASS. DEFERRED means the criterion targets shared `.project-manager/` state, which only the PM layer may write — the requested edits are recorded in PM Handoff below.
 
 | Criterion | Verdict | Evidence |
 |-----------|---------|----------|
-| [Criterion from CONTEXT.md] | PASS / FAIL / INCONCLUSIVE | [Command run, output observed, or file path checked] |
+| [Criterion from CONTEXT.md] | PASS / FAIL / INCONCLUSIVE / DEFERRED | [Command run, output observed, or file path checked] |
+
+## PM Handoff
+
+Shared `.project-manager/` edits this feature needs and no lane may perform. Recorded in `.planning/features/{feature-name}/PM-HANDOFF.md`; applied by `/ship:pm apply` at the main worktree root.
+
+| # | Target file | Criterion | Requested edit |
+|---|-------------|-----------|----------------|
+| 1 | .project-manager/ROADMAP.md | [criterion this satisfies] | [what must change] |
+
+(If none: "None — no criterion required shared PM state." An empty table must never mean a DEFERRED criterion went unrecorded.)
 
 ## Stage 2 — Bug Hunt & Quality
 
