@@ -52,11 +52,7 @@ Route on the feature's `status` and run these inline, in order, until the featur
 
 ## 2a. Plan Loop (workflow)
 
-**Headless pre-check:** under `--headless`, before invoking the workflow, check for `.planning/features/{name}/QUESTIONS.md`:
-
-- **Present, every `**Answer:**` line non-empty** — build a Q/A transcript ("Q: {question}\nA: {answer}" per section), invoke the plan workflow with `args: { feature: "{name}", answers: "<transcript>", roundOffset: <the frontmatter roundOffset> }`, and once the workflow has been invoked rename the file to `QUESTIONS-{roundOffset}.answered.md` (the `roundOffset` from its own frontmatter — strictly increasing across re-invocations, so the archive name never collides).
-- **Present, any `**Answer:**` line still empty** — terminate immediately as `needs-input` (detail: "QUESTIONS.md awaiting answers", `questions_file` set) without re-running the loop. Re-invoking with an unanswered file is idempotent.
-- **Absent** — invoke the workflow normally.
+**Headless pre-check:** under `--headless`, before invoking the workflow, check for `.planning/features/{name}/QUESTIONS.md` and run the answer round-trip in **`ship/docs/headless.md` §7**, which is the contract for all three cases: answered → feed `answers` + `roundOffset` into the workflow and archive the file; unanswered → terminate as `needs-input` (detail: "QUESTIONS.md awaiting answers", `questions_file` set) without re-running the loop; absent → invoke normally.
 
 Invoke the Workflow tool:
 
@@ -91,8 +87,8 @@ Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ens
 - **`APPROVED`** — set CONTEXT.md `status: plan-verified`, then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent). The outcome block additionally lists the examined files and any WARNING/SUGGESTION findings. Continue to the approval gate (section 3).
 - **`NEEDS_INPUT`** — split on `--headless`:
   - **Interactive (no `--headless`)** — ask each entry in `questions` via AskUserQuestion (one question per entry, using its `options`; the automatic Other option covers anything else). Then RE-INVOKE the same workflow with `args: { feature: "{name}", answers: "<Q/A transcript>", roundOffset: <total rounds spent so far across all invocations> }` and re-branch on the new status. The `roundOffset` is what keeps the replanner's `### Round {n}` headings unique across re-invocations — without it a second run restarts at `### Round 1` and collides with the first run's subsection, which the replanner is forbidden to rewrite. Do **not** use `resumeFromRunId`. Cap this at 2 re-invocations; if a third `NEEDS_INPUT` arrives, report it and stop.
-  - **Headless** — do NOT call AskUserQuestion. Write `.planning/features/{name}/QUESTIONS.md` in the format specified in `ship/docs/headless.md`: YAML frontmatter (`feature`, `roundOffset`: total plan-loop rounds spent so far across all invocations, `created` ISO date); one `### Q{n}: {question}` section per `questions` entry with `**Why blocking:** {why_blocking}`, an `Options:` bullet list of its options, and an empty `**Answer:**` line; then the raw `needs_input` JSON array in a fenced json block. Leave CONTEXT.md at `planned` and terminate as `needs-input` with `questions_file` set.
-  - **Cap (headless)** — the 2 re-invocation cap counts answered-file resumes too (a resume exists iff the archived file's `roundOffset` > 0; the recorded rounds-spent count is checkable from the files alone). A 3rd `NEEDS_INPUT` under `--headless` terminates as `needs-input` with detail "re-invocation cap reached — escalate to a human" — and still writes the new QUESTIONS.md so the questions are not lost.
+  - **Headless** — do NOT call AskUserQuestion. Write `.planning/features/{name}/QUESTIONS.md` in the format specified in **`ship/docs/headless.md` §6**, recording `roundOffset` as the total plan-loop rounds spent so far across all invocations. Leave CONTEXT.md at `planned` and terminate as `needs-input` with `questions_file` set.
+  - **Cap (headless)** — answered-file resumes count against the same 2 re-invocation cap (**§7**). A 3rd `NEEDS_INPUT` under `--headless` terminates as `needs-input` with detail "re-invocation cap reached — escalate to a human" — and still writes the new QUESTIONS.md so the questions are not lost.
 - **`STUCK`** — leave CONTEXT.md `status: planned`. Report the surviving CRITICAL findings and the round count, tell the user to run `/ship:plan {name}`, and stop.
 - **`UNRESOLVED`** — same as `STUCK`, additionally reporting that all 5 rounds were spent. Stop.
 - **`BLOCKED`** — leave CONTEXT.md `status: planned`. Report that an agent produced no result after retry (a plan is never approved without a completed review) and that the run stopped; suggest `/ship:plan-verify {name}` to review once manually. Stop.
@@ -179,7 +175,7 @@ Under `--headless`, the fenced `ship_outcome` block (headless termination rule b
 
 ### Headless termination (every terminal path)
 
-Under `--headless`, EVERY terminal path in this skill — the resolution/`done` routing in sections 1–2, the plan-loop terminals in 2a, build stops, verify verdicts, and errors — ends the same way. As the run's LAST act, write `.planning/features/{name}/OUTCOME.json` per the schema in `ship/docs/headless.md`: `schema_version: 1`, `feature`, `outcome` (from the table below), `status` (the settled CONTEXT.md status), `timestamp` (ISO 8601 UTC), `head` (`git rev-parse HEAD` at write time), `detail` (one-line human note), plus `questions_file` on `needs-input` and `handoff_file` on `deferred`. Then end the final message with a fenced block tagged `ship_outcome` containing the exact same JSON. Interactive runs never write this file.
+Under `--headless`, EVERY terminal path in this skill — the resolution/`done` routing in sections 1–2, the plan-loop terminals in 2a, build stops, verify verdicts, and errors — ends the same way. As the run's LAST act, write `.planning/features/{name}/OUTCOME.json` per the schema in **`ship/docs/headless.md` §4**, taking `outcome` from the table below and `status` from the settled CONTEXT.md. Then end the final message with a fenced block tagged `ship_outcome` containing the exact same JSON. Interactive runs never write this file.
 
 | Terminal | Outcome |
 |----------|---------|
