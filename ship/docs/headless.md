@@ -21,15 +21,13 @@ The contract of record for `/ship:go --headless`. The go skill conforms to this 
 
 Interactively that is correct and stays unchanged — the session outlives the turn, progress is visible in `/workflows`, and the notification lands back in the same session. Headlessly there is no session to come back to: `claude -p` exits when the model's turn ends. A turn that ends while a workflow is in flight kills or orphans it, and the run reports "the workflow is running, I'll report when it completes" as its final message — a clean exit that produced no outcome, left `CONTEXT.md` mid-flight, and can leave agent processes still writing to the worktree after the caller believes the run is over.
 
-**Rule.** Under `--headless`, go MUST NOT end its turn while a workflow it launched is still running. After every Workflow invocation it blocks on the returned Task ID:
+**The guarantee.** Under `--headless`, go does not end its turn while a workflow it launched is still running. Every Workflow invocation — the plan loop and the build→verify spine alike — is awaited to a terminal state before go reconciles and reports. What a caller can rely on:
 
-- Call `TaskOutput` with `{ task_id, block: true, timeout: 600000 }`. 600000 ms is that tool's maximum, not a tuning choice.
-- A build spine routinely runs longer than ten minutes, so a single call is not enough: **repeat** the blocking call while `<status>` is still running, up to 12 calls — a 2-hour ceiling.
-- The blocking call is also how the result arrives. On `<status>completed</status>` the reply's `<output>` carries `result` — the workflow's own return value — so go reconciles from it directly rather than waiting for a notification as well. It is a compact run summary, not an agent transcript.
-- If the completion notification already arrived inside the launching turn (short workflows do finish that fast), the result is in hand and no blocking is needed.
-- `TaskOutput` and `TaskStop` are deferred tools in some harness builds. Load them with `ToolSearch` (`select:TaskOutput,TaskStop`) before the first call.
+- **A headless run that returns has finished.** Its final message reflects a terminal state, `OUTCOME.json` is on disk, and no agent process is still writing to the worktree.
+- **The ceiling is 2 hours per workflow.** On reaching it, go stops the task *first* and then terminates as `error` with a detail naming the cap. It never abandons a running task — that is precisely what leaves an orphan.
+- **A caller's own timeout should exceed 2 hours** if it wants the ceiling to be what fires, rather than its own kill.
 
-**On exceeding the ceiling**, call `TaskStop` on the Task ID *before* terminating, then terminate as `error` with a detail naming the cap. Terminating without stopping the task recreates the orphan this rule exists to prevent.
+The mechanism — which tool blocks, its timeout maximum, how many times it repeats, how the result is read back — belongs to the skill, and is specified in the **Headless workflow wait** section of `skills/go/SKILL.md`. Callers do not implement it; they depend only on the guarantee above.
 
 This changes only *when* the final message is produced. The outcome vocabulary, `OUTCOME.json`, and the fenced block are identical, so no caller needs to change to benefit from it.
 
@@ -168,11 +166,11 @@ Options:
 
 The caller (or a human) fills each `**Answer:**` line and re-invokes `/ship:go --headless {name}`. Go checks for the file **before** running the plan loop:
 
-- **Every `**Answer:**` line non-empty** → build the Q/A transcript for `args.answers`, pass the frontmatter `roundOffset` to the plan workflow, rename the file to `QUESTIONS-{roundOffset}.answered.md` (the `roundOffset` from its own frontmatter — strictly increasing across re-invocations, so the archive name is collision-free and deterministic), and continue the loop.
-- **Any answer still empty** → terminate immediately as `needs-input` again, without re-running the loop. Re-invoking with an unanswered file is idempotent.
+- **Every `**Answer:**` line non-empty** → build the Q/A transcript for `args.answers` — one `Q: {question}` / `A: {answer}` pair per question section — pass the frontmatter `roundOffset` to the plan workflow, then, once the workflow has been invoked, rename the file to `QUESTIONS-{roundOffset}.answered.md` (the `roundOffset` from its own frontmatter — strictly increasing across re-invocations, so the archive name is collision-free and deterministic), and continue the loop.
+- **Any answer still empty** → terminate immediately as `needs-input` again, with `detail` "QUESTIONS.md awaiting answers" and `questions_file` set, without re-running the loop. Re-invoking with an unanswered file is idempotent.
 - **File absent** → run the loop normally.
 
-**Cap:** answered-file resumes count against the existing 2-re-invocation cap. A 3rd NEEDS_INPUT terminates as `needs-input` with a cap-reached `detail` ("re-invocation cap reached — escalate to a human"); the new QUESTIONS.md is still written so the questions are not lost. The caller escalates to a human.
+**Cap:** answered-file resumes count against the existing 2-re-invocation cap. A resume is identifiable from the files alone — one exists iff an archived file's `roundOffset` is greater than 0 — so the rounds-spent count never depends on session memory. A 3rd NEEDS_INPUT terminates as `needs-input` with a cap-reached `detail` ("re-invocation cap reached — escalate to a human"); the new QUESTIONS.md is still written so the questions are not lost. The caller escalates to a human.
 
 ## 8. Never-headless actions
 
