@@ -289,12 +289,42 @@ describe('salvage retry — plan workflow', () => {
       'a NEEDS_INPUT escalation leaves no subsection and must be re-decided, not salvaged');
   });
 
-  it('a one-off plan-verify writes no scratch record', () => {
-    // /ship:plan-verify has no loop to salvage, and a stray record there could
-    // outlive the plan it reviewed.
+  it('a one-off plan-verify writes a scratch record too', () => {
+    // It has no loop to salvage, but it does have a turn cap: three consecutive
+    // reviewers died at exactly maxTurns having written nothing, so a one-off run
+    // that skips the record pays full price for zero findings. A record outliving
+    // the plan it reviewed is not the risk it once was — plan_hash rejects it.
     const c = readSrc('agents/ship-plan-reviewer.md');
-    assert.ok(/only when you were given a round number/.test(c),
-      'the scratch write must be scoped to loop rounds');
+    assert.ok(/plan-round-1\.json.*no round number|no round number.*plan-round-1\.json/s.test(c),
+      'the one-off path must name the record it writes when given no round number');
+    assert.ok(/plan_hash/.test(c),
+      'a record written outside a loop is only safe because plan_hash rejects a stale one');
+  });
+
+  it('the scratch record is written incrementally, not saved for the end', () => {
+    // A record written only after the review finishes is worthless to a run that
+    // is cut off mid-review — which is the failure it exists to absorb.
+    const c = readSrc('agents/ship-plan-reviewer.md');
+    const output = c.split('## Output')[1];
+    assert.ok(/do not save it for the end/i.test(output),
+      'the write must be ordered before completion, or a truncated run salvages nothing');
+    assert.ok(/"?complete"?/.test(output),
+      'a partial record must be distinguishable from a finished one');
+    assert.ok(/complete.*false.*resume|resume.*complete.*false/is.test(c),
+      'a partial record must be resumed from, not discarded');
+  });
+
+  it('review agents carry a turn budget that a real review fits inside', () => {
+    // Regression guard: at maxTurns 30, three consecutive ship-plan-reviewer runs
+    // on rpfs stopped at exactly 30 turns with no verdict and no error — a hard
+    // harness cut, misdiagnosed twice as a transport error and a token budget.
+    // The review that finally landed took 33. Do not lower these without evidence.
+    for (const agent of ['ship-plan-reviewer', 'ship-reviewer']) {
+      const fm = readSrc(`agents/${agent}.md`).split('---')[1];
+      const turns = Number(/maxTurns:\s*(\d+)/.exec(fm)[1]);
+      assert.ok(turns >= 60,
+        `${agent} needs headroom above the ~33 turns a real review costs, got ${turns}`);
+    }
   });
 
   it('plan reviewer can write its scratch record but nothing else', () => {
