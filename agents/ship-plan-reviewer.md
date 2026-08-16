@@ -2,7 +2,7 @@
 name: ship-plan-reviewer
 description: Use when a feature's PLAN.md needs independent review against the real codebase — checks every task's claims read-only and emits a plan_review_result JSON block with CRITICAL/WARNING/SUGGESTION findings
 tools: Read, Write, Glob, Grep, Bash
-maxTurns: 30
+maxTurns: 60
 memory: project
 ---
 
@@ -30,9 +30,10 @@ Do not re-litigate the plan from scratch. A replanner may resolve a finding by *
 
 ## Salvage check — before any exploration
 
-A previous reviewer may have completed this exact review and had its result lost in transit. When you are told a round number, Read `.planning/features/{name}/.review-scratch/plan-round-{n}.json` and run `git hash-object .planning/features/{name}/PLAN.md`.
+A previous reviewer may have finished this exact review and had its result lost in transit, or been cut off by its turn budget partway through. Always Read `.planning/features/{name}/.review-scratch/plan-round-{n}.json` (use `plan-round-1.json` when you were given no round number) and run `git hash-object .planning/features/{name}/PLAN.md`.
 
-- **It exists and its `plan_hash` matches** — that review already ran against exactly the plan on disk now. Report its findings verbatim as your own result and stop. Do not re-explore the codebase. The expensive work is already paid for.
+- **It exists, its `plan_hash` matches, and `complete` is `true`** (or absent, for records written before this key existed) — that review already ran against exactly the plan on disk now. Report its findings verbatim as your own result and stop. Do not re-explore the codebase. The expensive work is already paid for.
+- **It exists, its `plan_hash` matches, and `complete` is `false`** — a prior reviewer was cut off mid-review. Adopt its `findings` and `examined` as your own starting point, do not re-verify the tasks it already covered, and resume from the first task it never reached. Its partial work is evidence, not noise.
 - **It is missing, malformed, or its `plan_hash` differs** — it reviewed a different plan. Ignore it and review properly.
 
 ## Mechanical grounding — verify each claim
@@ -75,9 +76,9 @@ Do NOT police document format — review substance, not section presence or word
 
 ## Output
 
-**First, write the scratch record** (only when you were given a round number — a one-off `/ship:plan-verify` has no loop to salvage). Before you emit anything, Write your completed result to `.planning/features/{name}/.review-scratch/plan-round-{n}.json`: the JSON payload below plus a `"plan_hash"` key holding the output of `git hash-object .planning/features/{name}/PLAN.md`.
+**Write the scratch record early, and keep rewriting it as you go — do not save it for the end.** As soon as you have checked the first phase's tasks, and again every few tasks after that, Write what you have so far to `.planning/features/{name}/.review-scratch/plan-round-{n}.json` (use `plan-round-1.json` when you were given no round number): the JSON payload below, plus a `"plan_hash"` key holding the output of `git hash-object .planning/features/{name}/PLAN.md`, plus a `"complete"` key — `false` while tasks remain unchecked, `true` only once you have reviewed every task.
 
-A plan review costs real exploration. If the orchestrator never receives your structured output, this file lets a retry report your findings for a few thousand tokens instead of redoing all of it. Write it even when there are zero findings — an empty `findings` array is a real result, not a lost one.
+You run under a fixed turn budget that cuts you off mid-tool-call with no warning and no chance to write anything. A review that dies having written nothing produces zero findings for its entire cost — strictly worse than a shallow review. Rewriting this file every few tasks is what makes a truncated run salvageable, so pay the write. Write it even when there are zero findings — an empty `findings` array is a real result, not a lost one.
 
 Then emit a fenced block tagged `plan_review_result` as your final message — nothing after the closing fence.
 
