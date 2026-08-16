@@ -1,5 +1,15 @@
 # Changelog
 
+## 5.9.1
+
+Patch release — the review agents' turn budget was low enough to kill a review before it produced anything, and a truncated reviewer left nothing behind to salvage.
+
+### Fixed
+
+- **`ship-plan-reviewer` and `ship-reviewer` raised from `maxTurns: 30` to `60`.** The cap is a hard harness cut: the agent stops mid-tool-call with no final message, so the orchestrator sees no result and Ship's invariant blocks the build on a plan that was never actually rejected. On a 16-task plan, three consecutive reviewers stopped at *exactly* 30 turns having produced zero findings between them; the review that landed once the cap was raised took 33 and returned three CRITICAL issues. The failure is silent by construction — no error record, no `stop_reason`, no partial verdict — and had already been misdiagnosed once as a transport error (`Connection lost mid-response`) and once as a token budget, neither of which it was. Neither context (peak ~120k) nor plan size (66KB, mid-pack) was ever near a limit. `ship-reviewer` carried the same 30 and the same symptom on `/ship:go` phase reviews, which returned `reviewStatus: SKIPPED` with no result after retry. `ship-replanner` keeps `maxTurns: 30` — no evidence it has ever reached it.
+- **The plan reviewer's scratch record is now written incrementally, and a partial one is resumed from.** It was written *after* the review completed, which is precisely when a turn-capped run never gets to — so the salvage path could not absorb the failure it was built for. The record is now rewritten every few tasks, carries a `complete` flag, and a reviewer finding `complete: false` with a matching `plan_hash` adopts its findings and resumes from the first task it never reached instead of re-verifying from scratch. Records predating the flag are read as complete, so the loop's existing behavior is unchanged.
+- **A one-off `/ship:plan-verify` writes a scratch record too.** It was excluded on the grounds that it has no loop to salvage, but it has the same turn cap, and the excluded path is the one where all three reviews were lost. It writes `plan-round-1.json`; `plan_hash` is what keeps a stale record from being trusted, and it guards the one-off path exactly as it guards a loop round.
+
 ## 5.9.0
 
 Minor release — a lane can now finish work that requires shared project-manager edits it is structurally forbidden to make, instead of failing on it forever.
