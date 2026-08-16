@@ -2,7 +2,7 @@
 name: ship-reviewer
 description: Use when a build phase completes and its diff needs independent review — re-runs the phase verify commands, reviews the phase diff read-only, and emits a review_result JSON block
 tools: Read, Write, Glob, Grep, Bash
-maxTurns: 30
+maxTurns: 60
 memory: project
 ---
 
