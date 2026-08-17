@@ -173,9 +173,20 @@ describe('readProfileField — frontmatter edge shapes', () => {
 // ---------------------------------------------------------------------------
 
 describe('resolve-profile CLI — never kills a go run', () => {
-  const run = (args) => {
-    const out = execFileSync('node', [helperPath, ...args], { cwd: repoRoot, encoding: 'utf8' });
+  const run = (args, cwd = repoRoot) => {
+    const out = execFileSync('node', [helperPath, ...args], { cwd, encoding: 'utf8' });
     return JSON.parse(out);
+  };
+
+  // A throwaway feature directory, built fresh per test — `.planning/` is
+  // gitignored (local, per-repo state), so a real feature slug from this repo
+  // is never present in a clean checkout and must not be relied on here.
+  const withFixtureFeature = (slug, frontmatter) => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-profile-cli-'));
+    const featureDir = path.join(tmp, '.planning', 'features', slug);
+    fs.mkdirSync(featureDir, { recursive: true });
+    fs.writeFileSync(path.join(featureDir, 'CONTEXT.md'), frontmatter);
+    return tmp;
   };
 
   const cases = [
@@ -211,15 +222,17 @@ describe('resolve-profile CLI — never kills a go run', () => {
     assert.equal(r.warning, null);
   });
 
-  it('reads this feature own frontmatter profile', () => {
-    const r = run(['workflow-policy-knobs']);
+  it('reads a real feature\'s frontmatter profile', () => {
+    const tmp = withFixtureFeature('sample-feature', '---\nfeature: "sample-feature"\nprofile: standard\n---\n');
+    const r = run(['sample-feature'], tmp);
     assert.equal(r.profile, 'standard');
     assert.equal(r.source, 'frontmatter');
     assert.deepEqual(r.knobs, STANDARD);
   });
 
   it('--profile=quick form is accepted on a real feature', () => {
-    const r = run(['workflow-policy-knobs', '--profile=quick']);
+    const tmp = withFixtureFeature('sample-feature', '---\nfeature: "sample-feature"\nprofile: standard\n---\n');
+    const r = run(['sample-feature', '--profile=quick'], tmp);
     assert.equal(r.profile, 'quick');
     assert.equal(r.knobs.reviewGate, false);
   });
