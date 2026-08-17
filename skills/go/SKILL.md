@@ -2,7 +2,7 @@
 name: ship:go
 description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, Skill, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, TaskOutput, TaskStop, ToolSearch, Skill, AskUserQuestion
 argument-hint: "[feature-name] [--auto] [--headless]"
 ---
 
@@ -10,7 +10,25 @@ Auto-run all remaining steps for the active feature. Round-1 planning and the fi
 
 Pass `--auto` for a fully hands-off run: it skips the "Ready to build?" approval gate. Everything else is unchanged — `--auto` never suppresses a `NEEDS_INPUT` question, which is the one interruption the plan loop can raise.
 
-Pass `--headless` for unattended runs (e.g. a spawned `claude -p`) where no interactive prompt can fire. `--headless` implies `--auto`, and additionally degrades every interactive point deterministically per the contract in `${CLAUDE_PLUGIN_ROOT}/ship/docs/headless.md` — read that file when the flag is present; it is the contract of record for QUESTIONS.md, OUTCOME.json, and the outcome vocabulary.
+Pass `--headless` for unattended runs (e.g. a spawned `claude -p`) where no interactive prompt can fire. `--headless` implies `--auto`, and additionally degrades every interactive point deterministically per the contract in `${CLAUDE_PLUGIN_ROOT}/ship/docs/headless.md` — read that file when the flag is present; it is the contract of record for QUESTIONS.md, OUTCOME.json, the outcome vocabulary, and the workflow wait rule below.
+
+### Headless workflow wait (every Workflow invocation)
+
+**The Workflow tool does not return the workflow's result.** It launches the workflow in the background and returns a Task ID immediately; the result arrives later as a completion notification.
+
+Interactively that is fine and **must not change**: report that the workflow is running and end the turn — the session outlives it, `/workflows` shows progress, and the notification lands back here. Blocking an interactive run for the length of a build would be a worse bug than the one this rule fixes.
+
+Under `--headless` it is fatal. `claude -p` exits when the turn ends, so a turn that ends mid-workflow kills or orphans it: the run exits cleanly having produced no outcome, leaves CONTEXT.md mid-flight, and can leave agent processes still writing to the worktree after the caller believes it finished.
+
+So under `--headless`, after EVERY Workflow invocation in this skill — section 2a's plan loop and section 5's build→verify spine alike — do not end the turn until that workflow is terminal:
+
+1. Take the Task ID from the Workflow tool result (it reports `Task ID: {id}`).
+2. If the completion notification already arrived while you were still in the launching turn — short workflows do finish that fast — the result is in hand. Skip to reconciling it.
+3. Otherwise call `TaskOutput` with `{ task_id, block: true, timeout: 600000 }`. 600000 ms is that tool's maximum, not a tuning choice. `TaskOutput` and `TaskStop` may be deferred tools in this harness — load them first with `ToolSearch` using `select:TaskOutput,TaskStop`.
+4. Read the reply's `<status>`. A build spine routinely outlasts ten minutes, so one call is not enough: while the status is still running, repeat step 3 — up to **12 calls** (a 2-hour ceiling). On `completed`, the reply's `<output>` carries `result` — the workflow's own return value, the same `{ feature, stoppedAt, completed, verdict }` (or plan-loop) object you would have received from a notification. Reconcile from that; do not wait for a separate notification on top of it. The payload is a compact summary, not an agent transcript, so reading it costs nothing.
+5. If the ceiling is reached with the task still running, call `TaskStop` on the Task ID **before** terminating, then terminate as `error` per section 6 with detail `workflow exceeded the 2-hour headless wait cap`. Stopping first is what holds the guarantee that nothing is still writing to the worktree once the run returns.
+
+The structured result you then reconcile is unchanged — only *when* you receive it changes.
 
 ## 1. Find the Active Feature
 
@@ -34,11 +52,7 @@ Route on the feature's `status` and run these inline, in order, until the featur
 
 ## 2a. Plan Loop (workflow)
 
-**Headless pre-check:** under `--headless`, before invoking the workflow, check for `.planning/features/{name}/QUESTIONS.md`:
-
-- **Present, every `**Answer:**` line non-empty** — build a Q/A transcript ("Q: {question}\nA: {answer}" per section), invoke the plan workflow with `args: { feature: "{name}", answers: "<transcript>", roundOffset: <the frontmatter roundOffset> }`, and once the workflow has been invoked rename the file to `QUESTIONS-{roundOffset}.answered.md` (the `roundOffset` from its own frontmatter — strictly increasing across re-invocations, so the archive name never collides).
-- **Present, any `**Answer:**` line still empty** — terminate immediately as `needs-input` (detail: "QUESTIONS.md awaiting answers", `questions_file` set) without re-running the loop. Re-invoking with an unanswered file is idempotent.
-- **Absent** — invoke the workflow normally.
+**Headless pre-check:** under `--headless`, before invoking the workflow, check for `.planning/features/{name}/QUESTIONS.md` and run the answer round-trip in **`ship/docs/headless.md` §7**, which is the contract for all three cases: answered → feed `answers` + `roundOffset` into the workflow and archive the file; unanswered → terminate as `needs-input` (detail: "QUESTIONS.md awaiting answers", `questions_file` set) without re-running the loop; absent → invoke normally.
 
 Invoke the Workflow tool:
 
@@ -48,6 +62,8 @@ Workflow({
   args: { feature: "{name}" }
 })
 ```
+
+Under `--headless`, block on the returned Task ID before reading the result — see **Headless workflow wait** above. Interactively, behave as before.
 
 The workflow loops review → replan → re-review for up to 5 rounds (the cap check fires before the replan, so at most 4 replans) and stops early when a round's CRITICAL set repeats. It returns `{ feature, status, rounds, findings, questions?, examined?, history }`. Agent output stays inside the workflow — you receive only this structured result.
 
@@ -71,8 +87,8 @@ Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ens
 - **`APPROVED`** — set CONTEXT.md `status: plan-verified`, then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent). The outcome block additionally lists the examined files and any WARNING/SUGGESTION findings. Continue to the approval gate (section 3).
 - **`NEEDS_INPUT`** — split on `--headless`:
   - **Interactive (no `--headless`)** — ask each entry in `questions` via AskUserQuestion (one question per entry, using its `options`; the automatic Other option covers anything else). Then RE-INVOKE the same workflow with `args: { feature: "{name}", answers: "<Q/A transcript>", roundOffset: <total rounds spent so far across all invocations> }` and re-branch on the new status. The `roundOffset` is what keeps the replanner's `### Round {n}` headings unique across re-invocations — without it a second run restarts at `### Round 1` and collides with the first run's subsection, which the replanner is forbidden to rewrite. Do **not** use `resumeFromRunId`. Cap this at 2 re-invocations; if a third `NEEDS_INPUT` arrives, report it and stop.
-  - **Headless** — do NOT call AskUserQuestion. Write `.planning/features/{name}/QUESTIONS.md` in the format specified in `ship/docs/headless.md`: YAML frontmatter (`feature`, `roundOffset`: total plan-loop rounds spent so far across all invocations, `created` ISO date); one `### Q{n}: {question}` section per `questions` entry with `**Why blocking:** {why_blocking}`, an `Options:` bullet list of its options, and an empty `**Answer:**` line; then the raw `needs_input` JSON array in a fenced json block. Leave CONTEXT.md at `planned` and terminate as `needs-input` with `questions_file` set.
-  - **Cap (headless)** — the 2 re-invocation cap counts answered-file resumes too (a resume exists iff the archived file's `roundOffset` > 0; the recorded rounds-spent count is checkable from the files alone). A 3rd `NEEDS_INPUT` under `--headless` terminates as `needs-input` with detail "re-invocation cap reached — escalate to a human" — and still writes the new QUESTIONS.md so the questions are not lost.
+  - **Headless** — do NOT call AskUserQuestion. Write `.planning/features/{name}/QUESTIONS.md` in the format specified in **`ship/docs/headless.md` §6**, recording `roundOffset` as the total plan-loop rounds spent so far across all invocations. Leave CONTEXT.md at `planned` and terminate as `needs-input` with `questions_file` set.
+  - **Cap (headless)** — answered-file resumes count against the same 2 re-invocation cap (**§7**). A 3rd `NEEDS_INPUT` under `--headless` terminates as `needs-input` with detail "re-invocation cap reached — escalate to a human" — and still writes the new QUESTIONS.md so the questions are not lost.
 - **`STUCK`** — leave CONTEXT.md `status: planned`. Report the surviving CRITICAL findings and the round count, tell the user to run `/ship:plan {name}`, and stop.
 - **`UNRESOLVED`** — same as `STUCK`, additionally reporting that all 5 rounds were spent. Stop.
 - **`BLOCKED`** — leave CONTEXT.md `status: planned`. Report that an agent produced no result after retry (a plan is never approved without a completed review) and that the run stopped; suggest `/ship:plan-verify {name}` to review once manually. Stop.
@@ -107,6 +123,8 @@ Workflow({
   args: { feature: "{name}", phases: [ {id, name}, ... ] }
 })
 ```
+
+Under `--headless`, block on the returned Task ID before reading the result — see **Headless workflow wait** above. This is the invocation the wait rule exists for: the build→verify spine is the long one, and a headless turn that ends here strands it. Interactively, behave as before — report that it is running and end the turn.
 
 The workflow builds each phase (builder → reviewer re-verify+review → one fix round for critical/high findings → re-review), then runs the merged verifier (acceptance criteria + adversarial bug hunt → VERIFY.md). It returns `{ feature, stoppedAt, completed, verdict }`. Agent output stays inside the workflow — you receive only this structured result.
 
@@ -157,7 +175,7 @@ Under `--headless`, the fenced `ship_outcome` block (headless termination rule b
 
 ### Headless termination (every terminal path)
 
-Under `--headless`, EVERY terminal path in this skill — the resolution/`done` routing in sections 1–2, the plan-loop terminals in 2a, build stops, verify verdicts, and errors — ends the same way. As the run's LAST act, write `.planning/features/{name}/OUTCOME.json` per the schema in `ship/docs/headless.md`: `schema_version: 1`, `feature`, `outcome` (from the table below), `status` (the settled CONTEXT.md status), `timestamp` (ISO 8601 UTC), `head` (`git rev-parse HEAD` at write time), `detail` (one-line human note), plus `questions_file` on `needs-input` and `handoff_file` on `deferred`. Then end the final message with a fenced block tagged `ship_outcome` containing the exact same JSON. Interactive runs never write this file.
+Under `--headless`, EVERY terminal path in this skill — the resolution/`done` routing in sections 1–2, the plan-loop terminals in 2a, build stops, verify verdicts, and errors — ends the same way. As the run's LAST act, write `.planning/features/{name}/OUTCOME.json` per the schema in **`ship/docs/headless.md` §4**, taking `outcome` from the table below and `status` from the settled CONTEXT.md. Then end the final message with a fenced block tagged `ship_outcome` containing the exact same JSON. Interactive runs never write this file.
 
 | Terminal | Outcome |
 |----------|---------|
@@ -174,6 +192,7 @@ Under `--headless`, EVERY terminal path in this skill — the resolution/`done` 
 | Verdict FAIL | `verify-fail` — fix tasks are already in PLAN.md; go never auto-retries, the caller decides |
 | Null verdict, nothing stopped | `error` — detail names the manual `/ship:verify {name}` follow-up |
 | Unrecoverable skill-level failure (workflow crash, unresolvable feature) | `error` |
+| Workflow still running at the 2-hour wait ceiling | `error` — call `TaskStop` on the Task ID first, then terminate |
 
 ## 7. Finish (interactive)
 
