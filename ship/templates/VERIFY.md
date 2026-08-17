@@ -25,6 +25,8 @@ Shared `.project-manager/` edits this feature needs and no lane may perform. Rec
 
 ## Stage 2 — Bug Hunt & Quality
 
+(If this run was narrowed by profile: open this section with "Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped." The Carried Review Findings table remains mandatory.)
+
 ### Carried Review Findings
 
 Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over block) — each needs a command, not an opinion.
