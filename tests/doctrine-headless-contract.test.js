@@ -107,10 +107,15 @@ describe('headless contract — doc and skill agree on contract-bearing strings'
     assert.ok(doc.includes('Any answer still empty'), 'doc documents the idempotent re-invoke');
   });
 
-  it('the archive name template matches between doc and skill', () => {
+  // Split by kind: strings the skill *emits* (detail values) are duplicated by
+  // necessity and pinned in sync above; strings that describe file *structure*
+  // live only in the doc, and the skill points at the section that owns them.
+  it('the archive name template lives in the doc, with the skill pointing at it', () => {
     const name = 'QUESTIONS-{roundOffset}.answered.md';
     assert.ok(doc.includes(name), 'doc specifies the archive name');
-    assert.ok(go.includes(name), 'go skill uses the identical archive name');
+    assert.ok(!go.includes(name), 'a second copy in the skill is what drifts');
+    assert.ok(/`ship\/docs\/headless\.md` §7/.test(go),
+      'the skill must point at the section that owns the answer round-trip');
   });
 
   it('both files pin the OUTCOME.json path', () => {
