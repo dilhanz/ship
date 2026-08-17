@@ -6,7 +6,7 @@ export const meta = {
   ],
 }
 
-// args: { feature: string, answers?: string, roundOffset?: number }
+// args: { feature: string, answers?: string, roundOffset?: number, maxPlanRounds?: number }
 // `answers` carries a user Q/A transcript back into the loop after a NEEDS_INPUT
 // escalation. `roundOffset` shifts only the `### Round {n}` history label the
 // replanner writes into PLAN.md, so a re-invocation (which restarts the internal
@@ -29,9 +29,10 @@ const roundOffset = Number(parsedArgs && parsedArgs.roundOffset) || 0
 if (!feature) throw new Error('plan.workflow: args.feature is required')
 
 // How many reviews a single plan may burn before we call it unresolved.
-// The cap check fires before the replan, so round 5 ends on a review verdict:
-// 5 reviews, at most 4 replans.
-const MAX_PLAN_ROUNDS = 5
+// The cap check fires before the replan, so round N ends on a review verdict:
+// N reviews, at most N-1 replans. The value arrives pre-resolved from the go
+// skill's profile resolution; absent (or zero/NaN) means today's 5.
+const MAX_PLAN_ROUNDS = Number(parsedArgs && parsedArgs.maxPlanRounds) || 5
 
 const PLAN_REVIEW_SCHEMA = {
   type: 'object',
