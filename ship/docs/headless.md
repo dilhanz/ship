@@ -47,7 +47,7 @@ Every headless run terminates with exactly one of these 11 outcomes. Build-stop 
 | `needs-context` | Builder stopped with NEEDS_CONTEXT — a task needs information not in the plan or codebase. | `building` |
 | `exhausted` | Builder rounds exhausted with no forward progress — tasks likely need to be smaller. | `building` |
 | `checkpoint` | Builder hit an architectural conflict or persistent verification failure. | `building` |
-| `error` | Unrecoverable skill-level failure: workflow crash, unresolvable feature name, or a null verdict with nothing stopped. | unchanged |
+| `error` | Unrecoverable skill-level failure: workflow crash, unresolvable feature name, a null verdict with nothing stopped, or the 2-hour headless wait ceiling reached on a workflow (task stopped via `TaskStop` before terminating). | unchanged |
 
 ## 4. OUTCOME.json
 
