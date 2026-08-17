@@ -37,7 +37,11 @@ When your prompt carries an explicit **"Verification depth: criteria-only"** ins
 - **Skip** 2a (test-framework discovery), the discretionary risk-category adversarial tests, and 2c (anti-pattern scan).
 - **Stage 1 runs in full** — every acceptance criterion, proved by a real command — and **Stage 3 runs in full**, with the verdict rules unchanged.
 - **Carried Unresolved Review Findings remain mandatory Stage 2b targets at any depth.** Narrowing never waives them: each still gets a direct test or reproduction attempt and a reproduced / not reproduced / not testable outcome in the Carried Review Findings table.
-- Open VERIFY.md's Stage 2 section with the line `Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped.` so the trade is durably recorded and audits can see exactly what was traded.
+- Open VERIFY.md's Stage 2 section with this line **copied verbatim, character for character** — do not paraphrase it, reword it, reformat it, or fold it into a sentence of your own:
+
+  `Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped.`
+
+  Audits grep for this exact string, so a reworded equivalent — however clear to a human reader — makes a narrowed run indistinguishable from a full one to `/ship:pm check`. Add any extra context you want in a **following** sentence; the verbatim line must come first.
 
 Never narrow on your own judgment. No instruction means full depth.
 
