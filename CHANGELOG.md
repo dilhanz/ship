@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.10.0
+
+Minor release — workflow policy is now per-feature. Every feature used to pay the same ceremony: a one-line fix got the full per-phase review gate, fix round, re-review, and adversarial verify that a six-phase feature got, while a genuinely large feature was capped at the same 5 builder rounds a trivial one never used.
+
+### Added
+
+- **Workflow profiles (`quick` | `standard` | `thorough`).** A `profile:` field in CONTEXT.md frontmatter, proposed by `ship-brainstormer` as part of the summary the user confirms at `/ship:start`, and overridable for a single run with `/ship:go {name} --profile {p}` (any argument order, composable with `--auto`/`--headless`). The profile names a bundle of knobs — per-phase review gate on/off, verify depth full/criteria-only, builder continuation cap 2/5/8, plan-loop cap 2/5/5. There are no generated workflows and no new workflow scripts: the fixed, battle-tested `go.workflow.js` and `plan.workflow.js` stay the single engine, parameterized through `args`.
+- **`ship/resolve-profile.cjs`** — a zero-dependency Node helper (module + thin CLI, in the shape of `pm-update.cjs`) holding the profile→knob table in exactly one place, since workflow scripts cannot `require()` anything. Precedence is **flag > CONTEXT.md frontmatter > standard**. Resolution degrades toward *more* ceremony, never less: an unrecognized value yields `standard` plus a warning, a missing CONTEXT.md yields `standard` plus a warning, and the CLI always exits 0 with valid JSON so a resolution hiccup cannot kill a go run.
+- **A criteria-only verification depth contract in `agents/ship-verifier.md`.** The HARD-GATE now binds to "every stage in scope" and permits a narrowed Stage 2 *only* on an explicit "Verification depth: criteria-only" instruction in the prompt — never by the verifier's own judgment. Stage 1 (every acceptance criterion, real commands), Stage 3, and the verdict rules are untouched at any depth, and carried Unresolved Review Findings remain mandatory Stage 2b targets: narrowing never waives them.
+- **Durable records of every trade.** A review skipped by profile is `reviewStatus: SKIPPED_BY_PROFILE` in the workflow result and `Status: SKIPPED (profile: quick)` in REVIEW.md — deliberately distinct from a bare `SKIPPED`, which continues to mean the review was supposed to run and failed. A narrowed verification opens VERIFY.md's Stage 2 section saying so, and a non-standard profile is named in the GO COMPLETE report. A cheaper run must never be indistinguishable from a full one after the fact, least of all to a `/ship:pm check` audit.
+
+### Notes
+
+- **Fully backward compatible.** An absent `profile:` field resolves to `standard`, and every knob a caller omits defaults inside the workflow to today's constant (`maxBuildRounds` 5, `maxPlanRounds` 5, review gate on, verify depth full). No existing feature directory needs migration and no existing invocation changes behavior. `tests/workflow-profiles.test.js` pins `standard` as the definition of "today" and locks the wiring — including that the review gate is disabled only by an explicit `false`.
+- **Go path only.** The manual `/ship:build`, `/ship:verify`, and `/ship:plan-verify` ignore the profile: manual means full ceremony and hands-on control.
+
 ## 5.9.1
 
 Patch release — the review agents' turn budget was low enough to kill a review before it produced anything, and a truncated reviewer left nothing behind to salvage.

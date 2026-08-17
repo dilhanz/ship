@@ -3,7 +3,7 @@ name: ship:go
 description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, TaskOutput, TaskStop, ToolSearch, Skill, AskUserQuestion
-argument-hint: "[feature-name] [--auto] [--headless]"
+argument-hint: "[feature-name] [--auto] [--headless] [--profile <quick|standard|thorough>]"
 ---
 
 Auto-run all remaining steps for the active feature. Round-1 planning and the finish step run inline here; the plan revision loop and the build→verify spine each run in a Workflow, so per-agent output never enters this conversation.
@@ -34,9 +34,29 @@ The structured result you then reconcile is unchanged — only *when* you receiv
 
 First parse flags out of `$ARGUMENTS`: strip `--auto` and `--headless` (recording whether each was present, in any argument order) *before* resolving the feature name, so `/ship:go my-feature --auto`, `/ship:go --auto my-feature`, `/ship:go --headless my-feature`, and `/ship:go --auto` all work. `--headless` sets `--auto`.
 
+Also strip `--profile {value}` in the same pass — both the `--profile quick` and `--profile=quick` forms, in any argument order — recording the value for section 1b. Whatever remains after all flags are stripped is the feature name.
+
 Feature state is injected at session start ("SHIP ACTIVE FEATURES"). If the remaining `$ARGUMENTS` names a feature, use it. Otherwise pick the one feature whose CONTEXT.md `status` is not `done`. If several are unfinished, ask which. If none exist, tell the user to run `/ship:start`. Under `--headless`, resolution must never ask: if several features are unfinished and none was named, or none exist, terminate with outcome `error` and a detail line naming the problem (per the headless termination rule in section 6).
 
 **Headless preamble:** when `--headless` is present, immediately after resolving the feature delete `.planning/features/{name}/OUTCOME.json` if it exists — the run's first act. A fresh one is written as the run's last act, so a missing file after the process exits signals a mid-flight death. From here on, every terminal path in this skill must end via the **headless termination** rule defined in section 6.
+
+## 1b. Resolve the Workflow Profile
+
+Once the feature name is resolved, resolve the workflow profile for this run:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/ship/resolve-profile.cjs" {name}
+# with the flag present, append it:
+node "${CLAUDE_PLUGIN_ROOT}/ship/resolve-profile.cjs" {name} --profile {value}
+```
+
+It prints a single line of JSON: `{ profile, source, warning, knobs: { reviewGate, verifyDepth, maxBuildRounds, maxPlanRounds } }`. Parse it.
+
+**Precedence: flag > CONTEXT.md `profile:` frontmatter > standard.** An absent field resolves to `standard`, which is exactly today's behavior; an unrecognized value resolves to `standard` with a `warning`. The helper always exits 0 with valid JSON — resolution never asks a question and never stops the run.
+
+If `warning` is non-null, surface it: interactively, say it before continuing; under `--headless`, include it in the final report and `detail`.
+
+The resolved `knobs` feed the workflow `args` in sections 2a and 5. On `standard` every knob equals today's constant, so a standard run is byte-identical to a run from before profiles existed.
 
 ## 2. Advance Pre-Build Steps (inline)
 
@@ -52,16 +72,18 @@ Route on the feature's `status` and run these inline, in order, until the featur
 
 ## 2a. Plan Loop (workflow)
 
-**Headless pre-check:** under `--headless`, before invoking the workflow, check for `.planning/features/{name}/QUESTIONS.md` and run the answer round-trip in **`ship/docs/headless.md` §7**, which is the contract for all three cases: answered → feed `answers` + `roundOffset` into the workflow and archive the file; unanswered → terminate as `needs-input` (detail: "QUESTIONS.md awaiting answers", `questions_file` set) without re-running the loop; absent → invoke normally.
+**Headless pre-check:** under `--headless`, before invoking the workflow, check for `.planning/features/{name}/QUESTIONS.md` and run the answer round-trip in **`ship/docs/headless.md` §7**, which is the contract for all three cases: answered → feed `answers` + `roundOffset` (plus `maxPlanRounds: {knobs.maxPlanRounds}`, exactly as on the initial invocation) into the workflow and archive the file; unanswered → terminate as `needs-input` (detail: "QUESTIONS.md awaiting answers", `questions_file` set) without re-running the loop; absent → invoke normally.
 
 Invoke the Workflow tool:
 
 ```
 Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/ship/workflows/plan.workflow.js",
-  args: { feature: "{name}" }
+  args: { feature: "{name}", maxPlanRounds: {knobs.maxPlanRounds} }
 })
 ```
+
+`maxPlanRounds` is the resolved knob from section 1b, passed as a real JSON number (not a string). It must appear on **every** plan.workflow invocation — the initial one here, the interactive `NEEDS_INPUT` re-invocation below, and the headless answered-file resume — or a quick-profile loop resumes at the default cap of 5 instead of 2. Omitting it entirely yields today's 5.
 
 Under `--headless`, block on the returned Task ID before reading the result — see **Headless workflow wait** above. Interactively, behave as before.
 
@@ -86,7 +108,7 @@ Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ens
 
 - **`APPROVED`** — set CONTEXT.md `status: plan-verified`, then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent). The outcome block additionally lists the examined files and any WARNING/SUGGESTION findings. Continue to the approval gate (section 3).
 - **`NEEDS_INPUT`** — split on `--headless`:
-  - **Interactive (no `--headless`)** — ask each entry in `questions` via AskUserQuestion (one question per entry, using its `options`; the automatic Other option covers anything else). Then RE-INVOKE the same workflow with `args: { feature: "{name}", answers: "<Q/A transcript>", roundOffset: <total rounds spent so far across all invocations> }` and re-branch on the new status. The `roundOffset` is what keeps the replanner's `### Round {n}` headings unique across re-invocations — without it a second run restarts at `### Round 1` and collides with the first run's subsection, which the replanner is forbidden to rewrite. Do **not** use `resumeFromRunId`. Cap this at 2 re-invocations; if a third `NEEDS_INPUT` arrives, report it and stop.
+  - **Interactive (no `--headless`)** — ask each entry in `questions` via AskUserQuestion (one question per entry, using its `options`; the automatic Other option covers anything else). Then RE-INVOKE the same workflow with `args: { feature: "{name}", answers: "<Q/A transcript>", roundOffset: <total rounds spent so far across all invocations>, maxPlanRounds: {knobs.maxPlanRounds} }` and re-branch on the new status. The `roundOffset` is what keeps the replanner's `### Round {n}` headings unique across re-invocations — without it a second run restarts at `### Round 1` and collides with the first run's subsection, which the replanner is forbidden to rewrite. Do **not** use `resumeFromRunId`. Cap this at 2 re-invocations; if a third `NEEDS_INPUT` arrives, report it and stop.
   - **Headless** — do NOT call AskUserQuestion. Write `.planning/features/{name}/QUESTIONS.md` in the format specified in **`ship/docs/headless.md` §6**, recording `roundOffset` as the total plan-loop rounds spent so far across all invocations. Leave CONTEXT.md at `planned` and terminate as `needs-input` with `questions_file` set.
   - **Cap (headless)** — answered-file resumes count against the same 2 re-invocation cap (**§7**). A 3rd `NEEDS_INPUT` under `--headless` terminates as `needs-input` with detail "re-invocation cap reached — escalate to a human" — and still writes the new QUESTIONS.md so the questions are not lost.
 - **`STUCK`** — leave CONTEXT.md `status: planned`. Report the surviving CRITICAL findings and the round count, tell the user to run `/ship:plan {name}`, and stop.
@@ -120,9 +142,18 @@ Invoke the Workflow tool:
 ```
 Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/ship/workflows/go.workflow.js",
-  args: { feature: "{name}", phases: [ {id, name}, ... ] }
+  args: {
+    feature: "{name}",
+    phases: [ {id, name}, ... ],
+    profile: "{profile}",
+    reviewGate: {knobs.reviewGate},
+    verifyDepth: "{knobs.verifyDepth}",
+    maxBuildRounds: {knobs.maxBuildRounds}
+  }
 })
 ```
+
+The four policy fields come from section 1b. Pass them as **real JSON values** — `reviewGate` a boolean, `maxBuildRounds` a number, `profile`/`verifyDepth` strings. `profile` is display-only (it labels records); the other three drive behavior, and each defaults inside the workflow to today's value when absent.
 
 Under `--headless`, block on the returned Task ID before reading the result — see **Headless workflow wait** above. This is the invocation the wait rule exists for: the build→verify spine is the long one, and a headless turn that ends here strands it. Interactively, behave as before — report that it is running and end the turn.
 
@@ -138,6 +169,8 @@ From the returned result:
 
 1. For each phase in `completed`, mark its `<phase>` `status="done"` in PLAN.md (skip the `all` pseudo-phase).
 2. Persist review findings to `.planning/features/{name}/REVIEW.md` (create on first append), same format as the manual build skill: a `## Phase {id} — {phase-name} (round 1)` heading with `Status: {reviewStatus}`, then the two evidence lines from `verifyRuns` and `filesReviewed` — `Verify: {N} re-run — {P} pass, {F} fail, {X} not runnable` and `Reviewed: {M} file(s)` — then one line per finding: `- [{severity}] {file}: {description} — {marker}`. Marker: `new (round 2)` if the finding appears in that phase's `introducedByFix` list; `unresolved` if it appears in `unresolved`; `fixed in fix round` for other critical/high findings when `fixApplied` is true; `recorded` otherwise. Write the heading and evidence lines for **every** phase, including ones with an empty `findings` array — a phase approved with `Verify: 0 re-run` and `Reviewed: 0 file(s)` is exactly the record worth keeping, and `reviewStatus: SKIPPED` must appear as `Status: SKIPPED` so REVIEW.md durably records that the diff went unreviewed.
+
+   **Skipped by profile:** when a phase's `reviewStatus` is `SKIPPED_BY_PROFILE`, write `Status: SKIPPED (profile: {profile})` and, in place of the two evidence lines, the single line `Review skipped by profile — no reviewer ran by design.` This is deliberately distinct from a bare `Status: SKIPPED`, which continues to mean the review was supposed to run and failed. An audit must be able to tell a traded-away review from a broken one.
 3. Delete `.planning/features/{name}/.review-scratch/` if it exists. It is the reviewers' crash-recovery cache for the run that just finished — once REVIEW.md carries the findings, a stale scratch file would let a future run's salvage retry report findings from the wrong build.
 4. Collect any per-phase `unresolved` review findings (critical/high that survived the fix round) and builder `concerns` across `completed`. These must be surfaced in the report below — a phase is marked `done` even when it carries unresolved findings (one fix round only, the verifier is the backstop), so the user needs to see them.
 
@@ -154,6 +187,7 @@ From the returned result:
 
 Feature: {name}
 Final status: {status}
+[If the resolved profile is not `standard`:] Profile: {profile} (review gate: {on|off}, verify depth: {verifyDepth}, build rounds: {maxBuildRounds})
 Phases built: {N} / {total}   Review fixes applied: {count}
 Verify: {PASS | FAIL | INCONCLUSIVE | DEFERRED — criteria_passed/criteria_total, bugs by severity}
 
