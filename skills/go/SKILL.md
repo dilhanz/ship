@@ -195,7 +195,8 @@ Verify: {PASS | FAIL | INCONCLUSIVE | DEFERRED — criteria_passed/criteria_tota
 - {phase id}: [{severity}] {file} — {description} → {verifier outcome from VERIFY.md, or "not accounted for in VERIFY.md"}
 [If any builder concerns:] Build concerns:
 - {phase id}: {concern}
-[If any phase has an empty verifyRuns and empty filesReviewed:] Unsubstantiated review verdicts: phase {id} approved with no verify re-runs and no files reviewed.
+[If any phase whose reviewStatus is NOT `SKIPPED_BY_PROFILE` has an empty verifyRuns and empty filesReviewed:] Unsubstantiated review verdicts: phase {id} approved with no verify re-runs and no files reviewed.
+[If any phase's reviewStatus is `SKIPPED_BY_PROFILE`:] Review gate off by profile ({profile}): no reviewer ran for phase(s) {ids} — the verifier was the only gate.
 
 [If verdict DEFERRED:] Deferred to the PM layer ({verdict.criteria_deferred} criteria): {verdict.pm_handoff.edits} shared .project-manager/ edit(s) recorded in {verdict.pm_handoff.path}. No lane can apply these — run /ship:pm apply from the main worktree.
 
