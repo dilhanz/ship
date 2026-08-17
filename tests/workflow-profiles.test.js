@@ -301,3 +301,79 @@ describe('doctrine — back-compat', () => {
     }, 'changing this table changes what every existing feature gets — it is a breaking change, not a tweak');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Observability: a cheaper run must never be indistinguishable from a full one
+// after the fact. Each case below is a defect found by an end-to-end quick-
+// profile run, which contract assertions alone did not catch.
+// ---------------------------------------------------------------------------
+
+// The exact string /ship:pm check audits grep for. A reworded equivalent reads
+// fine to a human and is invisible to the audit, so the wording is load-bearing.
+const NARROWED_LINE =
+  'Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped.';
+
+describe('doctrine — the narrowed-verify record is greppable', () => {
+  it('the verifier is told to copy the audit line verbatim', () => {
+    const src = verifier();
+    assert.ok(src.includes(NARROWED_LINE), 'the mandated line must appear in the contract exactly as audits grep for it');
+    assert.match(src, /verbatim/i, 'a verifier that may paraphrase will paraphrase — an e2e run proved it');
+  });
+
+  it('the VERIFY.md template carries the same verbatim instruction', () => {
+    const src = readSrc('ship/templates/VERIFY.md');
+    assert.ok(src.includes(NARROWED_LINE), 'the template is read at runtime — it must carry the exact line too');
+    assert.match(src, /verbatim/i);
+  });
+
+  it('the go workflow prompt tells the verifier to record the narrowing', () => {
+    const src = goWorkflow();
+    assert.match(src, /criteria-only/, 'the depth block must exist');
+    assert.match(src, /Record the narrowing in VERIFY\.md/, 'the prompt must demand the durable record, not just the skip');
+  });
+});
+
+describe('doctrine — a deliberate skip never reads as a broken review', () => {
+  it('the go skill exempts SKIPPED_BY_PROFILE from the unsubstantiated-review warning', () => {
+    const src = goSkill();
+    const line = src.split('\n').find((l) => l.includes('Unsubstantiated review verdicts'));
+    assert.ok(line, 'the unsubstantiated-review warning must still exist for genuinely empty reviews');
+    assert.match(
+      line,
+      /NOT `SKIPPED_BY_PROFILE`/,
+      'a quick run reports empty verifyRuns/filesReviewed by design; without this exemption every skipped phase is falsely reported as an approved review backed by nothing',
+    );
+  });
+
+  it('the go skill reports the gate being off as its own neutral line', () => {
+    assert.match(
+      goSkill(),
+      /Review gate off by profile/,
+      'the trade must appear in GO COMPLETE — silence would make a cheap run look like a full one',
+    );
+  });
+});
+
+describe('doctrine — the resolver CLI cannot truncate its own output', () => {
+  it('does not call process.exit after writing stdout', () => {
+    // Ignore comments: the code deliberately explains in prose why it does not
+    // exit, and that explanation must not read as the call it warns about.
+    const code = readSrc('ship/resolve-profile.cjs')
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+      .join('\n');
+    assert.ok(
+      !/process\.exit\(/.test(code),
+      'stdout to a pipe is async on Windows and the go skill reads this through one; an explicit exit can truncate the JSON payload and fail the skill JSON.parse',
+    );
+  });
+
+  it('still exits 0 and emits parseable JSON with no arguments', () => {
+    const out = execFileSync('node', [path.join(repoRoot, 'ship', 'resolve-profile.cjs')], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.profile, 'standard');
+  });
+});
