@@ -7,9 +7,12 @@ export const meta = {
   ],
 }
 
-// args: { feature: string, phases: [{ id, name }], keyFileContext?: string }
+// args: { feature: string, phases: [{ id, name }], keyFileContext?: string,
+//         profile?: string, reviewGate?: boolean, verifyDepth?: string, maxBuildRounds?: number }
 // `phases` is the list of pending phases the go skill extracted from PLAN.md, in order.
 // A flat (unphased) plan is passed as a single pseudo-phase { id: 'all', name: 'all' }.
+// The policy knobs arrive pre-resolved from the go skill's profile resolution;
+// every one of them defaults to today's behavior when absent.
 //
 // Defensive: the Workflow runtime may deliver `args` as a JSON-encoded string
 // (sometimes double-encoded) instead of the parsed object the docs promise.
@@ -25,10 +28,21 @@ const keyFileContext = (parsedArgs && parsedArgs.keyFileContext) || 'No key file
 
 if (!feature) throw new Error('go.workflow: args.feature is required')
 
+// Display-only: the profile name appears in reports and records, never in logic.
+const profileName = (parsedArgs && parsedArgs.profile) || null
+
 // How many builder agents a single phase may burn before we call it stuck.
 // Large tasks routinely exhaust one builder's turn budget after 2-3 tasks; the
 // work is committed and PLAN.md records it, so a fresh builder resumes cleanly.
-const MAX_BUILD_ROUNDS = 5
+const MAX_BUILD_ROUNDS = Number(parsedArgs && parsedArgs.maxBuildRounds) || 5
+
+// Explicit false only — anything else keeps the per-phase review gate on. The
+// string form is accepted because the go skill hand-builds args from prose
+// (same reason plan.workflow coerces roundOffset).
+const reviewGate = !(parsedArgs && (parsedArgs.reviewGate === false || parsedArgs.reviewGate === 'false'))
+
+// 'criteria-only' narrows Stage 2 of verification; anything else is full depth.
+const verifyDepth = (parsedArgs && parsedArgs.verifyDepth) === 'criteria-only' ? 'criteria-only' : 'full'
 
 const BUILD_SCHEMA = {
   type: 'object',
@@ -430,6 +444,27 @@ for (let i = 0; i < phases.length; i++) {
     break
   }
 
+  // Review gate off by profile: no reviewer, no fix round, no re-review. The
+  // entry carries empty collections (never nulls — the go skill's reconcile
+  // filters and maps them) and a status distinct from the reconcile-side
+  // 'SKIPPED', which means the review failed to run. A deliberate skip must
+  // never look like a broken gate, so it raises no review concerns either.
+  if (!reviewGate) {
+    completed.push({
+      phaseId: ph.id, phaseName: ph.name,
+      tasksCompleted: build.tasks_completed, tasksTotal: build.tasks_total,
+      builderRounds: build.rounds || 1,
+      commits: build.commits || [],
+      concerns: [...(build.concerns || [])],
+      reviewStatus: 'SKIPPED_BY_PROFILE',
+      findings: [],
+      verifyRuns: [], filesReviewed: [],
+      fixApplied: false, unresolved: [], introducedByFix: [],
+    })
+    log(`Phase ${label}: per-phase review skipped by profile${profileName ? ` (${profileName})` : ''}.`)
+    continue
+  }
+
   const reviewScope = ph.id === 'all' ? 'all' : `phase-${ph.id}`
   const reviewFull = reviewPrompt(ph, build.commits || [])
   const review = await safeAgent(reviewFull, {
@@ -536,10 +571,21 @@ The per-phase review gate found these critical/high defects and the single fix r
 ${carried.join('\n')}`
   : ''
 
+// Prompt-scoped narrowing of Stage 2. The verifier's contract permits it only
+// on an explicit instruction like this one — never on its own judgment — and
+// carried findings stay mandatory targets regardless of depth.
+const depthBlock = verifyDepth === 'criteria-only'
+  ? `
+
+## Verification depth: criteria-only
+
+This run's profile${profileName ? ` (${profileName})` : ''} narrows Stage 2: skip test-framework discovery (2a), the discretionary risk-category adversarial tests, and the anti-pattern scan (2c). Stage 1 (every acceptance criterion, real commands) and Stage 3 (VERIFY.md + verdict) run in full, and the verdict rules are unchanged. EXCEPTION: any findings under 'Unresolved Review Findings' above remain mandatory Stage 2b targets at this depth — narrowing never waives them. Record the narrowing in VERIFY.md's Stage 2 section per your instructions.`
+  : ''
+
 let verdict = null
 if (!stoppedAt) {
   phase('Verify')
-  const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}`
+  const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}${depthBlock}`
   verdict = await safeAgent(verifyFull, {
     agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
     retryPrompt: salvageVerifyPrompt(verifyFull),

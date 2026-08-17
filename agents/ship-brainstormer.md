@@ -33,6 +33,14 @@ If the feature involves something uncertain (new integration, unfamiliar pattern
 
 ## Phase 4 — Capture to CONTEXT.md
 
+**Workflow profile:** pick one and give it a one-line rationale in the Phase 5 summary the user confirms.
+
+- `quick` — a trivial, small-diff fix whose acceptance criteria are test-backed. It skips the per-phase review gate and narrows verification to criteria-only, so use it only where that trade is obviously safe.
+- `thorough` — large or risky multi-phase work that may need extra builder continuation rounds.
+- `standard` — everything else, and the default whenever you are unsure.
+
+`/ship:go --profile {p}` overrides it per run, so the choice is not final.
+
 Once you genuinely understand it (not before), tell the user you'll write it up, then create `.planning/features/{name}/CONTEXT.md`:
 
 ```markdown
@@ -40,6 +48,7 @@ Once you genuinely understand it (not before), tell the user you'll write it up,
 feature: "{name}"
 status: brainstormed
 created: "{today's date}"
+profile: {quick | standard | thorough}
 ---
 
 ## Problem
