@@ -1,5 +1,20 @@
 # Changelog
 
+## 5.10.1
+
+Patch release — four defects in 5.10.0's profile support: three found by running `/ship:go` end to end on a throwaway `quick` feature rather than by asserting on file contents, and one that broke the release CI job itself. Each had passed the 5.10.0 doctrine tests.
+
+### Fixed
+
+- **`ship/resolve-profile.cjs` could truncate its own output.** The CLI called `process.exit(0)` immediately after `process.stdout.write()`. stdout to a pipe is asynchronous on Windows and the go skill reads this payload through one, so the exit could cut a pending write and fail the skill's `JSON.parse` — precisely the resolution hiccup the design promises cannot kill a go run. No path sets a non-zero code, so the call bought nothing.
+- **A review skipped by profile was reported as an unsubstantiated review.** A `quick` phase returns empty `verifyRuns` and `filesReviewed` by design, which matched the GO COMPLETE warning for a verdict backed by nothing. Every deliberately skipped phase was therefore reported as "approved with no verify re-runs and no files reviewed" — wrong, since no reviewer approved it, and it collapsed the very distinction the observability guarantee exists to protect. The warning now excludes `SKIPPED_BY_PROFILE`, and the gate being off gets its own neutral line.
+- **The narrowed-verification record was not greppable.** A verifier at criteria-only depth recorded the Stage 2 narrowing in its own words instead of the mandated line. The result read clearly to a human and returned zero hits for `grep "narrowed by profile"`, so a `/ship:pm check` audit could not tell the narrowed run from a full one. `agents/ship-verifier.md` and `ship/templates/VERIFY.md` now require the line copied character for character, with any added context in a following sentence.
+- **The CLI adversarial tests depended on local, gitignored state.** Two tests in `tests/workflow-profiles-adversarial.test.js` read `.planning/features/workflow-policy-knobs/CONTEXT.md` directly, but `.planning/` is gitignored per-repo state — that feature directory never exists in a clean checkout. This sank the `v5.10.0` tag's release CI run outright (tests failed before the publish step, so no GitHub Release was ever created under that tag). Both tests now build their own throwaway fixture feature under a temp directory.
+
+### Notes
+
+- `tests/workflow-profiles.test.js` gains seven assertions covering all three, each mutation-checked: reverting any one fix fails its test. The lesson is recorded in the tests themselves — contract-level assertions could not catch a runtime paraphrase or a shape that only appears when the gate is off.
+
 ## 5.10.0
 
 Minor release — workflow policy is now per-feature. Every feature used to pay the same ceremony: a one-line fix got the full per-phase review gate, fix round, re-review, and adversarial verify that a six-phase feature got, while a genuinely large feature was capped at the same 5 builder rounds a trivial one never used.
