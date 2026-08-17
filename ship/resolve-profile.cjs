@@ -151,6 +151,10 @@ if (require.main === module) {
     };
   }
 
+  // No process.exit() here: stdout to a pipe is asynchronous on Windows, and
+  // the go skill reads this payload through one. An explicit exit can truncate
+  // a pending write, and a truncated payload fails the skill's JSON.parse —
+  // exactly the resolution hiccup that must never kill a go run. No path sets a
+  // non-zero code, so falling off the end already exits 0 once stdout drains.
   process.stdout.write(JSON.stringify(result) + '\n');
-  process.exit(0);
 }
