@@ -179,6 +179,8 @@ describe('headless doctrine — the turn never ends mid-workflow', () => {
       'the skill cannot block on a workflow without TaskOutput in allowed-tools');
     assert.ok(/allowed-tools:.*\bTaskStop\b/.test(fm),
       'the wait-cap path calls TaskStop, so it must be in allowed-tools');
+    assert.ok(/allowed-tools:.*\bToolSearch\b/.test(fm),
+      'the rule tells go to load deferred TaskOutput/TaskStop with ToolSearch, so it must be in allowed-tools too');
   });
 
   it('go names the wait rule and states the tool returns a Task ID, not a result', () => {
