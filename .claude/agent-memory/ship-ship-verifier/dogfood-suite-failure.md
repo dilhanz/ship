@@ -18,3 +18,10 @@ What changed:
 **How to apply:** if this assertion fails again, it is a **real regression — record it as a FAIL** and write a fix task. Do not classify it as pre-existing and do not skip it. The failure is now reproducible on any clean checkout, so a clean-worktree run is a confirmation, not an exoneration. The environment traps in the related note still apply to *how* you invoke the suite.
 
 Related: [[test-runner-environment]]
+
+**One durability caveat, found during the dashboard-code-spans verification.** The conformance
+assertion compares *tag-stripped* dashboard text against *backtick-stripped* ROADMAP cells, so it only
+proves code-span rendering while the fixture actually contains a code span. Deleting the backticks from
+`tests/fixtures/pm-state/ROADMAP.md`'s tripwire row makes it pass vacuously — verified by mutation.
+`tests/dashboard-inline-adversarial.test.js` now guards that directly ("the fixture ROADMAP still
+carries a backtick-bearing backlog cell"), so treat *that* test failing as the same class of regression.
