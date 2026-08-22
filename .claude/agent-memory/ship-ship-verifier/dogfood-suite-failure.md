@@ -25,3 +25,12 @@ proves code-span rendering while the fixture actually contains a code span. Dele
 `tests/fixtures/pm-state/ROADMAP.md`'s tripwire row makes it pass vacuously — verified by mutation.
 `tests/dashboard-inline-adversarial.test.js` now guards that directly ("the fixture ROADMAP still
 carries a backtick-bearing backlog cell"), so treat *that* test failing as the same class of regression.
+
+**One mutant that survives and should not be chased.** Widening `inline()`'s regex from ``` `[^`\n]+` ```
+to `` `[\s\S]+` `` (letting a span cross a newline) passes the entire suite. It is not a test gap worth
+closing through `generateDashboard`: every pm-state parser joins continuation lines with a space
+(`bulletEntries`, `parseDecisions`, the single-line frontmatter and table regexes), so no authored value
+containing a real newline ever reaches `inline()`. The `\n` exclusion is defence in depth, and the
+adversarial test named "a newline cannot be spanned" asserts balance only — its scenario cannot deliver
+the newline its name implies. `inline()` is not exported, so a direct unit test would mean widening the
+module's public surface.
