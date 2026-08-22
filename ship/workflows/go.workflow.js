@@ -130,6 +130,9 @@ const PROGRESS_SCHEMA = {
     tasks_total: { type: 'number' },
     commits: { type: 'array', items: { type: 'string' } },
     working_tree_clean: { type: 'boolean' },
+    // Ordering corruption the probe can see from PLAN.md alone. Optional, so a
+    // probe result without it still validates.
+    out_of_order: { type: 'array', items: { type: 'string' } },
     notes: { type: ['string', 'null'] },
   },
 }
@@ -343,6 +346,7 @@ Read .planning/features/${feature}/PLAN.md and count the tasks ${ph.id === 'all'
 - tasks_total — all tasks in scope
 - commits — short hashes recorded on done tasks in scope (the commit="..." attribute), oldest first
 - working_tree_clean — true when \`git status --porcelain\` prints nothing
+- out_of_order — any task marked status="done" whose depends list names a task that is NOT marked done, as "task {id} depends on {unmet ids}"; empty array when the ordering is clean
 - notes — anything odd (uncommitted work, a done task with no commit), else null`
 
 // The builder reports its commits oldest-first (one atomic commit per task, in
@@ -449,6 +453,10 @@ const uniq = (list) => Array.from(new Set(list.filter((c) => typeof c === 'strin
 // which is the real "stuck" signal.
 const buildPhase = async (ph, label) => {
   const priorCommits = []
+  // Concerns raised by this phase's own machinery (as opposed to the builder's
+  // own). They must reach every exit: the builder that corrupted the ordering is
+  // gone, so the probe's report is the only surviving trace of it.
+  const phaseConcerns = []
   let priorTasks = 0
   let lastDone = null // absolute done-count from the last probe, when we have one
   let lastTotal = 0
@@ -472,6 +480,7 @@ const buildPhase = async (ph, label) => {
         ...build,
         commits: uniq([...priorCommits, ...(build.commits || [])]),
         tasks_completed: build.tasks_total ? Math.min(done, build.tasks_total) : done,
+        concerns: [...(build.concerns || []), ...phaseConcerns],
         rounds: round,
       }
     }
@@ -499,6 +508,7 @@ const buildPhase = async (ph, label) => {
           stopped_at: `phase ${label}`,
           reason: `${consecutiveTransportDeaths} consecutive agent(s) died on a transport error: ${lastFailure.message}`,
           recommendation: infraRecommendation,
+          concerns: [...phaseConcerns],
           rounds: round,
         }
       }
@@ -518,6 +528,14 @@ const buildPhase = async (ph, label) => {
         log(`build:${label} round ${round} returned no result and the progress probe failed — ${landed ? 'retrying blind' : 'giving up'}`)
       } else {
         priorCommits.push(...(progress.commits || []))
+        // The probe reads PLAN.md's declared ordering, so it can see a task
+        // marked done ahead of a dependency it declared. Surface it: the
+        // builder that did it is gone, and an already-corrupted plan must not
+        // become invisible just because nobody is left to report it.
+        for (const entry of progress.out_of_order || []) {
+          const concern = `phase ${label}: PLAN.md ordering violated — ${entry}`
+          if (!phaseConcerns.includes(concern)) phaseConcerns.push(concern)
+        }
         if (progress.tasks_pending === 0) {
           log(`build:${label} round ${round} returned no result, but PLAN.md shows every task done — treating the phase as complete`)
           return {
@@ -525,7 +543,7 @@ const buildPhase = async (ph, label) => {
             status: 'COMPLETE_WITH_CONCERNS',
             tasks_completed: progress.tasks_done, tasks_total: progress.tasks_total,
             commits: uniq(priorCommits),
-            concerns: [`phase ${label}: a builder exhausted its turn budget without reporting; completion confirmed from PLAN.md task status${progress.working_tree_clean === false ? ' (working tree not clean — check for uncommitted leftovers)' : ''}`],
+            concerns: [`phase ${label}: a builder exhausted its turn budget without reporting; completion confirmed from PLAN.md task status${progress.working_tree_clean === false ? ' (working tree not clean — check for uncommitted leftovers)' : ''}`, ...phaseConcerns],
             rounds: round,
           }
         }
@@ -556,6 +574,7 @@ const buildPhase = async (ph, label) => {
     recommendation: endedOnTransport
       ? infraRecommendation
       : `Run /ship:build ${feature} to continue this phase interactively, or split its remaining tasks into smaller ones with /ship:plan ${feature}.`,
+    concerns: [...phaseConcerns],
     rounds: MAX_BUILD_ROUNDS,
   }
 }
