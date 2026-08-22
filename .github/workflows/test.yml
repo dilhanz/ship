@@ -1,0 +1,26 @@
+name: Tests
+
+# Runs the suite on every push and pull request, so a red suite is found on the
+# PR rather than on release day — release.yml only runs when a version tag is
+# pushed, which is far too late to learn the tests are broken.
+#
+# The invocation is deliberately byte-identical to release.yml's `Run tests`
+# step (same command string, same pinned Node), so a green PR means a green
+# release run. tests/ci-workflow-parity.test.js asserts that they stay in step.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run tests
+        run: node --test "tests/*.test.js"
