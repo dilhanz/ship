@@ -96,11 +96,17 @@ For **every** acceptance criterion, output one line:
 - [PROVEN|UNPROVEN] {criterion} — {evidence, or what is missing}
 ```
 
-Evidence is a named artifact: a passing test and its file, a `VERIFY.md` line reference, a recorded drill, a verified `file:line`. "It looks right" is not evidence — that is UNPROVEN. If `VERIFY.md` is absent or records no result, say plainly that the verify gate never ran.
+Evidence is a named artifact: a passing test and its file, a `VERIFY.md` line reference, a recorded drill, a verified `file:line`. "It looks right" is not evidence — that is UNPROVEN.
+
+`VERIFY.md` has **three** states, and they mean different things. Read which one you are looking at before crediting anything — a run that started and died was previously indistinguishable from a run that never happened, which is precisely why a field audit was needed to notice half the verifications were being lost:
+
+- **Absent** — no `VERIFY.md` at all: the verify gate never ran. Say that plainly. Every criterion is UNPROVEN.
+- **IN PROGRESS** — `VERIFY.md` exists and carries the line `**Status:** IN PROGRESS — Stage 1 only`: the gate started and died. Report it in those words — this is a distinct state, not a variant of "absent". Its Stage 1 criteria table **is** evidence: a criterion it records with a real command is PROVEN and must be credited. Every criterion it does not cover is UNPROVEN, and because the bug hunt never ran, the feature is not verified. Also check for `.planning/features/{feature}/.review-scratch/verify.json`; when it is present, name it as the salvageable record and note that re-running `/ship:verify {feature}` resumes from it rather than starting the verification over.
+- **Recorded result** — `VERIFY.md` carries an `**Overall Status:**` verdict: audit it as usual, criterion by criterion.
 
 File every UNPROVEN criterion into `ROADMAP.md` as a verification-debt backlog item at **P0** when it is live / customer-facing risk, otherwise **P1**, each with `Source` pointing at the criterion (e.g. `{feature} CONTEXT.md acceptance criterion 3`).
 
-End with a one-line verdict: genuinely done, or shipped-and-unverified with the count of unproven criteria.
+End with a one-line verdict: genuinely done; shipped-and-unverified with the count of unproven criteria; or verify gate started and died, with the count of criteria the partial run did prove.
 
 ### apply
 
