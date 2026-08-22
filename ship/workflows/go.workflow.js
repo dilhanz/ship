@@ -745,18 +745,26 @@ if (!stoppedAt) {
   // INFRASTRUCTURE rendering path — as a pseudo-phase, since `stoppedAt` is the
   // only channel the go skill renders — rather than as a bare null verdict the
   // report would have to explain some other way.
-  if (!verdict && consecutiveTransportDeaths >= MAX_TRANSPORT_RETRIES) {
+  //
+  // The test here is the *classification*, not `MAX_TRANSPORT_RETRIES`. The cap
+  // counts deaths per `safeAgent` call, and verification is a single call that
+  // has already spent both of its attempts on the outage, so a plain verifier
+  // outage leaves the counter at 1 and a cap test would never fire — dropping
+  // the run back to a null verdict reported as an unrecoverable `error`. One
+  // classified death here is already the sustained outage the cap exists to
+  // detect on the multi-round build path.
+  if (!verdict && lastFailure && lastFailure.transport) {
     stoppedAt = {
       phase: { id: 'verify', name: 'verify' },
       build: {
         status: 'INFRASTRUCTURE',
         tasks_completed: 0, tasks_total: 0, commits: [],
         stopped_at: 'verify',
-        reason: `${consecutiveTransportDeaths} consecutive agent(s) died on a transport error: ${lastFailure ? lastFailure.message : 'connection lost'}`,
+        reason: `the verifier died on a transport error after both attempts: ${lastFailure.message}`,
         recommendation: infraRecommendation,
       },
     }
-    log(`Verify stopped: ${consecutiveTransportDeaths} consecutive transport failure(s) — the build is intact, the connection is not.`)
+    log('Verify stopped: the verifier died on a transport error — the build is intact, the connection is not.')
   }
 }
 
