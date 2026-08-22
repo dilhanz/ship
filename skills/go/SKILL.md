@@ -25,7 +25,7 @@ So under `--headless`, after EVERY Workflow invocation in this skill — section
 1. Take the Task ID from the Workflow tool result (it reports `Task ID: {id}`).
 2. If the completion notification already arrived while you were still in the launching turn — short workflows do finish that fast — the result is in hand. Skip to reconciling it.
 3. Otherwise call `TaskOutput` with `{ task_id, block: true, timeout: 600000 }`. 600000 ms is that tool's maximum, not a tuning choice. `TaskOutput` and `TaskStop` may be deferred tools in this harness — load them first with `ToolSearch` using `select:TaskOutput,TaskStop`.
-4. Read the reply's `<status>`. A build spine routinely outlasts ten minutes, so one call is not enough: while the status is still running, repeat step 3 — up to **12 calls** (a 2-hour ceiling). On `completed`, the reply's `<output>` carries `result` — the workflow's own return value, the same `{ feature, stoppedAt, completed, verdict }` (or plan-loop) object you would have received from a notification. Reconcile from that; do not wait for a separate notification on top of it. The payload is a compact summary, not an agent transcript, so reading it costs nothing.
+4. Read the reply's `<status>`. A build spine routinely outlasts ten minutes, so one call is not enough: while the status is still running, repeat step 3 — up to **12 calls** (a 2-hour ceiling). On `completed`, the reply's `<output>` carries `result` — the workflow's own return value, the same `{ feature, stoppedAt, completed, verdict, salvageEvents }` (or plan-loop) object you would have received from a notification. Reconcile from that; do not wait for a separate notification on top of it. The payload is a compact summary, not an agent transcript, so reading it costs nothing.
 5. If the ceiling is reached with the task still running, call `TaskStop` on the Task ID **before** terminating, then terminate as `error` per section 6 with detail `workflow exceeded the 2-hour headless wait cap`. Stopping first is what holds the guarantee that nothing is still writing to the worktree once the run returns.
 
 The structured result you then reconcile is unchanged — only *when* you receive it changes.
@@ -157,7 +157,9 @@ The four policy fields come from section 1b. Pass them as **real JSON values** �
 
 Under `--headless`, block on the returned Task ID before reading the result — see **Headless workflow wait** above. This is the invocation the wait rule exists for: the build→verify spine is the long one, and a headless turn that ends here strands it. Interactively, behave as before — report that it is running and end the turn.
 
-The workflow builds each phase (builder → reviewer re-verify+review → one fix round for critical/high findings → re-review), then runs the merged verifier (acceptance criteria + adversarial bug hunt → VERIFY.md). It returns `{ feature, stoppedAt, completed, verdict }`. Agent output stays inside the workflow — you receive only this structured result.
+The workflow builds each phase (builder → reviewer re-verify+review → one fix round for critical/high findings → re-review), then runs the merged verifier (acceptance criteria + adversarial bug hunt → VERIFY.md). It returns `{ feature, stoppedAt, completed, verdict, salvageEvents }`. Agent output stays inside the workflow — you receive only this structured result.
+
+`salvageEvents` is one entry per salvage retry — `{ agent, record, outcome }`, where `outcome` is `adopted`, `rejected`, `unknown`, or `no-result`. It is empty on a run where nothing was lost in transit, which is the common case.
 
 Each phase in `completed` carries the review's own evidence — `verifyRuns` and `filesReviewed` — alongside its `findings`. A fix round that lands no commits gets no re-review (there would be no diff to read, and an approving re-review over an empty tree would read as "fixed"); its findings come back `unresolved` with a concern instead.
 
@@ -175,7 +177,9 @@ From the returned result:
 4. Collect any per-phase `unresolved` review findings (critical/high that survived the fix round) and builder `concerns` across `completed`. These must be surfaced in the report below — a phase is marked `done` even when it carries unresolved findings (one fix round only, the verifier is the backstop), so the user needs to see them.
 
    The workflow already handed those findings to the verifier in its prompt, as mandatory Stage 2b targets — REVIEW.md is written here, *after* the workflow returns, so on this path the verifier could not have read them off disk. That ordering is why the handoff lives in the prompt. When a `verdict` is present, cross-check it: an unresolved critical/high finding should appear in VERIFY.md's Carried Review Findings table as reproduced, not reproduced, or not testable. If the table is missing or does not account for one, say so in the report — the backstop did not close.
-5. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, or `EXHAUSTED`): leave CONTEXT.md `status: building` and report the blocker, including `stoppedAt.build.commits` — a stopped phase is usually partially built, and those commits are real. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run). For `EXHAUSTED`, the phase outlived several builders without finishing: report `tasks_completed / tasks_total`, and suggest `/ship:build {name}` to continue or `/ship:plan {name}` to split the remaining tasks into smaller ones.
+5. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, `EXHAUSTED`, or `INFRASTRUCTURE`): leave CONTEXT.md `status: building` and report the blocker, including `stoppedAt.build.commits` — a stopped phase is usually partially built, and those commits are real. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run). For `EXHAUSTED`, the phase outlived several builders without finishing: report `tasks_completed / tasks_total`, and suggest `/ship:build {name}` to continue or `/ship:plan {name}` to split the remaining tasks into smaller ones.
+
+   **`INFRASTRUCTURE`** — the run lost its connection to the API: several consecutive agents died on a transport error (`ENOTFOUND`, `ECONNRESET`, a 5xx, an overload) having done no work. Nothing about the plan is wrong and every committed task is preserved. Leave CONTEXT.md `status: building`, report `stoppedAt.build.reason` (it names the actual transport error) and the commits that landed, and recommend re-running `/ship:go {name}`. Do **NOT** suggest splitting tasks into smaller ones or running `/ship:plan {name}` — that is `EXHAUSTED`'s advice, and giving it here is the exact confusion this status exists to end: an outage was previously reported as a spent turn budget, and operators went off resizing tasks that were fine. `stoppedAt.phase.id` may be `verify`, meaning the outage took the verifier rather than a build phase; the recommendation is the same.
 6. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE/DEFERRED, `plan-verified` + fix tasks on FAIL). Report it.
 
    A `DEFERRED` verdict means one or more acceptance criteria target shared `.project-manager/` state, which no lane may write — the requested edits are recorded in `verdict.pm_handoff`. Report it as a completed build with pending PM work, never as a failure, and never re-run the workflow to "fix" it: no builder can clear a deferral, so a retry would spend a full build→verify cycle to arrive back here unchanged. If `verdict.criteria_deferred` is non-zero but `verdict.pm_handoff` is null, say so — the deferral went unrecorded.
@@ -195,6 +199,8 @@ Verify: {PASS | FAIL | INCONCLUSIVE | DEFERRED — criteria_passed/criteria_tota
 - {phase id}: [{severity}] {file} — {description} → {verifier outcome from VERIFY.md, or "not accounted for in VERIFY.md"}
 [If any builder concerns:] Build concerns:
 - {phase id}: {concern}
+[If salvageEvents is non-empty:] Salvage events:
+- {agent}: {record} → {adopted | rejected | unknown | no result}
 [If any phase whose reviewStatus is NOT `SKIPPED_BY_PROFILE` has an empty verifyRuns and empty filesReviewed:] Unsubstantiated review verdicts: phase {id} approved with no verify re-runs and no files reviewed.
 [If any phase's reviewStatus is `SKIPPED_BY_PROFILE`:] Review gate off by profile ({profile}): no reviewer ran for phase(s) {ids} — the verifier was the only gate.
 
@@ -203,8 +209,11 @@ Verify: {PASS | FAIL | INCONCLUSIVE | DEFERRED — criteria_passed/criteria_tota
 [If verdict PASS/INCONCLUSIVE/DEFERRED:] Ready to finish — run /ship:finish (or I can run it now).
 [If FAIL:] Fix tasks were appended to PLAN.md as a pending fix phase. Review them, then /ship:go to continue (or /ship:build for manual control).
 [If stoppedAt:] Stopped at phase {id}. Reason: {status}{, tasks_completed/tasks_total if EXHAUSTED}. Commits landed: {stoppedAt.build.commits}. Next: {suggested action}.
+   An `INFRASTRUCTURE` stop reports the transport cause from `stoppedAt.build.reason` and the `/ship:go {name}` re-run recommendation instead of task counts — the counts are not what stopped it.
 [If any phase has builderRounds > 1:] Note: phase {id} needed {builderRounds} builder rounds (tasks are large enough to outlive one turn budget).
 ```
+
+An `adopted` salvage event is the machinery working — a lost result recovered for a few thousand tokens instead of a ~90k-token re-run; a `rejected` one means the record did not match this build and the work was redone from scratch. Surfacing both is what makes the next field audit a read of this report rather than a reconstruction from session transcripts.
 
 Under `--headless`, the fenced `ship_outcome` block (headless termination rule below) follows the GO COMPLETE report and is the final message's last content.
 
@@ -222,6 +231,7 @@ Under `--headless`, EVERY terminal path in this skill — the resolution/`done` 
 | Build `stoppedAt` NEEDS_CONTEXT | `needs-context` |
 | Build `stoppedAt` EXHAUSTED | `exhausted` |
 | Build `stoppedAt` CHECKPOINT | `checkpoint` |
+| Build `stoppedAt` INFRASTRUCTURE | `infrastructure` — CONTEXT.md stays `building`; the `detail` names the transport cause from `stoppedAt.build.reason` and the `/ship:go {name}` re-run. Never `exhausted`: nothing needs resizing |
 | Verdict PASS / INCONCLUSIVE | `done` |
 | Verdict DEFERRED | `deferred` — build complete, shared `.project-manager/` edits pending; set `handoff_file` to the PM-HANDOFF.md path and name `/ship:pm apply` in `detail`. Never `done`: a caller that reads `done` archives the lane and the handoff rots |
 | Verdict FAIL | `verify-fail` — fix tasks are already in PLAN.md; go never auto-retries, the caller decides |

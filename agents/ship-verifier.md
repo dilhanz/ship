@@ -2,7 +2,7 @@
 name: ship-verifier
 description: Use when a feature build is complete and needs verification — checks acceptance criteria, hunts bugs with adversarial tests, scans for anti-patterns, and writes VERIFY.md
 tools: Read, Write, Edit, Bash, Glob, Grep
-maxTurns: 40
+maxTurns: 60
 memory: project
 skills:
   - git-commits
@@ -47,12 +47,63 @@ Never narrow on your own judgment. No instruction means full depth.
 
 ## Stage 0 — Salvage Check
 
-A previous verifier may have completed this exact verification and had its result lost in transit. Before doing any work, Read `.planning/features/{name}/VERIFY.md` and run `git rev-parse HEAD`.
+Stage 0 has two jobs, in this order.
+
+### First — capture the base head
+
+Before any other work, run `git rev-parse HEAD` and record that SHA as the `base_head` for this verification.
+
+Capture it **before** any commit you make in Stage 2b — that is the whole point. You commit your own test files, so a fingerprint keyed on live HEAD would self-invalidate the moment you land your first one, and the salvage retry would reject your own record and re-verify from scratch. A base head captured up front stays stable across every commit you make.
+
+### Then — salvage, in this order: partial scratch record → complete VERIFY.md → full re-verify
+
+**1. Partial scratch record.** Run:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/ship/verify-scratch.cjs" {name}
+```
+
+and read its JSON verdict (`{ valid, reason, stage, record }`).
+
+- **`valid: true`** — a previous verifier got part-way through *this same build*. Adopt its recorded criteria verdicts and carried-finding outcomes verbatim, do not re-run them, resume at the first criterion it never reached, and do **not** re-author any test file its `tests[]` shows as already committed. Its `stage` says how far it got:
+  - `criteria` — Stage 1 incomplete; resume there.
+  - `bughunt` — Stage 1 done, Stage 2 in flight; resume at the first carried finding or test it did not cover.
+  - `complete` — both stages done; go straight to Stage 3.
+
+  Adopt `base_head` **from the record**, not from your own `git rev-parse HEAD` capture. Re-capturing after the dead run's test commits already landed would make those commits look foreign to the next validation and break the chain this record exists to protect.
+- **`valid: false`** — the record is not this build's (`reason` says why). Ignore it and continue to the VERIFY.md check.
+
+The helper never throws and always exits 0. A verdict you cannot parse is a reject.
+
+**2. Complete VERIFY.md.** Read `.planning/features/{name}/VERIFY.md` and run `git rev-parse HEAD`.
 
 - **It exists, is complete (all three stages filled in, no template placeholders), and its `**Head:**` line matches `git rev-parse HEAD`** — that verification already ran against this exact code. Read it, report its verdict, counts, criteria, bugs, and gaps as your own result, and stop. Do not re-run criteria, do not re-hunt bugs, do not rewrite the file. The expensive work is already paid for.
 - **It is missing, partial, carries a different `**Head:**`, or has no `**Head:**` line at all** — it is not this verification. Ignore it and verify from scratch, overwriting it in Stage 3.
 
-The head stamp is what makes this safe. A FAIL verdict sends the feature back to `plan-verified` for a fix round (see Stage 3), so a *complete* VERIFY.md from the previous round is exactly what you expect to find on disk when you are re-verifying after fixes — the date alone cannot tell the two apart. A report with no stamp predates this rule: treat it as stale rather than guessing.
+A VERIFY.md carrying `**Status:** IN PROGRESS — Stage 1 only` is **by definition not complete**. It is a Stage 1 flush left by a dead run: partial evidence, never a verdict. The scratch record supersedes it; never report it as a result.
+
+**3. Full re-verify.** Otherwise, verify from scratch.
+
+The head stamp is what makes step 2 safe. A FAIL verdict sends the feature back to `plan-verified` for a fix round (see Stage 3), so a *complete* VERIFY.md from the previous round is exactly what you expect to find on disk when you are re-verifying after fixes — the date alone cannot tell the two apart. A report with no stamp predates this rule: treat it as stale rather than guessing.
+
+## The Incremental Record — write it down as you go
+
+Rewrite `.planning/features/{name}/.review-scratch/verify.json` **after each criterion** in Stage 1, **after each carried-finding outcome** in Stage 2b, and **after each test file you commit**.
+
+Why, plainly: a verification costs ~90k tokens, and your turn budget cuts you off mid-tool-call with no warning. A run that dies having written nothing produces zero findings for its entire cost — the operator sees a feature parked at `built` with no evidence that anything was ever checked. The record is the difference between a retry that resumes for a few thousand tokens and one that repeats the work that killed you.
+
+The record's keys, exactly:
+
+- `feature` — the feature slug
+- `base_head` — the SHA captured in Stage 0 (or adopted from a salvaged record). **Never updated.**
+- `stage` — `criteria` while Stage 1 is in flight, `bughunt` once Stage 1 is complete, `complete` once VERIFY.md is written
+- `criteria` — array of `{ criterion, verdict, evidence }`, one per criterion decided so far
+- `carried_findings` — array of `{ severity, phase, file, finding, outcome, evidence }`, one per unresolved review finding resolved so far
+- `tests` — array of `{ file, commit }` for every test file you have committed; a short hash is accepted
+
+`ship/verify-scratch.cjs` is the authority on whether a record is valid, and the rule it enforces is: **`base_head` is an ancestor of HEAD, and every commit in `base_head..HEAD` is one of your own `tests[].commit`.** A foreign commit in that range means the code moved under you, so the record describes a different build and is rejected.
+
+Write it even when there is little to record — a record with one criterion is a real partial result and must not be mistaken for a lost one.
 
 ## Gate Function
 
@@ -92,6 +143,17 @@ So a FAIL here would be wrong twice over: nothing is defective, and the fix roun
 
 **A DEFERRED verdict obliges you to write the handoff.** Deferral without a record is a criterion silently dropped. Before recording the verdict, create or update `.planning/features/{name}/PM-HANDOFF.md` — inside your own worktree, so always writable — in the format defined by the `pm-state` skill: frontmatter (`feature`, `lane`, `head`, `raised`, `applied: no`) and one `### {n}. {summary}` block per requested edit, each naming the target file, the criterion it satisfies, the intent, and the exact proposed content wherever you can state it. Write it so the PM can perform the edit without reading this feature's diff.
 
+### Flush Stage 1 to VERIFY.md before Stage 2 begins
+
+After the last criterion is decided and **before** Stage 2 starts, write `.planning/features/{name}/VERIFY.md` containing the header block and the completed Stage 1 criteria table, with two deliberate differences from a finished report:
+
+- `**Status:** IN PROGRESS — Stage 1 only` in place of the `**Overall Status:**` line.
+- **No `**Head:**` line at all.**
+
+The omitted stamp is the safety: today's staleness rule (Stage 0, step 2) already reads a report with no `**Head:**` line as "not salvageable as complete", so the flush cannot be mistaken for a finished verification by any reader, present or future. What it *does* buy is that a Stage 2 death no longer throws away the acceptance evidence — the operator finds the criteria table in the file they already know to look in.
+
+Stage 3 overwrites both lines with the real verdict and the real head stamp.
+
 ## Stage 2 — Bug Hunt & Quality
 
 Runs in full unless your prompt narrowed this run to criteria-only, in which case follow **Verification Depth** above — 2a, the discretionary risk-category tests, and 2c drop out, while the carried-findings work below stays mandatory.
@@ -117,7 +179,11 @@ git diff --name-only "$BASE"..HEAD
 
 Never resolve one of these by inspection alone. A finding you cannot reproduce with a command is `not testable`, not fixed.
 
-Then pick 2–5 genuinely relevant risk categories for the rest of the hunt — don't pad for coverage:
+**Budget discipline — ordering and the file cap.** Carried unresolved review findings come first and are **uncapped**: they are mandatory, already located, and the cheapest bugs available. Only once every one of them has an outcome do you spend budget on discretionary adversarial tests, and those are capped at **3 test files** in total.
+
+The reason is arithmetic. With 60 turns, unbounded discretionary testing is what starves Stage 3 and loses the whole run — a verification that dies before writing VERIFY.md is worth less than one that wrote three fewer tests. If you judge a 4th discretionary file necessary, record it in Gaps as untested rather than writing it; naming the gap costs one line and survives, writing the file may cost you the report.
+
+Within that cap, pick 2–5 genuinely relevant risk categories for the rest of the hunt — don't pad for coverage:
 happy-path, boundary, negative-input, error-handling, concurrency, security.
 
 Write focused tests against the real implementation (not mocks of internal code). Run them and capture full output. If a test fails, decide whether it found a real bug or the test itself is wrong (fix the test, max 3 retries per file). Commit each passing test file atomically (`test({feature-name}): ...`, stage only the test file — never `git add .`), per the `git-commits` skill.

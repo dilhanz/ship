@@ -33,7 +33,7 @@ This changes only *when* the final message is produced. The outcome vocabulary, 
 
 ## 3. Outcome vocabulary
 
-Every headless run terminates with exactly one of these 11 outcomes. Build-stop cases stay distinct (not collapsed into `blocked`) so callers can distinguish "needs a human answer" from "needs smaller tasks".
+Every headless run terminates with exactly one of these 12 outcomes. Build-stop cases stay distinct (not collapsed into `blocked`) so callers can distinguish "needs a human answer" from "needs smaller tasks".
 
 | Outcome | Meaning | CONTEXT.md status left behind |
 |---------|---------|-------------------------------|
@@ -46,6 +46,7 @@ Every headless run terminates with exactly one of these 11 outcomes. Build-stop 
 | `verify-fail` | Verifier verdict FAIL — fix tasks are already in PLAN.md; go never auto-retries. | `plan-verified` |
 | `needs-context` | Builder stopped with NEEDS_CONTEXT — a task needs information not in the plan or codebase. | `building` |
 | `exhausted` | Builder rounds exhausted with no forward progress — tasks likely need to be smaller. | `building` |
+| `infrastructure` | A sustained transport outage — several consecutive agents died on connection errors (`ENOTFOUND`, `ECONNRESET`, a 5xx, an overload) having done no work. Distinct from `exhausted`: `exhausted` means the tasks need to be smaller, `infrastructure` means nothing is wrong with the plan and no work was lost. Fully resumable by re-running `/ship:go`. | `building` |
 | `checkpoint` | Builder hit an architectural conflict or persistent verification failure. | `building` |
 | `error` | Unrecoverable skill-level failure: workflow crash, unresolvable feature name, a null verdict with nothing stopped, or the 2-hour headless wait ceiling reached on a workflow (task stopped via `TaskStop` before terminating). | unchanged |
 
