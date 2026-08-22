@@ -110,6 +110,11 @@ const REVIEW_SCHEMA = {
         },
       },
     },
+    // Salvage retries only: whether the retry reused a durable record or redid
+    // the work. Optional — a first-attempt result never carries it — but it
+    // must be declared, because additionalProperties is false and a compliant
+    // salvage result would otherwise be rejected outright.
+    salvaged: { enum: ['adopted', 'rejected'] },
   },
 }
 
@@ -183,6 +188,8 @@ const VERIFY_SCHEMA = {
     },
     anti_patterns: { type: 'number' },
     gaps: { type: 'array', items: { type: 'string' } },
+    // See REVIEW_SCHEMA.salvaged — same channel, same reason.
+    salvaged: { enum: ['adopted', 'rejected'] },
   },
 }
 
@@ -204,10 +211,24 @@ const phaseLine = (ph) => (ph.id === 'all' ? '' : `Phase: ${ph.id} — ${ph.name
 // to a scratch file and the verifier has already written VERIFY.md. Pointing
 // the retry at that durable record turns a ~90k-token redo into a few-thousand
 // token read. Falls back to the original prompt when no salvage path exists.
+// Salvage observability. Every retry that pointed at a durable record lands one
+// entry here: an `adopted` event is the machinery working — a lost result
+// recovered for a few thousand tokens instead of a ~90k-token re-run — while a
+// `rejected` one means the record did not match this build and the work was
+// redone. Surfacing both is what makes the next field audit a read of the
+// GO COMPLETE report rather than a reconstruction from session transcripts.
+const salvageEvents = []
+
 const safeAgent = async (prompt, opts) => {
-  const { retry = true, retryPrompt = null, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
+  const { retry = true, retryPrompt = null, salvageRecord = null, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
   const label = typeof baseOpts.label === 'string' ? baseOpts.label : ''
   const labelDisplay = label || '<no-label>'
+  // Retry path only: a first attempt that succeeded salvaged nothing.
+  const recordSalvage = (outcome) => {
+    if (!retryPrompt) return
+    salvageEvents.push({ agent: labelDisplay, record: salvageRecord, outcome })
+    log(`salvage: ${labelDisplay}${salvageRecord ? ` (${salvageRecord})` : ''} → ${outcome}`)
+  }
   try { return await agent(prompt, baseOpts) } catch (e) {
     if (!retry) {
       log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — treating as no result`)
@@ -216,8 +237,15 @@ const safeAgent = async (prompt, opts) => {
     log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once${retryPrompt ? ' (salvage)' : ''}`)
   }
   const retryOpts = { ...baseOpts, label: label ? `${label}:retry` : 'retry' }
-  try { return await agent(retryPrompt || prompt, retryOpts) } catch (e) {
+  try {
+    const result = await agent(retryPrompt || prompt, retryOpts)
+    // The retried agent is the only one that knows whether it reused the
+    // record; absent that field the event records `unknown` rather than guessing.
+    recordSalvage(result ? (result.salvaged || 'unknown') : 'no-result')
+    return result
+  } catch (e) {
     log(`${labelDisplay} threw again (${e && e.message ? e.message : e}) — treating as no result`)
+    recordSalvage('no-result')
     return null
   }
 }
@@ -311,6 +339,8 @@ Read \`.planning/features/${feature}/.review-scratch/${scope}.json\`.
 - **If it matches but its \`stage\` is \`verify-only\`:** the previous reviewer finished the verify re-runs and died before reviewing the diff. Carry its \`verify_runs\` forward verbatim, skip Step 1, and do Step 2 only.
 - **If it is missing, empty, malformed, stamped with a different scope or head, or carries no \`stage\` key at all:** it is not this review (an unstamped record predates this contract). Fall back to the full review below.
 
+Whichever branch you take, report a \`"salvaged"\` field in your structured result: \`"adopted"\` when you reused any recorded work, \`"rejected"\` when the record was absent or did not match and you redid the review from scratch.
+
 ---
 
 ${fullPrompt}`
@@ -324,12 +354,21 @@ ${fullPrompt}`
 // predates the rule, and an unverifiable record is not salvageable.
 const salvageVerifyPrompt = (fullPrompt) => `Salvage a lost verification result for feature: ${feature}
 
-A verifier just completed this exact verification, but its structured result was lost in transit. VERIFY.md is very likely already written.
+A verifier just ran this exact verification, but its structured result was lost in transit. Its work is very likely already recorded. Check the scratch record FIRST — it is the only artifact that survives a death part-way through Stage 1 or Stage 2 — and only then VERIFY.md.
 
-Read \`.planning/features/${feature}/VERIFY.md\` and run \`git rev-parse HEAD\`.
+**1. The scratch record.** Run \`node "\${CLAUDE_PLUGIN_ROOT}/ship/verify-scratch.cjs" ${feature}\` and read the JSON verdict it prints. The helper never throws and always exits 0; a verdict you cannot parse is a reject.
+
+- **\`valid: true\` with \`stage: "complete"\`:** the verification finished. Adopt its criteria verdicts, carried-finding outcomes, and tests verbatim, confirm \`.planning/features/${feature}/VERIFY.md\` is on disk, and report the result without re-running anything.
+- **\`valid: true\` with \`stage: "criteria"\` or \`"bughunt"\`:** a previous verifier died part-way through THIS build. Adopt every recorded criterion verdict and carried-finding outcome verbatim, resume at the first criterion the record does not cover, and do NOT re-author any test file the record's \`tests[]\` shows as already committed — re-writing a committed test file is the exact waste this record exists to prevent.
+- **\`valid: false\`:** the record is not this build's. Ignore it and fall through to VERIFY.md below.
+
+**2. VERIFY.md.** Read \`.planning/features/${feature}/VERIFY.md\` and run \`git rev-parse HEAD\`.
 
 - **If it exists, is complete (all stages filled, no placeholders), and its \`**Head:**\` line matches that SHA:** report its verdict, counts, criteria verdicts, bugs, and gaps as your result and stop. Do NOT re-run criteria, re-hunt bugs, or rewrite the file.
+- **If it carries \`**Status:** IN PROGRESS — Stage 1 only\`:** it is a Stage 1 flush from a run that died, not a verdict. Never report it as your result — its criteria table is evidence, and the scratch record above supersedes it.
 - **If it is missing, partial, stamped with a different head, or carries no \`**Head:**\` line at all:** it is not this verification. Fall back to the full verification below.
+
+**3.** Whichever branch you take, report a \`"salvaged"\` field in your structured result: \`"adopted"\` when you reused any recorded work, \`"rejected"\` when nothing matched and you redid the verification from scratch.
 
 ---
 
@@ -469,7 +508,7 @@ for (let i = 0; i < phases.length; i++) {
   const reviewFull = reviewPrompt(ph, build.commits || [])
   const review = await safeAgent(reviewFull, {
     agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `review:${label}`, phase: 'Build',
-    retryPrompt: salvageReviewPrompt(ph, reviewScope, reviewFull),
+    retryPrompt: salvageReviewPrompt(ph, reviewScope, reviewFull), salvageRecord: `.review-scratch/${reviewScope}.json`,
   })
 
   let fixRound = null
@@ -499,7 +538,7 @@ for (let i = 0; i < phases.length; i++) {
       const rereviewFull = rereviewPrompt(ph, blocking, fixCommits)
       rereview = await safeAgent(rereviewFull, {
         agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build',
-        retryPrompt: salvageReviewPrompt(ph, `${reviewScope}-rereview`, rereviewFull),
+        retryPrompt: salvageReviewPrompt(ph, `${reviewScope}-rereview`, rereviewFull), salvageRecord: `.review-scratch/${reviewScope}-rereview.json`,
       })
     }
   }
@@ -588,8 +627,8 @@ if (!stoppedAt) {
   const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}${depthBlock}`
   verdict = await safeAgent(verifyFull, {
     agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
-    retryPrompt: salvageVerifyPrompt(verifyFull),
+    retryPrompt: salvageVerifyPrompt(verifyFull), salvageRecord: '.review-scratch/verify.json',
   })
 }
 
-return { feature, stoppedAt, completed, verdict }
+return { feature, stoppedAt, completed, verdict, salvageEvents }
