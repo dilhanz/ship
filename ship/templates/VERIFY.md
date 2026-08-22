@@ -5,6 +5,8 @@
 **Head:** {git rev-parse HEAD at verification time}
 **Overall Status:** PASS | FAIL | INCONCLUSIVE | DEFERRED
 
+(A Stage 1 flush — written after the criteria table is complete and before Stage 2 begins — carries `**Status:** IN PROGRESS — Stage 1 only` in place of the `**Overall Status:**` line and omits the `**Head:**` line entirely; the verifier's final write, after the bug hunt, replaces both with the real verdict and the real head stamp. A report carrying the IN PROGRESS marker is a dead run's partial evidence, never a verdict: `/ship:pm check` reports it as "gate started and died", and the salvage path supersedes it from `.review-scratch/verify.json`.)
+
 ## Stage 1 — Acceptance Criteria
 
 Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE, DEFERRED}. INCONCLUSIVE means no runnable verify command was available; grep-only file existence does not upgrade to PASS. DEFERRED means the criterion targets shared `.project-manager/` state, which only the PM layer may write — the requested edits are recorded in PM Handoff below.
