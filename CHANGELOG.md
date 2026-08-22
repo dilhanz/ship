@@ -1,5 +1,28 @@
 # Changelog
 
+## 5.12.0
+
+Minor release — the PM dashboard renders markdown code spans, and the suite now runs on every push and pull request instead of waiting for a version tag. Both halves come from the same defect: an assertion that had never passed on any machine holding real state, sitting behind a skip guard that made CI green regardless.
+
+### Fixed
+
+- **The dashboard rendered code spans as literal backticks.** `ship/pm-update.cjs`'s `esc()` escapes `& < > " '` and nothing else, so a backlog cell authored as ``Re-run `check` against a ship-owned archived feature`` reached `.project-manager/dashboard.html` with its backticks intact. `tests/pm-state-conformance.test.js` has asserted the opposite since v5.4.0, with a comment stating that the dashboard renders inline code spans as `<code>` elements — written aspirationally; `git log -S'<code>'` over both files is empty, so the rendering never existed. Authored-prose text nodes now render through a new `inline()` helper: backlog cells, milestone names and goals, STATUS bullets, blocker labels and reasons, decision dates/titles/bodies, the project name, the last-synced line, and the `--next` item and its meta. `esc()` stays exactly where it was — attribute values (`class="status-…"`), lane names, feature names, counts, table headers — because a backtick pair reaching an attribute would emit a tag inside quotes and corrupt the markup.
+- **Three dogfood test blocks skipped on every clean checkout.** `.project-manager/` is gitignored per-repo working state, so roughly 17 assertions across `tests/pm-state-conformance.test.js` and `tests/pm-nudge-verify.test.js` gated on that directory existing and silently skipped in CI — which is why a red assertion could survive eight minor releases. All three blocks now run against a committed fixture and can no longer skip.
+- **Nothing ran the suite until a version tag.** `.github/workflows/release.yml` was the only workflow in the repo, so a red suite was discovered on release day. It is now discovered on the PR.
+
+### Added
+
+- **`inline()` in `ship/pm-update.cjs`** — HTML-escape the whole value first, *then* convert backtick pairs to `<code>`. Escaping first means a value containing `<` or `&` cannot break out of the span and the emitted tags are not themselves escaped; converting first would require re-escaping and reopen the injection question. Code spans only: `**bold**`, `_em_`, and `[text](url)` pass through as literal text. Links in particular would mean deciding an href allowlist, which would reopen the dashboard's "no external reference of any kind" guarantee that `pm-state-conformance` asserts.
+- **A `<code>` style rule in `ship/templates/dashboard.html`** — a local monospace stack on the template's track colour. The template's only font declaration was a `system-ui` stack, and an unstyled `<code>` is nearly indistinguishable from surrounding text on a glanceable Pi wall display, which defeats the point of emitting the tag.
+- **`tests/fixtures/pm-state/`** — one shared, committed fixture (ROADMAP, STATUS, DECISIONS, CONVENTIONS, plus an active and an archived feature directory) serving all three previously-gated blocks. Committing the *real* `.project-manager/` would have churned on every sync and forced the dashboard to be regenerated in-commit — the same trap v5.4.1 closed one directory up for `.planning/`. The fixture's `dashboard.html` is generated at test time into a temp directory rather than committed, so it cannot go stale the first time rendering changes. Its ROADMAP carries an explicit code-span tripwire row: delete the rendering and that row fails.
+- **`.github/workflows/test.yml`** — `node --test "tests/*.test.js"` on Node 22, on push and on pull_request. The command string and pinned Node version are byte-identical to `release.yml`'s `Run tests` step, so a green PR means a green release run, and `tests/ci-workflow-parity.test.js` asserts the two stay in step.
+- **Coverage for the conversion itself** — `tests/dashboard-code-spans.test.js` (escape order, attribute safety, passthrough of other markdown), `tests/dashboard-inline-fidelity.test.js` (round-trip losslessness, pre-escaped entities), and `tests/dashboard-inline-adversarial.test.js` (`inline()` attacked across every call site, plus blocker keying and the `--next` contract). `'code'` joins the balanced-structural-tags assertion — a regex that opens a span it never closes is the most likely way this feature breaks the document, and the tag-stripped comparison would pass either way.
+
+### Notes
+
+- **No migration.** `.project-manager/dashboard.html` is regenerated on the next `/ship:pm-sync` or `pm-update.cjs` run; nothing on disk needs changing. State authored without backticks renders exactly as before.
+- The verifier's `dogfood-suite-failure.md` agent memory is rewritten as a resolved note. It previously instructed the verifier never to record a FAIL for this assertion — left in place, it would have suppressed a genuine regression.
+
 ## 5.11.0
 
 Minor release — the verify gate stops losing half its runs, and the go workflow stops blaming the plan for a dropped connection. A field report over 35 `GO COMPLETE` runs found **15 of 28 verify attempts returned no verdict**: every one of them had built and reviewed real code, then threw its verification away and parked the feature at `built`. The same data turned up two more defects on the go path.
