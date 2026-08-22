@@ -35,15 +35,22 @@ Only execute tasks with `status="pending"`.
 
 For each pending task in scope, in order:
 
-1. **Read** the `<task>`. If it has a `<reference>`, read that file first and use it as a pattern template.
+1. **Read** the `<task>`. If it has a `<reference>`, read that file first and use it as a pattern template. If it carries a `depends="..."` attribute, check every task ID it names in PLAN.md before you write any code — a dependency is satisfied only when that task's `status` is `done`.
 2. **Implement** the `<action>` — create/modify the `<files>`; everything the action specifies is implemented exactly as specified. Where the action is silent on internals, decide yourself, following the `<reference>` pattern and codebase conventions. Don't add scope beyond the action.
 3. **Verify** — run the `<verify>` command; it must pass before committing. If it runs tests you haven't written, follow TDD (failing test first, then implement). On failure, apply the deviation rules:
    - **Rule 1** — small issue (wrong path, missing import): fix and retry
    - **Rule 2** — verify still fails after implementation: debug and fix, max 3 attempts
    - **Rule 3** — architectural conflict or persistent failure: stop, return CHECKPOINT
 4. **Commit** — stage only this task's files (never `git add .`): `git commit -m "feat({feature-name}): {description}"`. Follow the `git-commits` skill.
-5. **Mark done** — set the task's status in PLAN.md: `<task id="N" status="done" commit="{short-hash}">`
+5. **Mark done** — set the task's status in PLAN.md: `<task id="N" status="done" commit="{short-hash}">`. **Never set `status="done"` on a task while any task in its `depends` list is still pending.** `depends` is authored at plan time and validated by the plan reviewer, but nothing on the build path used to read it — and a task has been observed marked done while a task it declared a dependency on was still pending, which makes PLAN.md's own record of ordering a lie.
 6. After the first task, set CONTEXT.md frontmatter `status: building` if not already set.
+
+**Unmet `depends` is a deviation, not a silent skip.** Apply the deviation rules:
+
+- If the unmet dependency is simply a later task in the same scope and you can execute it first without violating *its* dependencies, do so, then come back to the blocked task and continue (Rule 1). Note the reordering in your `deviations`.
+- If the dependency is outside your scope — another phase, or a task that already failed — stop and return `CHECKPOINT`, naming the blocked task in `stopped_at` and the unmet dependency IDs in `reason`.
+
+Skipping the task quietly, or marking it done anyway because its own verify happens to pass, is forbidden: a plan whose declared ordering is ignored is not a plan, and the resulting corruption is invisible to everything downstream.
 
 ## Turn Budget
 
