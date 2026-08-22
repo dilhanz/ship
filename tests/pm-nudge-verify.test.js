@@ -2,9 +2,9 @@
  * Verifier-authored adversarial coverage for the header-name backlog parser
  * in hooks/pm-sync-nudge.cjs (pm-capability-uplift).
  *
- * Focus: the header-context lifecycle (the plan's named risk), the real
- * dogfooded ROADMAP.md in this repo, and rows that violate the documented
- * cell-count contract.
+ * Focus: the header-context lifecycle (the plan's named risk), the committed
+ * fixture ROADMAP.md in `tests/fixtures/pm-state/`, and rows that violate the
+ * documented cell-count contract.
  */
 
 const { describe, it, beforeEach, afterEach } = require('node:test');
@@ -189,16 +189,16 @@ describe('pm-sync-nudge — header-context lifecycle', () => {
   });
 });
 
-// `.project-manager/` is gitignored — local, per-repo state that exists only on
-// a machine which has run /ship:pm-sync. These two read this repo's own
-// ROADMAP.md to prove the hook parses real state, so on a clean checkout there
-// is nothing to read and the assertions would fail the release run instead of
-// catching a defect (the trap the v5.4.1 fix closed for `.planning/`).
-const dogfood = fs.existsSync(path.join(repoRoot, '.project-manager', 'ROADMAP.md'))
-  ? {}
-  : { skip: 'no .project-manager/ROADMAP.md in this checkout — it is gitignored local state' };
+// These two prove the shipped hook parses a real-shaped, format-conformant
+// ROADMAP.md. They used to read this repo's own `.project-manager/ROADMAP.md`,
+// which is gitignored — local, per-repo state present only on a machine that
+// has run /ship:pm-sync — so they were gated and skipped on every clean
+// checkout, which is exactly the gap this coverage was meant to close. They now
+// read the committed fixture in `tests/fixtures/pm-state/`, so they run
+// everywhere; the point is unchanged.
+const FIXTURE_ROADMAP = path.join(repoRoot, 'tests', 'fixtures', 'pm-state', 'ROADMAP.md');
 
-describe('pm-sync-nudge — against the real dogfooded ROADMAP.md', dogfood, () => {
+describe('pm-sync-nudge — against the committed fixture ROADMAP.md', () => {
   let tmpDir;
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-nudge-real-'));
@@ -207,12 +207,12 @@ describe('pm-sync-nudge — against the real dogfooded ROADMAP.md', dogfood, () 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  const SLUG = 'pm-capability-uplift';
+  const SLUG = 'fixture-shipped-thing';
 
   /**
-   * The Status cell the real ROADMAP.md records for a slug. Derived rather than
-   * hard-coded, so these tests keep testing the hook as the dogfooded state moves
-   * through its own lifecycle instead of failing every time the item advances.
+   * The Status cell the fixture ROADMAP.md records for a slug. Derived rather
+   * than hard-coded, so these tests keep testing the hook as the fixture's own
+   * rows move through their lifecycle instead of failing every time one advances.
    */
   function recordedStatusFor(roadmap, slug) {
     for (const line of roadmap.split('\n')) {
@@ -236,10 +236,10 @@ describe('pm-sync-nudge — against the real dogfooded ROADMAP.md', dogfood, () 
     }
   }
 
-  it('this repo\'s committed ROADMAP.md is machine-parseable: its slug drifts when reality diverges', async () => {
-    const real = fs.readFileSync(path.join(repoRoot, '.project-manager', 'ROADMAP.md'), 'utf8');
+  it('the committed fixture ROADMAP.md is machine-parseable: its slug drifts when reality diverges', async () => {
+    const real = fs.readFileSync(FIXTURE_ROADMAP, 'utf8');
     const recorded = recordedStatusFor(real, SLUG);
-    assert.ok(recorded, `the shipped ROADMAP.md carries a row for ${SLUG}`);
+    assert.ok(recorded, `the fixture ROADMAP.md carries a row for ${SLUG}`);
     assert.ok(
       recorded === 'done' || recorded === 'in-progress',
       `this test models done/in-progress only; ROADMAP records "${recorded}"`
@@ -249,15 +249,15 @@ describe('pm-sync-nudge — against the real dogfooded ROADMAP.md', dogfood, () 
 
     const { code, output } = await runHook(tmpDir);
     assert.equal(code, 0);
-    assert.ok(output, 'the shipped ROADMAP.md must be parseable by the shipped hook');
+    assert.ok(output, 'the fixture ROADMAP.md must be parseable by the shipped hook');
     const actual = recorded === 'done' ? 'in-progress' : 'done';
     assert.match(msgOf(output), new RegExp(`${SLUG}: roadmap says ${recorded}, actually ${actual}`));
   });
 
-  it('this repo\'s committed ROADMAP.md is silent when reality matches (no false nudge)', async () => {
-    const real = fs.readFileSync(path.join(repoRoot, '.project-manager', 'ROADMAP.md'), 'utf8');
+  it('the committed fixture ROADMAP.md is silent when reality matches (no false nudge)', async () => {
+    const real = fs.readFileSync(FIXTURE_ROADMAP, 'utf8');
     const recorded = recordedStatusFor(real, SLUG);
-    assert.ok(recorded, `the shipped ROADMAP.md carries a row for ${SLUG}`);
+    assert.ok(recorded, `the fixture ROADMAP.md carries a row for ${SLUG}`);
     writeRoadmap(tmpDir, real);
     stageReality(tmpDir, recorded, { matching: true });
 
