@@ -114,6 +114,123 @@ describe('salvage retry — verifier', () => {
     assert.ok(/stale/i.test(c.split('## Gate Function')[0]),
       'the salvage check must reject a stale report from an earlier build round');
   });
+
+  it('the verifier checks its own scratch record before VERIFY.md, and before re-verifying', () => {
+    // The complete-VERIFY.md check only ever rescued a run that finished. The
+    // 15-of-28 runs that returned no verdict all died in Stage 1 or Stage 2,
+    // where the only thing that can survive is an incremental record.
+    const c = readSrc('agents/ship-verifier.md');
+    assert.ok(c.includes('verify-scratch.cjs'),
+      'Stage 0 must ask the helper whether a partial record belongs to this build');
+    assert.ok(c.includes('.review-scratch/verify.json'),
+      'the verifier must name the record it writes and salvages');
+    const stage0 = c.slice(c.indexOf('## Stage 0 — Salvage Check'), c.indexOf('## The Incremental Record'));
+    assert.ok(stage0.includes('verify-scratch.cjs') && stage0.includes('Complete VERIFY.md'),
+      'both salvage sources must live inside Stage 0');
+    assert.ok(stage0.indexOf('verify-scratch.cjs') < stage0.indexOf('Complete VERIFY.md'),
+      'the salvage order is partial scratch → complete VERIFY.md → full re-verify');
+    assert.ok(/Full re-verify/.test(stage0),
+      'a record that matches nothing must still produce a real verification');
+    assert.ok(/do \*\*not\*\* re-author any test file/i.test(stage0),
+      'a salvaged run must not rewrite test files the dead run already committed');
+  });
+
+  it('the base head is captured before any verifier commit, and the doc says why', () => {
+    // The verifier commits its own test files, so the reviewers' live-HEAD
+    // fingerprint would self-invalidate on the first Stage 2b commit — the
+    // retry would reject its own record and re-verify from scratch.
+    const c = readSrc('agents/ship-verifier.md');
+    const stage0 = c.slice(c.indexOf('## Stage 0 — Salvage Check'), c.indexOf('## The Incremental Record'));
+    assert.ok(stage0.indexOf('base_head') < stage0.indexOf('verify-scratch.cjs'),
+      'the base head must be captured before the salvage lookup, i.e. before any other work');
+    assert.ok(/before\*\* any commit you make in Stage 2b|before any commit you make in Stage 2b/.test(stage0),
+      'the capture must be ordered ahead of the verifier\'s own commits');
+    assert.ok(/self-invalidate/.test(stage0),
+      'the reason a live-HEAD stamp cannot be copied from the reviewers must be stated');
+    assert.ok(/Adopt `base_head` \*\*from the record\*\*/.test(stage0),
+      'a salvaged run must inherit the base head, not re-capture one past the dead run\'s commits');
+  });
+
+  it('the incremental record has a documented shape and is rewritten as it goes', () => {
+    const c = readSrc('agents/ship-verifier.md');
+    const section = c.slice(c.indexOf('## The Incremental Record'), c.indexOf('## Gate Function'));
+    assert.ok(/after each criterion/i.test(section),
+      'a record written only at the end is worthless to the run it exists to absorb');
+    for (const key of ['feature', 'base_head', 'stage', 'criteria', 'carried_findings', 'tests']) {
+      assert.ok(new RegExp('`' + key + '`').test(section), `the record shape must document ${key}`);
+    }
+    for (const stage of ['criteria', 'bughunt', 'complete']) {
+      assert.ok(new RegExp('`' + stage + '`').test(section), `stage value ${stage} must be documented`);
+    }
+    assert.ok(/ancestor of HEAD/.test(section),
+      'the validity rule the helper enforces must be stated where the record is defined');
+  });
+
+  it('a Stage 1 flush lands in VERIFY.md, marked and deliberately unstamped', () => {
+    const agent = readSrc('agents/ship-verifier.md');
+    const stage1 = agent.slice(agent.indexOf('## Stage 1'), agent.indexOf('## Stage 2'));
+    assert.ok(stage1.includes('**Status:** IN PROGRESS — Stage 1 only'),
+      'the flush must carry a marker no reader can mistake for a verdict');
+    assert.ok(/No `\*\*Head:\*\*` line at all/.test(stage1),
+      'the flush must omit the head stamp — the absent stamp is what makes it unsalvageable as complete');
+    assert.ok(readSrc('ship/templates/VERIFY.md').includes('**Status:** IN PROGRESS — Stage 1 only'),
+      'the template must document the same marker, since it is what the verifier writes from');
+  });
+
+  it('the verify salvage prompt reads the scratch record before VERIFY.md', () => {
+    const c = readSrc('ship/workflows/go.workflow.js');
+    const prompt = c.slice(c.indexOf('const salvageVerifyPrompt'), c.indexOf('const uniq ='));
+    assert.ok(prompt.includes('verify-scratch.cjs') && prompt.includes('**2. VERIFY.md.**'),
+      'the salvage prompt must name both sources');
+    assert.ok(prompt.indexOf('verify-scratch.cjs') < prompt.indexOf('**2. VERIFY.md.**'),
+      'the record is the only artifact that survives a mid-stage death — check it first');
+    assert.ok(/Adopt every recorded criterion verdict/.test(prompt),
+      'the retry must reuse recorded verdicts rather than re-deciding them');
+    assert.ok(/resume at the first criterion the record does not cover/.test(prompt),
+      'the retry must resume, not restart');
+    assert.ok(/do NOT re-author any test file/.test(prompt),
+      're-writing a committed test file is the exact waste the record exists to prevent');
+    assert.ok(/IN PROGRESS — Stage 1 only/.test(prompt),
+      'a Stage 1 flush must never be reported back as a verdict');
+  });
+
+  it('the plugin-root reference in go.workflow.js is escaped', () => {
+    // Every prompt builder is a JS template literal, so a bare
+    // ${CLAUDE_PLUGIN_ROOT} is an identifier reference that throws
+    // ReferenceError when the prompt is built — on the retry path only, i.e.
+    // exactly when the run is already in trouble. node --check cannot see it:
+    // the bare form is valid syntax.
+    const c = readSrc('ship/workflows/go.workflow.js');
+    assert.ok(c.includes('\\${CLAUDE_PLUGIN_ROOT}'),
+      'the helper must be invoked through the plugin root, escaped so the literal reaches the agent');
+    // Both halves matter: the presence check alone passes a file carrying one
+    // escaped and one unescaped reference.
+    assert.ok(!/(^|[^\\])\$\{CLAUDE_PLUGIN_ROOT\}/.test(c),
+      'an unescaped ${CLAUDE_PLUGIN_ROOT} would crash the build spine at prompt-build time');
+  });
+
+  it('the manual verify path clears the scratch record too', () => {
+    // go §6.3 covers the go path and the build skill's cleanup runs before
+    // verify, so /ship:verify was leaving verify.json behind for a later run
+    // to salvage from a different build.
+    const c = readSrc('skills/verify/SKILL.md');
+    assert.ok(/## Clean Up the Scratch Record/.test(c),
+      '/ship:verify must have its own cleanup step');
+    assert.ok(/delete `\.planning\/features\/\{name\}\/\.review-scratch\/`/i.test(c),
+      'the cleanup must name the directory it deletes');
+    assert.ok(/no result/i.test(c.slice(c.indexOf('## Clean Up the Scratch Record'))),
+      'the one exception — a verifier that returned nothing — must keep its record');
+  });
+
+  it('/ship:pm check can tell a gate that died from one that never ran', () => {
+    const c = readSrc('agents/ship-pm.md');
+    assert.ok(/IN PROGRESS — Stage 1 only/.test(c),
+      'the audit must recognise the partial marker');
+    assert.ok(/gate started and died/.test(c),
+      'the third state needs its own words, or a partial run reads as a missing one');
+    assert.ok(/\.review-scratch\/verify\.json/.test(c),
+      'the audit should name the salvageable record when it is still on disk');
+  });
 });
 
 describe('salvage retry — go workflow wiring', () => {

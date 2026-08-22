@@ -110,6 +110,11 @@ const REVIEW_SCHEMA = {
         },
       },
     },
+    // Salvage retries only: whether the retry reused a durable record or redid
+    // the work. Optional — a first-attempt result never carries it — but it
+    // must be declared, because additionalProperties is false and a compliant
+    // salvage result would otherwise be rejected outright.
+    salvaged: { enum: ['adopted', 'rejected'] },
   },
 }
 
@@ -125,6 +130,9 @@ const PROGRESS_SCHEMA = {
     tasks_total: { type: 'number' },
     commits: { type: 'array', items: { type: 'string' } },
     working_tree_clean: { type: 'boolean' },
+    // Ordering corruption the probe can see from PLAN.md alone. Optional, so a
+    // probe result without it still validates.
+    out_of_order: { type: 'array', items: { type: 'string' } },
     notes: { type: ['string', 'null'] },
   },
 }
@@ -183,6 +191,8 @@ const VERIFY_SCHEMA = {
     },
     anti_patterns: { type: 'number' },
     gaps: { type: 'array', items: { type: 'string' } },
+    // See REVIEW_SCHEMA.salvaged — same channel, same reason.
+    salvaged: { enum: ['adopted', 'rejected'] },
   },
 }
 
@@ -204,20 +214,104 @@ const phaseLine = (ph) => (ph.id === 'all' ? '' : `Phase: ${ph.id} — ${ph.name
 // to a scratch file and the verifier has already written VERIFY.md. Pointing
 // the retry at that durable record turns a ~90k-token redo into a few-thousand
 // token read. Falls back to the original prompt when no salvage path exists.
+// Salvage observability. Every retry that pointed at a durable record lands one
+// entry here: an `adopted` event is the machinery working — a lost result
+// recovered for a few thousand tokens instead of a ~90k-token re-run — while a
+// `rejected` one means the record did not match this build and the work was
+// redone. Surfacing both is what makes the next field audit a read of the
+// GO COMPLETE report rather than a reconstruction from session transcripts.
+const salvageEvents = []
+
+// An agent that dies because the connection dropped has not spent a round: it
+// never ran. Reporting that as turn-budget exhaustion is how a network outage
+// came to be answered with advice to split tasks that did not need splitting,
+// so the two causes are classified apart here and named apart downstream.
+const MAX_TRANSPORT_RETRIES = 3
+
+const TRANSPORT_PATTERNS = [
+  /ENOTFOUND/i,
+  /ECONNRESET/i,
+  /ETIMEDOUT/i,
+  /ECONNREFUSED/i,
+  /EAI_AGAIN/i,
+  /fetch failed/i,
+  /socket hang up/i,
+  /overloaded/i,
+  // An HTTP 5xx marker: the status code alone is too generic to match on, so
+  // it only counts when it sits next to a status/error word.
+  /(status|error)[^0-9]{0,20}50\d/i,
+]
+
+const isTransportError = (e) => {
+  const message = String((e && e.message) || e || '')
+  if (!message) return false
+  return TRANSPORT_PATTERNS.some((re) => re.test(message))
+}
+
+// `safeAgent` cannot signal a cause through its return value — every call site
+// tests `if (result)`, so a sentinel would read as success. The classification
+// reaches `buildPhase` through this script-level state instead.
+let lastFailure = null
+let consecutiveTransportDeaths = 0
+
+const infraRecommendation = `Re-run /ship:go ${feature} — the plan is sound and every committed task is preserved; this run lost its connection.`
+
 const safeAgent = async (prompt, opts) => {
-  const { retry = true, retryPrompt = null, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
+  const { retry = true, retryPrompt = null, salvageRecord = null, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
   const label = typeof baseOpts.label === 'string' ? baseOpts.label : ''
   const labelDisplay = label || '<no-label>'
-  try { return await agent(prompt, baseOpts) } catch (e) {
+  // Retry path only: a first attempt that succeeded salvaged nothing.
+  const recordSalvage = (outcome) => {
+    if (!retryPrompt) return
+    salvageEvents.push({ agent: labelDisplay, record: salvageRecord, outcome })
+    log(`salvage: ${labelDisplay}${salvageRecord ? ` (${salvageRecord})` : ''} → ${outcome}`)
+  }
+  // A returned result proves the connection is back, whatever it contains.
+  const noteSuccess = () => { lastFailure = null; consecutiveTransportDeaths = 0 }
+  const noteFailure = (e) => {
+    const message = String(e && e.message ? e.message : e)
+    const transport = isTransportError(e)
+    lastFailure = { transport, message, label: labelDisplay }
+    return transport
+  }
+  // Both attempts are gone. Only *consecutive* transport deaths count toward
+  // the cap: a genuine agent failure in between proves the connection was fine,
+  // so three outages spread across a healthy multi-hour build must not add up.
+  const noteDeath = () => {
+    if (lastFailure && lastFailure.transport) {
+      consecutiveTransportDeaths += 1
+      log(`${labelDisplay} died on a transport error — ${consecutiveTransportDeaths} consecutive (cap ${MAX_TRANSPORT_RETRIES})`)
+    } else {
+      consecutiveTransportDeaths = 0
+    }
+  }
+
+  try {
+    const result = await agent(prompt, baseOpts)
+    noteSuccess()
+    return result
+  } catch (e) {
+    const transport = noteFailure(e)
     if (!retry) {
-      log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — treating as no result`)
+      log(`${labelDisplay} threw (${e && e.message ? e.message : e}) [${transport ? 'transport' : 'agent'}] — treating as no result`)
+      noteDeath()
       return null
     }
-    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once${retryPrompt ? ' (salvage)' : ''}`)
+    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) [${transport ? 'transport' : 'agent'}] — retrying once${retryPrompt ? ' (salvage)' : ''}`)
   }
   const retryOpts = { ...baseOpts, label: label ? `${label}:retry` : 'retry' }
-  try { return await agent(retryPrompt || prompt, retryOpts) } catch (e) {
-    log(`${labelDisplay} threw again (${e && e.message ? e.message : e}) — treating as no result`)
+  try {
+    const result = await agent(retryPrompt || prompt, retryOpts)
+    noteSuccess()
+    // The retried agent is the only one that knows whether it reused the
+    // record; absent that field the event records `unknown` rather than guessing.
+    recordSalvage(result ? (result.salvaged || 'unknown') : 'no-result')
+    return result
+  } catch (e) {
+    const transport = noteFailure(e)
+    log(`${labelDisplay} threw again (${e && e.message ? e.message : e}) [${transport ? 'transport' : 'agent'}] — treating as no result`)
+    noteDeath()
+    recordSalvage('no-result')
     return null
   }
 }
@@ -252,6 +346,7 @@ Read .planning/features/${feature}/PLAN.md and count the tasks ${ph.id === 'all'
 - tasks_total — all tasks in scope
 - commits — short hashes recorded on done tasks in scope (the commit="..." attribute), oldest first
 - working_tree_clean — true when \`git status --porcelain\` prints nothing
+- out_of_order — any task marked status="done" whose depends list names a task that is NOT marked done, as "task {id} depends on {unmet ids}"; empty array when the ordering is clean
 - notes — anything odd (uncommitted work, a done task with no commit), else null`
 
 // The builder reports its commits oldest-first (one atomic commit per task, in
@@ -311,6 +406,8 @@ Read \`.planning/features/${feature}/.review-scratch/${scope}.json\`.
 - **If it matches but its \`stage\` is \`verify-only\`:** the previous reviewer finished the verify re-runs and died before reviewing the diff. Carry its \`verify_runs\` forward verbatim, skip Step 1, and do Step 2 only.
 - **If it is missing, empty, malformed, stamped with a different scope or head, or carries no \`stage\` key at all:** it is not this review (an unstamped record predates this contract). Fall back to the full review below.
 
+Whichever branch you take, report a \`"salvaged"\` field in your structured result: \`"adopted"\` when you reused any recorded work, \`"rejected"\` when the record was absent or did not match and you redid the review from scratch.
+
 ---
 
 ${fullPrompt}`
@@ -324,12 +421,21 @@ ${fullPrompt}`
 // predates the rule, and an unverifiable record is not salvageable.
 const salvageVerifyPrompt = (fullPrompt) => `Salvage a lost verification result for feature: ${feature}
 
-A verifier just completed this exact verification, but its structured result was lost in transit. VERIFY.md is very likely already written.
+A verifier just ran this exact verification, but its structured result was lost in transit. Its work is very likely already recorded. Check the scratch record FIRST — it is the only artifact that survives a death part-way through Stage 1 or Stage 2 — and only then VERIFY.md.
 
-Read \`.planning/features/${feature}/VERIFY.md\` and run \`git rev-parse HEAD\`.
+**1. The scratch record.** Run \`node "\${CLAUDE_PLUGIN_ROOT}/ship/verify-scratch.cjs" ${feature}\` and read the JSON verdict it prints. The helper never throws and always exits 0; a verdict you cannot parse is a reject.
+
+- **\`valid: true\` with \`stage: "complete"\`:** the verification finished. Adopt its criteria verdicts, carried-finding outcomes, and tests verbatim, confirm \`.planning/features/${feature}/VERIFY.md\` is on disk, and report the result without re-running anything.
+- **\`valid: true\` with \`stage: "criteria"\` or \`"bughunt"\`:** a previous verifier died part-way through THIS build. Adopt every recorded criterion verdict and carried-finding outcome verbatim, resume at the first criterion the record does not cover, and do NOT re-author any test file the record's \`tests[]\` shows as already committed — re-writing a committed test file is the exact waste this record exists to prevent.
+- **\`valid: false\`:** the record is not this build's. Ignore it and fall through to VERIFY.md below.
+
+**2. VERIFY.md.** Read \`.planning/features/${feature}/VERIFY.md\` and run \`git rev-parse HEAD\`.
 
 - **If it exists, is complete (all stages filled, no placeholders), and its \`**Head:**\` line matches that SHA:** report its verdict, counts, criteria verdicts, bugs, and gaps as your result and stop. Do NOT re-run criteria, re-hunt bugs, or rewrite the file.
+- **If it carries \`**Status:** IN PROGRESS — Stage 1 only\`:** it is a Stage 1 flush from a run that died, not a verdict. Never report it as your result — its criteria table is evidence, and the scratch record above supersedes it.
 - **If it is missing, partial, stamped with a different head, or carries no \`**Head:**\` line at all:** it is not this verification. Fall back to the full verification below.
+
+**3.** Whichever branch you take, report a \`"salvaged"\` field in your structured result: \`"adopted"\` when you reused any recorded work, \`"rejected"\` when nothing matched and you redid the verification from scratch.
 
 ---
 
@@ -347,6 +453,10 @@ const uniq = (list) => Array.from(new Set(list.filter((c) => typeof c === 'strin
 // which is the real "stuck" signal.
 const buildPhase = async (ph, label) => {
   const priorCommits = []
+  // Concerns raised by this phase's own machinery (as opposed to the builder's
+  // own). They must reach every exit: the builder that corrupted the ordering is
+  // gone, so the probe's report is the only surviving trace of it.
+  const phaseConcerns = []
   let priorTasks = 0
   let lastDone = null // absolute done-count from the last probe, when we have one
   let lastTotal = 0
@@ -370,6 +480,7 @@ const buildPhase = async (ph, label) => {
         ...build,
         commits: uniq([...priorCommits, ...(build.commits || [])]),
         tasks_completed: build.tasks_total ? Math.min(done, build.tasks_total) : done,
+        concerns: [...(build.concerns || []), ...phaseConcerns],
         rounds: round,
       }
     }
@@ -381,6 +492,29 @@ const buildPhase = async (ph, label) => {
       priorTasks += build.tasks_completed || 0
       lastTotal = build.tasks_total || lastTotal
       log(`build:${label} round ${round} returned PARTIAL — ${build.tasks_completed || 0} task(s) landed, continuing with a fresh builder`)
+    } else if (lastFailure && lastFailure.transport) {
+      // The builder died on the connection, not on its turn budget. It never
+      // ran, so this round is not charged against MAX_BUILD_ROUNDS — and the
+      // progress probe is skipped, being itself an agent call that would just
+      // die the same way. The transport cap is what stops this looping forever,
+      // so it is checked first and returns rather than falling through.
+      if (consecutiveTransportDeaths >= MAX_TRANSPORT_RETRIES) {
+        log(`build:${label} stopping: ${consecutiveTransportDeaths} consecutive transport failure(s) — this is an outage, not an exhausted budget`)
+        return {
+          feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
+          status: 'INFRASTRUCTURE',
+          tasks_completed: priorTasks, tasks_total: lastTotal,
+          commits: uniq(priorCommits),
+          stopped_at: `phase ${label}`,
+          reason: `${consecutiveTransportDeaths} consecutive agent(s) died on a transport error: ${lastFailure.message}`,
+          recommendation: infraRecommendation,
+          concerns: [...phaseConcerns],
+          rounds: round,
+        }
+      }
+      log(`build:${label} round ${round} died on a transport error (${lastFailure.message}) — not charging the round, retrying`)
+      round -= 1
+      continue
     } else {
       // No result at all — ask PLAN.md what actually landed before deciding.
       const progress = await safeAgent(progressPrompt(ph), {
@@ -394,6 +528,14 @@ const buildPhase = async (ph, label) => {
         log(`build:${label} round ${round} returned no result and the progress probe failed — ${landed ? 'retrying blind' : 'giving up'}`)
       } else {
         priorCommits.push(...(progress.commits || []))
+        // The probe reads PLAN.md's declared ordering, so it can see a task
+        // marked done ahead of a dependency it declared. Surface it: the
+        // builder that did it is gone, and an already-corrupted plan must not
+        // become invisible just because nobody is left to report it.
+        for (const entry of progress.out_of_order || []) {
+          const concern = `phase ${label}: PLAN.md ordering violated — ${entry}`
+          if (!phaseConcerns.includes(concern)) phaseConcerns.push(concern)
+        }
         if (progress.tasks_pending === 0) {
           log(`build:${label} round ${round} returned no result, but PLAN.md shows every task done — treating the phase as complete`)
           return {
@@ -401,7 +543,7 @@ const buildPhase = async (ph, label) => {
             status: 'COMPLETE_WITH_CONCERNS',
             tasks_completed: progress.tasks_done, tasks_total: progress.tasks_total,
             commits: uniq(priorCommits),
-            concerns: [`phase ${label}: a builder exhausted its turn budget without reporting; completion confirmed from PLAN.md task status${progress.working_tree_clean === false ? ' (working tree not clean — check for uncommitted leftovers)' : ''}`],
+            concerns: [`phase ${label}: a builder exhausted its turn budget without reporting; completion confirmed from PLAN.md task status${progress.working_tree_clean === false ? ' (working tree not clean — check for uncommitted leftovers)' : ''}`, ...phaseConcerns],
             rounds: round,
           }
         }
@@ -416,14 +558,23 @@ const buildPhase = async (ph, label) => {
     if (!landed) break
   }
 
+  // The reason is derived from what actually happened. A run that stalled with
+  // the connection down is not a run whose tasks were too big, and saying so
+  // unconditionally is what sent operators off splitting healthy tasks.
+  const endedOnTransport = !!(lastFailure && lastFailure.transport)
   return {
     feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
     status: 'EXHAUSTED',
     tasks_completed: priorTasks, tasks_total: lastTotal,
     commits: uniq(priorCommits),
     stopped_at: `phase ${label}`,
-    reason: `builders stopped making progress after ${MAX_BUILD_ROUNDS} round(s) — turn budget exhausted with tasks still pending`,
-    recommendation: `Run /ship:build ${feature} to continue this phase interactively, or split its remaining tasks into smaller ones with /ship:plan ${feature}.`,
+    reason: endedOnTransport
+      ? `builders stopped making progress after ${MAX_BUILD_ROUNDS} round(s); the last agent died on a transport error: ${lastFailure.message}`
+      : `builders stopped making progress after ${MAX_BUILD_ROUNDS} round(s) — turn budget exhausted with tasks still pending`,
+    recommendation: endedOnTransport
+      ? infraRecommendation
+      : `Run /ship:build ${feature} to continue this phase interactively, or split its remaining tasks into smaller ones with /ship:plan ${feature}.`,
+    concerns: [...phaseConcerns],
     rounds: MAX_BUILD_ROUNDS,
   }
 }
@@ -438,7 +589,7 @@ for (let i = 0; i < phases.length; i++) {
 
   const build = await buildPhase(ph, label)
 
-  if (!build || build.status === 'EXHAUSTED' || build.status === 'NEEDS_CONTEXT' || build.status === 'CHECKPOINT') {
+  if (!build || build.status === 'EXHAUSTED' || build.status === 'NEEDS_CONTEXT' || build.status === 'CHECKPOINT' || build.status === 'INFRASTRUCTURE') {
     stoppedAt = { phase: ph, build: build || { status: 'NO_RESULT' } }
     log(`Build stopped at phase ${label}: ${build ? build.status : 'no result'} — surfacing to the user.`)
     break
@@ -469,7 +620,7 @@ for (let i = 0; i < phases.length; i++) {
   const reviewFull = reviewPrompt(ph, build.commits || [])
   const review = await safeAgent(reviewFull, {
     agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `review:${label}`, phase: 'Build',
-    retryPrompt: salvageReviewPrompt(ph, reviewScope, reviewFull),
+    retryPrompt: salvageReviewPrompt(ph, reviewScope, reviewFull), salvageRecord: `.review-scratch/${reviewScope}.json`,
   })
 
   let fixRound = null
@@ -499,7 +650,7 @@ for (let i = 0; i < phases.length; i++) {
       const rereviewFull = rereviewPrompt(ph, blocking, fixCommits)
       rereview = await safeAgent(rereviewFull, {
         agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build',
-        retryPrompt: salvageReviewPrompt(ph, `${reviewScope}-rereview`, rereviewFull),
+        retryPrompt: salvageReviewPrompt(ph, `${reviewScope}-rereview`, rereviewFull), salvageRecord: `.review-scratch/${reviewScope}-rereview.json`,
       })
     }
   }
@@ -588,8 +739,33 @@ if (!stoppedAt) {
   const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}${depthBlock}`
   verdict = await safeAgent(verifyFull, {
     agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
-    retryPrompt: salvageVerifyPrompt(verifyFull),
+    retryPrompt: salvageVerifyPrompt(verifyFull), salvageRecord: '.review-scratch/verify.json',
   })
+  // A verifier lost to the same outage is reported through the one
+  // INFRASTRUCTURE rendering path — as a pseudo-phase, since `stoppedAt` is the
+  // only channel the go skill renders — rather than as a bare null verdict the
+  // report would have to explain some other way.
+  //
+  // The test here is the *classification*, not `MAX_TRANSPORT_RETRIES`. The cap
+  // counts deaths per `safeAgent` call, and verification is a single call that
+  // has already spent both of its attempts on the outage, so a plain verifier
+  // outage leaves the counter at 1 and a cap test would never fire — dropping
+  // the run back to a null verdict reported as an unrecoverable `error`. One
+  // classified death here is already the sustained outage the cap exists to
+  // detect on the multi-round build path.
+  if (!verdict && lastFailure && lastFailure.transport) {
+    stoppedAt = {
+      phase: { id: 'verify', name: 'verify' },
+      build: {
+        status: 'INFRASTRUCTURE',
+        tasks_completed: 0, tasks_total: 0, commits: [],
+        stopped_at: 'verify',
+        reason: `the verifier died on a transport error after both attempts: ${lastFailure.message}`,
+        recommendation: infraRecommendation,
+      },
+    }
+    log('Verify stopped: the verifier died on a transport error — the build is intact, the connection is not.')
+  }
 }
 
-return { feature, stoppedAt, completed, verdict }
+return { feature, stoppedAt, completed, verdict, salvageEvents }
