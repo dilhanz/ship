@@ -1,36 +1,51 @@
 /**
  * Verifier-authored conformance checks (pm-capability-uplift).
  *
- * The pm-state skill documents a format; these tests assert the dogfooded
- * `.project-manager/` state in this repo actually obeys it, and that the
- * generated dashboard is genuinely offline and genuinely derived from state.
- * A format nobody can follow is a format that does not exist.
+ * The pm-state skill documents a format; these tests assert that a real-shaped
+ * `.project-manager/` state obeys it, and that the dashboard generated from
+ * that state is genuinely offline and genuinely derived from it. A format
+ * nobody can follow is a format that does not exist.
  *
- * They run only where that state exists. `.project-manager/` is gitignored —
- * local, per-repo working data present only on a machine that has run
- * /ship:pm-sync — so on a clean checkout there is no state to conform, and
- * asserting against it fails the release run rather than catching a real
- * defect. This is the same trap the v5.4.1 fix closed one directory up, when
- * `.planning/` became gitignored and broke the v5.4.0 release.
+ * The state under test is the committed fixture in `tests/fixtures/pm-state/`,
+ * not this repo's own `.project-manager/`. The real state is gitignored — local,
+ * per-repo working data present only on a machine that has run /ship:pm-sync —
+ * so gating on it meant these blocks skipped on every clean checkout and the
+ * release run stayed green while the assertions were red locally. The fixture
+ * is committed, so the whole file runs everywhere with no skips.
+ *
+ * Its directory names are deliberately undotted (`pm-state`, `planning`):
+ * `.gitignore` matches `.project-manager` and `.planning` as bare patterns at
+ * any depth, so a dotted fixture directory would be silently untracked. The
+ * files are copied into a temp `.project-manager/` at run time, and
+ * `dashboard.html` is generated per run rather than committed — a committed
+ * dashboard would go stale the first time rendering changed, which is exactly
+ * the failure mode this suite exists to catch.
  */
 
-const { describe, it } = require('node:test');
+const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { generateDashboard } = require('../ship/pm-update.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
-const pm = (rel) => path.join(repoRoot, '.project-manager', rel);
-const read = (rel) => fs.readFileSync(pm(rel), 'utf8');
+const fixtureRoot = path.join(repoRoot, 'tests', 'fixtures', 'pm-state');
+const fixture = (rel) => path.join(fixtureRoot, rel);
+const read = (rel) => fs.readFileSync(fixture(rel), 'utf8');
+
+const STATE_FILES = ['ROADMAP.md', 'STATUS.md', 'DECISIONS.md', 'CONVENTIONS.md'];
 
 const HEADER = '| Item | Status | Priority | Size | Depends on | Source | Ship feature |';
 
-// Gate both dogfood suites on the state being present at all — see the file
-// header. A skipped suite says "nothing to check here"; a failing one would
-// claim this repo's PM state is malformed when it simply is not checked in.
-const dogfood = fs.existsSync(path.join(repoRoot, '.project-manager'))
-  ? {}
-  : { skip: 'no .project-manager/ in this checkout — it is gitignored local state' };
+/** Copy the fixture state into a throwaway `.project-manager/` and return its root. */
+function stageFixture() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-pm-fixture-'));
+  const pmDir = path.join(root, '.project-manager');
+  fs.mkdirSync(pmDir, { recursive: true });
+  for (const f of STATE_FILES) fs.copyFileSync(fixture(f), path.join(pmDir, f));
+  return root;
+}
 
 function backlogRows(content) {
   const rows = [];
@@ -53,12 +68,25 @@ function backlogRows(content) {
   return rows;
 }
 
-describe('dogfood — .project-manager/ conforms to the pm-state format', dogfood, () => {
-  it('all five state files exist and are non-empty', () => {
-    for (const f of ['ROADMAP.md', 'STATUS.md', 'DECISIONS.md', 'CONVENTIONS.md', 'dashboard.html']) {
-      assert.ok(fs.existsSync(pm(f)), `${f} exists`);
-      assert.ok(fs.statSync(pm(f)).size > 0, `${f} is non-empty`);
+describe('pm-state format — the committed fixture conforms', () => {
+  let tmpRoot;
+  let dashboard;
+
+  before(() => {
+    tmpRoot = stageFixture();
+    dashboard = generateDashboard(tmpRoot, null);
+  });
+
+  after(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('all four state files exist and are non-empty, and a dashboard generates from them', () => {
+    for (const f of STATE_FILES) {
+      assert.ok(fs.existsSync(fixture(f)), `${f} exists`);
+      assert.ok(fs.statSync(fixture(f)).size > 0, `${f} is non-empty`);
     }
+    assert.ok(dashboard && dashboard.length > 0, 'dashboard.html generates non-empty from the state');
   });
 
   it('ROADMAP.md carries frontmatter, the exact 7-column header, and at least one milestone', () => {
@@ -98,22 +126,18 @@ describe('dogfood — .project-manager/ conforms to the pm-state format', dogfoo
     }
   });
 
-  it('every Ship feature slug is either — or resolves to a real feature directory', (t) => {
-    // `.planning/` is gitignored in this repo, so a clean checkout (CI, a fresh
-    // clone) has no planning state to resolve against. pm-state's status mapping
-    // table treats that case as "unchanged — `.planning/` may be gitignored or
-    // pruned", not as an error, so this check only runs where the state exists.
-    if (!fs.existsSync(path.join(repoRoot, '.planning'))) {
-      t.skip('no .planning/ in this checkout — slugs are unresolvable, per pm-state');
-      return;
-    }
+  it('every Ship feature slug is either — or resolves to a real feature directory', () => {
+    // The fixture ships its own companion planning tree, so slug resolution is a
+    // real check with nothing to skip: `planning/features/{slug}` for live work,
+    // `planning/archive/{slug}` for shipped work, mirroring `.planning/`.
+    const planning = path.join(fixtureRoot, 'planning');
     const c = read('ROADMAP.md');
     for (const { cells, header } of backlogRows(c)) {
       const slug = cells[header.indexOf('Ship feature')];
       if (!slug || slug === '—' || slug === '-') continue;
-      const inFeatures = fs.existsSync(path.join(repoRoot, '.planning', 'features', slug));
-      const inArchive = fs.existsSync(path.join(repoRoot, '.planning', 'archive', slug));
-      assert.ok(inFeatures || inArchive, `slug "${slug}" resolves under .planning/`);
+      const inFeatures = fs.existsSync(path.join(planning, 'features', slug));
+      const inArchive = fs.existsSync(path.join(planning, 'archive', slug));
+      assert.ok(inFeatures || inArchive, `slug "${slug}" resolves under the fixture's planning tree`);
     }
   });
 
@@ -121,7 +145,7 @@ describe('dogfood — .project-manager/ conforms to the pm-state format', dogfoo
     const c = read('ROADMAP.md');
     const items = new Set(backlogRows(c).map(({ cells }) => cells[0]));
     const headings = [...c.matchAll(/^#### (.+)$/gm)].map((m) => m[1].trim());
-    assert.ok(headings.length >= 1, 'the dogfood exercises the detail-section convention');
+    assert.ok(headings.length >= 1, 'the fixture exercises the detail-section convention');
     for (const h of headings) {
       const bare = h.replace(/`/g, '');
       const match = [...items].some((i) => i.replace(/`/g, '') === bare);
@@ -182,9 +206,21 @@ describe('dogfood — .project-manager/ conforms to the pm-state format', dogfoo
   });
 });
 
-describe('dogfood — dashboard.html is offline and derived from state', dogfood, () => {
+describe('dashboard.html — offline and derived from state', () => {
+  let tmpRoot;
+  let dashboard;
+
+  before(() => {
+    tmpRoot = stageFixture();
+    dashboard = generateDashboard(tmpRoot, null);
+  });
+
+  after(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
   it('contains no external reference of any kind and no JavaScript', () => {
-    const c = read('dashboard.html');
+    const c = dashboard;
     for (const bad of ['http://', 'https://', '@import', 'url(', '<iframe', '<script', '<link', 'srcset']) {
       assert.ok(!c.toLowerCase().includes(bad.toLowerCase()), `dashboard has no ${bad}`);
     }
@@ -192,12 +228,11 @@ describe('dogfood — dashboard.html is offline and derived from state', dogfood
   });
 
   it('every PM: placeholder was replaced', () => {
-    const c = read('dashboard.html');
-    assert.ok(!/<!--\s*PM:/.test(c), 'no unreplaced placeholder comments remain');
+    assert.ok(!/<!--\s*PM:/.test(dashboard), 'no unreplaced placeholder comments remain');
   });
 
   it('renders the project name, every milestone, and every backlog item from ROADMAP.md', () => {
-    const dash = read('dashboard.html');
+    const dash = dashboard;
     const roadmap = read('ROADMAP.md');
 
     const project = roadmap.match(/^project: "([^"]+)"$/m)[1];
@@ -219,17 +254,19 @@ describe('dogfood — dashboard.html is offline and derived from state', dogfood
   });
 
   it('renders STATUS.md in-flight work rather than the absent-state fallback', () => {
-    const dash = read('dashboard.html');
-    assert.ok(dash.includes('In flight'), 'in-flight section present');
+    assert.ok(dashboard.includes('In flight'), 'in-flight section present');
     assert.ok(
-      !dash.includes('No in-flight work recorded'),
+      !dashboard.includes('No in-flight work recorded'),
       'STATUS.md has in-flight entries, so the fallback must not be used'
     );
   });
 
   it('has balanced structural tags (parses as a coherent document)', () => {
-    const c = read('dashboard.html');
-    for (const tag of ['html', 'head', 'body', 'style', 'section', 'div']) {
+    const c = dashboard;
+    // `code` is in the list because an inline() regex that opens a span it never
+    // closes is the likeliest way code-span rendering corrupts the document, and
+    // the tag-stripped item comparison above would pass either way.
+    for (const tag of ['html', 'head', 'body', 'style', 'section', 'div', 'code']) {
       const open = (c.match(new RegExp(`<${tag}[\\s>]`, 'gi')) || []).length;
       const close = (c.match(new RegExp(`</${tag}>`, 'gi')) || []).length;
       assert.equal(open, close, `<${tag}> tags are balanced`);

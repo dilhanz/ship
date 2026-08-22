@@ -307,6 +307,17 @@ function esc(value) {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Render an authored-prose value: HTML-escape it, then convert markdown code
+ * spans to <code> elements. Escaping first means a value containing `<` or `&`
+ * cannot break out of the span and the emitted tags are not themselves escaped.
+ * Text nodes only — never an attribute value, where a backtick pair would emit
+ * a tag inside quotes.
+ */
+function inline(value) {
+  return esc(value).replace(/`([^`\n]+)`/g, (m, body) => `<code>${body}</code>`);
+}
+
 /** Read a file, returning null when absent or unreadable — never throws. */
 function readOptional(filePath) {
   try {
@@ -400,8 +411,8 @@ function generateDashboard(root, laneData) {
   // PM:PROJECT / PM:UPDATED — ROADMAP frontmatter
   const projectMatch = roadmap.match(/^project:\s*"?([^"\n]*)"?\s*$/m);
   const updatedMatch = roadmap.match(/^updated:\s*"?([^"\n]*)"?\s*$/m);
-  const project = esc(projectMatch ? projectMatch[1].trim() : '');
-  const updated = `Last synced ${esc(updatedMatch ? updatedMatch[1].trim() : '')}`;
+  const project = inline(projectMatch ? projectMatch[1].trim() : '');
+  const updated = `Last synced ${inline(updatedMatch ? updatedMatch[1].trim() : '')}`;
 
   // PM:NEXT — the selectNext rule, same code path as --next
   const next = selectNext(rows);
@@ -409,9 +420,9 @@ function generateDashboard(root, laneData) {
   if (next) {
     const meta = [next.milestone, next.priority, next.shipFeature]
       .filter(v => v !== null && v !== '')
-      .map(esc)
+      .map(inline)
       .join(' &middot; ');
-    nextHtml = `<div class="item-name">${esc(next.item)}</div><div class="item-meta">${meta}</div>`;
+    nextHtml = `<div class="item-name">${inline(next.item)}</div><div class="item-meta">${meta}</div>`;
   } else {
     nextHtml = '<p class="empty">Nothing ready — all items done or blocked</p>';
   }
@@ -419,7 +430,7 @@ function generateDashboard(root, laneData) {
   // PM:INFLIGHT — STATUS.md `## In flight` bullets
   const inflightEntries = status === null ? [] : bulletEntries(sectionBody(status, 'In flight'));
   const inflightHtml = inflightEntries.length > 0
-    ? `<ul>${inflightEntries.map(e => `<li>${esc(e)}</li>`).join('')}</ul>`
+    ? `<ul>${inflightEntries.map(e => `<li>${inline(e)}</li>`).join('')}</ul>`
     : '<p class="empty">No in-flight work recorded</p>';
 
   // PM:LANES — one row per active feature per lane, then one warning line
@@ -466,8 +477,8 @@ function generateDashboard(root, laneData) {
 
     const parts = [
       '<div class="card">',
-      `<div class="milestone-head"><h3>${esc(m.name)}</h3><span class="badge ${esc(m.status)}">${esc(m.status)}</span><span class="progress-label">${done}/${total}</span></div>`,
-      `<p class="goal">${esc(m.goal || '')}</p>`,
+      `<div class="milestone-head"><h3>${inline(m.name)}</h3><span class="badge ${esc(m.status)}">${esc(m.status)}</span><span class="progress-label">${done}/${total}</span></div>`,
+      `<p class="goal">${inline(m.goal || '')}</p>`,
       `<div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>`
     ];
 
@@ -477,8 +488,8 @@ function generateDashboard(root, laneData) {
         const value = row.cells[header] || '';
         if (header === 'Status') return `<td class="status-${esc(value.toLowerCase())}">${esc(value)}</td>`;
         if (header === 'Size') return `<td class="size">${esc(value)}</td>`;
-        if (header === 'Source') return `<td class="source">${esc(value)}</td>`;
-        return `<td>${esc(value)}</td>`;
+        if (header === 'Source') return `<td class="source">${inline(value)}</td>`;
+        return `<td>${inline(value)}</td>`;
       };
       parts.push('<table>');
       parts.push(`<tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`);
@@ -504,9 +515,9 @@ function generateDashboard(root, laneData) {
   const blockedRows = rows.filter(r => (r.recorded || '').toLowerCase() === 'blocked');
   const blockerHtml = blockedRows.length > 0
     ? blockedRows.map(r => {
-        const label = `<p><strong>${esc(r.cells.Item)}</strong>${r.milestone ? ` &middot; ${esc(r.milestone)}` : ''}</p>`;
+        const label = `<p><strong>${inline(r.cells.Item)}</strong>${r.milestone ? ` &middot; ${inline(r.milestone)}` : ''}</p>`;
         const reason = blockedReasons.get(r.cells.Item);
-        return reason ? `${label}\n<p class="blocker-reason">${esc(reason)}</p>` : label;
+        return reason ? `${label}\n<p class="blocker-reason">${inline(reason)}</p>` : label;
       }).join('\n')
     : '<p class="empty">No blockers</p>';
 
@@ -514,7 +525,7 @@ function generateDashboard(root, laneData) {
   const decisions = decisionsFile === null ? [] : parseDecisions(decisionsFile).slice(0, 5);
   const decisionsHtml = decisions.length > 0
     ? decisions.map(d =>
-        `<div class="decision"><span class="date">${esc(d.date)}</span> <span class="title">${esc(d.title)}</span><p>${esc(d.body)}</p></div>`
+        `<div class="decision"><span class="date">${inline(d.date)}</span> <span class="title">${inline(d.title)}</span><p>${inline(d.body)}</p></div>`
       ).join('\n')
     : '<p class="empty">No decisions recorded</p>';
 
