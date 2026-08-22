@@ -219,6 +219,40 @@ const phaseLine = (ph) => (ph.id === 'all' ? '' : `Phase: ${ph.id} — ${ph.name
 // GO COMPLETE report rather than a reconstruction from session transcripts.
 const salvageEvents = []
 
+// An agent that dies because the connection dropped has not spent a round: it
+// never ran. Reporting that as turn-budget exhaustion is how a network outage
+// came to be answered with advice to split tasks that did not need splitting,
+// so the two causes are classified apart here and named apart downstream.
+const MAX_TRANSPORT_RETRIES = 3
+
+const TRANSPORT_PATTERNS = [
+  /ENOTFOUND/i,
+  /ECONNRESET/i,
+  /ETIMEDOUT/i,
+  /ECONNREFUSED/i,
+  /EAI_AGAIN/i,
+  /fetch failed/i,
+  /socket hang up/i,
+  /overloaded/i,
+  // An HTTP 5xx marker: the status code alone is too generic to match on, so
+  // it only counts when it sits next to a status/error word.
+  /(status|error)[^0-9]{0,20}50\d/i,
+]
+
+const isTransportError = (e) => {
+  const message = String((e && e.message) || e || '')
+  if (!message) return false
+  return TRANSPORT_PATTERNS.some((re) => re.test(message))
+}
+
+// `safeAgent` cannot signal a cause through its return value — every call site
+// tests `if (result)`, so a sentinel would read as success. The classification
+// reaches `buildPhase` through this script-level state instead.
+let lastFailure = null
+let consecutiveTransportDeaths = 0
+
+const infraRecommendation = `Re-run /ship:go ${feature} — the plan is sound and every committed task is preserved; this run lost its connection.`
+
 const safeAgent = async (prompt, opts) => {
   const { retry = true, retryPrompt = null, salvageRecord = null, ...baseOpts } = opts && typeof opts === 'object' ? opts : {}
   const label = typeof baseOpts.label === 'string' ? baseOpts.label : ''
@@ -229,22 +263,51 @@ const safeAgent = async (prompt, opts) => {
     salvageEvents.push({ agent: labelDisplay, record: salvageRecord, outcome })
     log(`salvage: ${labelDisplay}${salvageRecord ? ` (${salvageRecord})` : ''} → ${outcome}`)
   }
-  try { return await agent(prompt, baseOpts) } catch (e) {
+  // A returned result proves the connection is back, whatever it contains.
+  const noteSuccess = () => { lastFailure = null; consecutiveTransportDeaths = 0 }
+  const noteFailure = (e) => {
+    const message = String(e && e.message ? e.message : e)
+    const transport = isTransportError(e)
+    lastFailure = { transport, message, label: labelDisplay }
+    return transport
+  }
+  // Both attempts are gone. Only *consecutive* transport deaths count toward
+  // the cap: a genuine agent failure in between proves the connection was fine,
+  // so three outages spread across a healthy multi-hour build must not add up.
+  const noteDeath = () => {
+    if (lastFailure && lastFailure.transport) {
+      consecutiveTransportDeaths += 1
+      log(`${labelDisplay} died on a transport error — ${consecutiveTransportDeaths} consecutive (cap ${MAX_TRANSPORT_RETRIES})`)
+    } else {
+      consecutiveTransportDeaths = 0
+    }
+  }
+
+  try {
+    const result = await agent(prompt, baseOpts)
+    noteSuccess()
+    return result
+  } catch (e) {
+    const transport = noteFailure(e)
     if (!retry) {
-      log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — treating as no result`)
+      log(`${labelDisplay} threw (${e && e.message ? e.message : e}) [${transport ? 'transport' : 'agent'}] — treating as no result`)
+      noteDeath()
       return null
     }
-    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) — retrying once${retryPrompt ? ' (salvage)' : ''}`)
+    log(`${labelDisplay} threw (${e && e.message ? e.message : e}) [${transport ? 'transport' : 'agent'}] — retrying once${retryPrompt ? ' (salvage)' : ''}`)
   }
   const retryOpts = { ...baseOpts, label: label ? `${label}:retry` : 'retry' }
   try {
     const result = await agent(retryPrompt || prompt, retryOpts)
+    noteSuccess()
     // The retried agent is the only one that knows whether it reused the
     // record; absent that field the event records `unknown` rather than guessing.
     recordSalvage(result ? (result.salvaged || 'unknown') : 'no-result')
     return result
   } catch (e) {
-    log(`${labelDisplay} threw again (${e && e.message ? e.message : e}) — treating as no result`)
+    const transport = noteFailure(e)
+    log(`${labelDisplay} threw again (${e && e.message ? e.message : e}) [${transport ? 'transport' : 'agent'}] — treating as no result`)
+    noteDeath()
     recordSalvage('no-result')
     return null
   }
@@ -420,6 +483,28 @@ const buildPhase = async (ph, label) => {
       priorTasks += build.tasks_completed || 0
       lastTotal = build.tasks_total || lastTotal
       log(`build:${label} round ${round} returned PARTIAL — ${build.tasks_completed || 0} task(s) landed, continuing with a fresh builder`)
+    } else if (lastFailure && lastFailure.transport) {
+      // The builder died on the connection, not on its turn budget. It never
+      // ran, so this round is not charged against MAX_BUILD_ROUNDS — and the
+      // progress probe is skipped, being itself an agent call that would just
+      // die the same way. The transport cap is what stops this looping forever,
+      // so it is checked first and returns rather than falling through.
+      if (consecutiveTransportDeaths >= MAX_TRANSPORT_RETRIES) {
+        log(`build:${label} stopping: ${consecutiveTransportDeaths} consecutive transport failure(s) — this is an outage, not an exhausted budget`)
+        return {
+          feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
+          status: 'INFRASTRUCTURE',
+          tasks_completed: priorTasks, tasks_total: lastTotal,
+          commits: uniq(priorCommits),
+          stopped_at: `phase ${label}`,
+          reason: `${consecutiveTransportDeaths} consecutive agent(s) died on a transport error: ${lastFailure.message}`,
+          recommendation: infraRecommendation,
+          rounds: round,
+        }
+      }
+      log(`build:${label} round ${round} died on a transport error (${lastFailure.message}) — not charging the round, retrying`)
+      round -= 1
+      continue
     } else {
       // No result at all — ask PLAN.md what actually landed before deciding.
       const progress = await safeAgent(progressPrompt(ph), {
@@ -455,14 +540,22 @@ const buildPhase = async (ph, label) => {
     if (!landed) break
   }
 
+  // The reason is derived from what actually happened. A run that stalled with
+  // the connection down is not a run whose tasks were too big, and saying so
+  // unconditionally is what sent operators off splitting healthy tasks.
+  const endedOnTransport = !!(lastFailure && lastFailure.transport)
   return {
     feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
     status: 'EXHAUSTED',
     tasks_completed: priorTasks, tasks_total: lastTotal,
     commits: uniq(priorCommits),
     stopped_at: `phase ${label}`,
-    reason: `builders stopped making progress after ${MAX_BUILD_ROUNDS} round(s) — turn budget exhausted with tasks still pending`,
-    recommendation: `Run /ship:build ${feature} to continue this phase interactively, or split its remaining tasks into smaller ones with /ship:plan ${feature}.`,
+    reason: endedOnTransport
+      ? `builders stopped making progress after ${MAX_BUILD_ROUNDS} round(s); the last agent died on a transport error: ${lastFailure.message}`
+      : `builders stopped making progress after ${MAX_BUILD_ROUNDS} round(s) — turn budget exhausted with tasks still pending`,
+    recommendation: endedOnTransport
+      ? infraRecommendation
+      : `Run /ship:build ${feature} to continue this phase interactively, or split its remaining tasks into smaller ones with /ship:plan ${feature}.`,
     rounds: MAX_BUILD_ROUNDS,
   }
 }
@@ -477,7 +570,7 @@ for (let i = 0; i < phases.length; i++) {
 
   const build = await buildPhase(ph, label)
 
-  if (!build || build.status === 'EXHAUSTED' || build.status === 'NEEDS_CONTEXT' || build.status === 'CHECKPOINT') {
+  if (!build || build.status === 'EXHAUSTED' || build.status === 'NEEDS_CONTEXT' || build.status === 'CHECKPOINT' || build.status === 'INFRASTRUCTURE') {
     stoppedAt = { phase: ph, build: build || { status: 'NO_RESULT' } }
     log(`Build stopped at phase ${label}: ${build ? build.status : 'no result'} — surfacing to the user.`)
     break
@@ -629,6 +722,23 @@ if (!stoppedAt) {
     agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
     retryPrompt: salvageVerifyPrompt(verifyFull), salvageRecord: '.review-scratch/verify.json',
   })
+  // A verifier lost to the same outage is reported through the one
+  // INFRASTRUCTURE rendering path — as a pseudo-phase, since `stoppedAt` is the
+  // only channel the go skill renders — rather than as a bare null verdict the
+  // report would have to explain some other way.
+  if (!verdict && consecutiveTransportDeaths >= MAX_TRANSPORT_RETRIES) {
+    stoppedAt = {
+      phase: { id: 'verify', name: 'verify' },
+      build: {
+        status: 'INFRASTRUCTURE',
+        tasks_completed: 0, tasks_total: 0, commits: [],
+        stopped_at: 'verify',
+        reason: `${consecutiveTransportDeaths} consecutive agent(s) died on a transport error: ${lastFailure ? lastFailure.message : 'connection lost'}`,
+        recommendation: infraRecommendation,
+      },
+    }
+    log(`Verify stopped: ${consecutiveTransportDeaths} consecutive transport failure(s) — the build is intact, the connection is not.`)
+  }
 }
 
 return { feature, stoppedAt, completed, verdict, salvageEvents }
