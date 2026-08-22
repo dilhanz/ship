@@ -37,6 +37,14 @@ fix round did not clear — each is a mandatory Stage 2b target, and a reproduce
 critical/high one is a FAIL.
 ```
 
+## Clean Up the Scratch Record
+
+After the verifier returns and VERIFY.md is on disk, delete `.planning/features/{name}/.review-scratch/` if it exists. It is the crash-recovery cache for the verification that just finished — once VERIFY.md carries the result, a stale record would let a future run's salvage retry adopt criteria verdicts and test commits from a different build.
+
+This closes a real gap: the build skill's cleanup runs *before* verify, and `/ship:go` §6.3 only covers the go path, so until now the manual `/ship:verify` path left `verify.json` behind for the next run to trip over.
+
+One exception — if the verifier returned no result at all, leave the directory in place. That partial record is exactly what a re-run of `/ship:verify {name}` salvages, and deleting it throws away the work the record exists to protect.
+
 ## Sync PM State
 
 The verifier sets CONTEXT.md status (`done` on PASS/INCONCLUSIVE/DEFERRED, `plan-verified` on FAIL). After it returns, run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent).
