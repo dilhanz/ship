@@ -12,6 +12,11 @@
  *   edits the lane's own roadmap and leaves the main root's untouched
  * - resolver boundary: a `.gitignore` pattern without the trailing slash
  *   (`.project-manager`) still resolves a lane to the main root
+ * - ownership binding over a tracked `.planning/` fleet, where every checkout
+ *   carries every feature dir: the reported many-dirs/one-branch scenario, the
+ *   copy-into-worktree stamp tie, a genuinely unowned slug, the cross-lane
+ *   restamp performed by the real pm-update CLI, and a handoff raised by a
+ *   lane that owns nothing
  */
 
 const { describe, it, beforeEach, afterEach } = require('node:test');
@@ -127,6 +132,8 @@ function runNudge(cwd) {
   });
 }
 
+const toSlashes = (p) => String(p).replace(/\\/g, '/');
+
 const realKey = (p) => {
   const real = fs.realpathSync(p);
   return process.platform === 'win32' ? real.toLowerCase() : real;
@@ -224,5 +231,195 @@ describe('multi-worktree integration', { skip: !gitAvailable }, () => {
     assert.equal(r.gitignored, true, 'slashless ignore pattern still counts as gitignored');
     assert.equal(r.fallback, false);
     assert.equal(realKey(r.root), realKey(repoDir), 'lane resolves to the main root');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ownership binding across real worktrees
+//
+// Every repo here is initialised with a .gitignore that does NOT ignore
+// .planning/, and the feature dirs are committed BEFORE `git worktree add` —
+// the tracked-.planning/ fleet is the shape that reproduces the bug, and only
+// a pre-worktree commit makes the linked checkout genuinely carry every dir.
+// ---------------------------------------------------------------------------
+
+/** Commit the whole .planning tree so linked worktrees carry it too. */
+function commitPlanning(dir, message) {
+  git(dir, 'add', '.planning');
+  git(dir, 'commit', '-m', message);
+}
+
+/**
+ * Insert a `lane:` stamp into a fixture CONTEXT.md's frontmatter.
+ * Deliberately hand-rolled rather than calling stampLane — a fixture that
+ * asserts on stamps must not be built by the code under test.
+ */
+function stamp(dir, slug, value) {
+  const file = path.join(dir, '.planning', 'features', slug, 'CONTEXT.md');
+  const before = fs.readFileSync(file, 'utf8');
+  const after = before.replace(/^(---\n[\s\S]*?)(\n---)/, `$1\nlane: ${value}$2`);
+  assert.notEqual(after, before, `fixture stamp not applied to ${file}`);
+  fs.writeFileSync(file, after);
+}
+
+function handoffDoc(feature) {
+  return (
+    `---\nfeature: ${feature}\nlane: unrelated @ /lanes/${feature}\n` +
+    `head: ${'a'.repeat(40)}\nraised: 2026-08-23\napplied: no\n---\n\n` +
+    `# PM Handoff — ${feature}\n\n## Requested Edits\n\n` +
+    `### 1. Add backlog row\n\n- **File:** .project-manager/ROADMAP.md\n` +
+    `- **Intent:** record the shipped capability\n`
+  );
+}
+
+describe('multi-worktree — lane ownership binding', { skip: !gitAvailable }, () => {
+  let base, repoDir, laneDir;
+
+  beforeEach(() => {
+    base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ship-mw-own-')));
+    repoDir = path.join(base, 'repo');
+    laneDir = path.join(base, 'lane');
+  });
+
+  afterEach(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  it('reported scenario: one branch-matched lane owns one feature, no phantom overlaps', () => {
+    initRepo(repoDir, '.project-manager/\n'); // .planning/ tracked on purpose
+    createFeature(repoDir, 'alpha', 'building', ['src/alpha.js', 'src/shared.js']);
+    createFeature(repoDir, 'beta', 'planned', ['src/beta.js', 'src/shared.js']);
+    createFeature(repoDir, 'gamma', 'built', ['src/gamma.js']);
+    commitPlanning(repoDir, 'add features');
+    git(repoDir, 'worktree', 'add', '-b', 'feature/alpha', laneDir);
+
+    // Both checkouts now hold all three feature dirs — the pre-fix shape that
+    // produced a row per feature per lane and a wall of overlap warnings.
+    assert.ok(fs.existsSync(path.join(laneDir, '.planning', 'features', 'beta', 'CONTEXT.md')));
+
+    const result = sweep(repoDir);
+    assert.equal(result.error, undefined, 'live repo sweep must not degrade');
+
+    const main = result.lanes.find((l) => l.isMain);
+    const lane = result.lanes.find((l) => !l.isMain);
+    assert.equal(lane.branch, 'feature/alpha');
+    assert.deepEqual(lane.features.map((f) => f.name), ['alpha'], 'the branch-matched lane owns exactly its feature');
+    assert.equal(lane.features[0].ownedBy, 'branch', 'ownership reason is recorded');
+    assert.deepEqual(main.features, [], 'main claims nothing it cannot prove it owns');
+    assert.deepEqual(result.overlaps, [], 'src/shared.js was a phantom: one owner each, no collision');
+
+    // Criterion 1 as written: no slug is ever reported under two lanes.
+    const rowsPerSlug = new Map();
+    for (const l of result.lanes) {
+      for (const f of l.features) rowsPerSlug.set(f.name, (rowsPerSlug.get(f.name) || 0) + 1);
+    }
+    for (const [slug, rows] of rowsPerSlug) {
+      assert.equal(rows, 1, `${slug} must appear under exactly one lane`);
+    }
+
+    // The rest of the fixture, asserted rather than implied: every other slug
+    // is double-held with no branch and no stamp, so it is honestly unowned.
+    assert.deepEqual(result.unowned.map((u) => u.name), ['beta', 'gamma'], 'unattributed slugs hoisted once each');
+    for (const entry of result.unowned) {
+      assert.equal(entry.lanes.length, 2, `${entry.name} names both holding lanes`);
+      assert.ok(!rowsPerSlug.has(entry.name), `${entry.name} must not also sit under a lane`);
+    }
+  });
+
+  it('copy-into-worktree tie: two self-consistent stamps still resolve to the feature branch', () => {
+    initRepo(repoDir, '.project-manager/\n');
+    createFeature(repoDir, 'alpha', 'building', ['src/alpha.js']);
+    commitPlanning(repoDir, 'add alpha');
+    git(repoDir, 'worktree', 'add', '-b', 'feature/alpha', laneDir);
+
+    // Both copies vouch for themselves — exactly what /worktree + pm-update
+    // produce after the first build inside a lane.
+    stamp(repoDir, 'alpha', `main @ ${toSlashes(repoDir)}`);
+    stamp(laneDir, 'alpha', `feature/alpha @ ${toSlashes(laneDir)}`);
+
+    const result = sweep(repoDir);
+    const main = result.lanes.find((l) => l.isMain);
+    const lane = result.lanes.find((l) => !l.isMain);
+
+    assert.deepEqual(lane.features.map((f) => f.name), ['alpha']);
+    assert.equal(lane.features[0].ownedBy, 'branch', 'a branch is fleet-unique; a stamp is only self-testimony');
+    assert.deepEqual(main.features, [], 'main holds a self-consistent stamp and still owns nothing');
+    assert.deepEqual(result.overlaps, []);
+    assert.deepEqual(result.unowned, [], 'a resolved tie is not an unowned slug');
+  });
+
+  it('genuinely unowned: two holders, no branch, no self-consistent stamp', () => {
+    initRepo(repoDir, '.project-manager/\n');
+    createFeature(repoDir, 'delta', 'building', ['src/delta.js']);
+    commitPlanning(repoDir, 'add delta');
+    git(repoDir, 'worktree', 'add', '-b', 'chore/unrelated', laneDir);
+
+    // main's copy carries no stamp; the lane's names a third lane entirely.
+    stamp(laneDir, 'delta', `someone-else @ ${toSlashes(path.join(base, 'elsewhere'))}`);
+
+    const result = sweep(repoDir);
+    assert.equal(result.unowned.length, 1, 'reported once at fleet level, not once per lane');
+
+    const entry = result.unowned[0];
+    assert.equal(entry.name, 'delta');
+    assert.deepEqual(
+      entry.lanes.map((l) => realKey(l.path)).sort(),
+      [realKey(repoDir), realKey(laneDir)].sort(),
+      'both holding lanes are named'
+    );
+    assert.ok(!('files' in entry), 'an unowned entry carries no file claims');
+    for (const l of result.lanes) {
+      assert.deepEqual(l.features, [], 'an unowned slug appears in no lane feature list');
+    }
+    assert.deepEqual(result.overlaps, [], 'an unowned copy is not a claim and cannot collide');
+  });
+
+  it('cross-lane restamp: each lane stamps the copy it can see', () => {
+    initRepo(repoDir, '.project-manager/\n');
+    createFeature(repoDir, 'epsilon', 'building');
+    commitPlanning(repoDir, 'add epsilon');
+    git(repoDir, 'worktree', 'add', '-b', 'feature/epsilon', laneDir);
+
+    const mainBranch = git(repoDir, 'rev-parse', '--abbrev-ref', 'HEAD').trim();
+    const contextOf = (dir) => path.join(dir, '.planning', 'features', 'epsilon', 'CONTEXT.md');
+    const laneLine = (dir) => {
+      const m = fs.readFileSync(contextOf(dir), 'utf8').match(/^lane:\s*(.+)$/m);
+      return m ? m[1].trim() : null;
+    };
+
+    const fromMain = spawnSync(process.execPath, [PM_UPDATE_PATH, 'epsilon'], { cwd: repoDir, encoding: 'utf8' });
+    assert.equal(fromMain.status, 0, fromMain.stderr);
+    assert.equal(laneLine(repoDir), `${mainBranch} @ ${toSlashes(repoDir)}`, 'main stamps its own copy');
+    assert.equal(laneLine(laneDir), null, 'and cannot reach the lane copy');
+
+    const fromLane = spawnSync(process.execPath, [PM_UPDATE_PATH, 'epsilon'], { cwd: laneDir, encoding: 'utf8' });
+    assert.equal(fromLane.status, 0, fromLane.stderr);
+    assert.equal(
+      laneLine(laneDir),
+      `feature/epsilon @ ${toSlashes(laneDir)}`,
+      'the lane stamps its own copy with its own branch and path'
+    );
+    assert.equal(
+      (fs.readFileSync(contextOf(laneDir), 'utf8').match(/^lane:/gm) || []).length,
+      1,
+      'a restamp replaces the line rather than appending a duplicate'
+    );
+  });
+
+  it('a lane that owns no features still reports its pending handoff', () => {
+    initRepo(repoDir, '.project-manager/\n');
+    createFeature(repoDir, 'zeta', 'building');
+    commitPlanning(repoDir, 'add zeta');
+    git(repoDir, 'worktree', 'add', '-b', 'chore/unrelated', laneDir);
+    fs.writeFileSync(path.join(laneDir, '.planning', 'features', 'zeta', 'PM-HANDOFF.md'), handoffDoc('zeta'));
+
+    const result = sweep(repoDir);
+    const lane = result.lanes.find((l) => !l.isMain);
+    assert.deepEqual(lane.features, [], 'the lane owns nothing — zeta is double-held and unattributed');
+    assert.deepEqual(result.unowned.map((u) => u.name), ['zeta']);
+
+    assert.equal(result.pendingHandoffs.length, 1, 'handoff discovery is never ownership-gated');
+    assert.equal(result.pendingHandoffs[0].feature, 'zeta');
+    assert.equal(realKey(result.pendingHandoffs[0].lane), realKey(laneDir), 'attributed to the lane that raised it');
   });
 });
