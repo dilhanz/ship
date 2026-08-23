@@ -1,5 +1,24 @@
 # Changelog
 
+## 5.16.0
+
+Minor release — this repo stops dogfooding a fossil. `.claude/` held 32 tracked files that were the committed output of a v3.0.1 `npx github:dilhanz/ship` run (`.claude/ship/VERSION` read `3.0.1`, last touched 2026-04-01, before the v4 rearchitecture), and the tree was not inert: tracked `.claude/settings.json` registered five legacy hooks by relative path plus a `statusLine`, while `.claude/skills/` and `.claude/agents/` loaded as project-level definitions alongside the installed plugin's. A session dogfooding Ship here could exercise v3.0.1 while believing it exercised v5.15.0 — precisely the confidence dogfooding exists to buy. Nothing consumers install changes; the plugin's own `hooks/`, `skills/`, and `agents/` trees are untouched.
+
+### Removed
+
+- **The v3.0.1 `.claude/` install tree.** `.claude/agents/` (3), `.claude/hooks/` (7, including a `subagent-stop.cjs` registering a `SubagentStop` event the plugin does not use and validating a `## BUILD RESULT` block that v5 replaced with `StructuredOutput`), `.claude/skills/` (13 `SKILL.md`), `.claude/ship/` (3), `.claude/settings.json`, and `.claude/settings.local.json` are gone from git and disk — 29 files, 3086 deletions. `.claude/settings.json` was the activation mechanism, so deleting it is what actually deactivates the tree; deleting the hook files alone would have left broken registrations. `.claude/` now holds exactly one entry: `agent-memory/`, which is plugin-era live state (its `ship-ship-*` directory names follow `ship:`-prefixed agent naming) and was preserved byte-for-byte.
+
+### Added
+
+- **`tests/legacy-install-tree.test.js`** — a regression guard, since `install.js` is still functional and could silently restore the tree. It asserts the four legacy directories and `.claude/settings.json` are absent from disk, that the tracked `.claude/agent-memory/ship-ship-verifier/` survives, and that `.claude-plugin/plugin.json` (a *different* directory, and the one a careless `.claude*` glob would take out) still parses with `name: ship`. It deliberately says nothing about `.claude/settings.local.json`: Claude Code recreates that file on any permission grant, so a disk-absence assertion would go permanently red on a working copy — a plan-review WARNING caught before the test was written.
+- **`tests/legacy-install-tree-adversarial.test.js`** — proves the guard is not vacuous: it runs `install.js` into a temp checkout, confirms the restored tree turns the guard red, and walks a per-path mutation matrix reintroducing each legacy path individually and together.
+
+### Fixed
+
+- **A nested `node --test` passed vacuously.** A runner spawned from inside a test inherits `NODE_TEST_CONTEXT=child-v8` and exits 0 with empty stdout, so any "the nested run must be red" assertion succeeded without testing anything. Measured back to back on the same file: inherited env → status 0, empty stdout; env with `NODE_TEST_CONTEXT` deleted → status 1 with full TAP. The adversarial test strips the variable and asserts a `TAP version` sentinel. No other test in `tests/` spawns a nested runner, so nothing pre-existing was affected.
+
+Suite: **932 pass / 0 fail**, up from 921.
+
 ## 5.15.0
 
 Minor release — the fleet sweep binds every feature slug to exactly one owning lane. A feature directory copied into several worktrees was reported under every lane holding a copy, and every copy fed `findOverlaps()`, so one in-flight feature surfaced as a fleet-wide file collision. Reproduced at the reported scale — 23 feature dirs across two checkouts — the sweep now yields one owned row and `overlaps: []`.
