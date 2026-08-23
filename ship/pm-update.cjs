@@ -5,8 +5,10 @@
 // next item as JSON without writing anything.
 //
 // Zero dependencies. Invoked by lifecycle skills after CONTEXT.md status
-// changes: `node pm-update.cjs [slug ...]` — a silent no-op when
-// .project-manager/ is absent.
+// changes: `node pm-update.cjs [slug ...]`. The .project-manager/ sync is a
+// silent no-op when that directory is absent; the `lane:` stamp each named
+// slug's CONTEXT.md receives (see stampLane) runs regardless, since lane
+// ownership is not conditional on a PM directory existing.
 //
 // .project-manager/ paths resolve to the main worktree root when the
 // directory is gitignored (see resolve-state-root.cjs); feature status is
@@ -14,6 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { resolveStateRoot } = require('./resolve-state-root.cjs');
 
 /**
@@ -297,6 +300,77 @@ function writeFileAtomic(filePath, content) {
   }
 }
 
+/**
+ * Stamp the invoking lane's identity into a feature's CONTEXT.md frontmatter
+ * as `lane: {branch} @ {worktree-path}` — the last ownership layer the fleet
+ * sweep consults (`ship/lane-sweep.cjs` resolveOwnership), mirroring the
+ * PM-HANDOFF.md `lane:` format exactly.
+ *
+ * Best-effort insurance, never an obligation: every failure path returns
+ * false and is **silent on both stdout and stderr**, because an absent stamp
+ * degrades cleanly to the sweep's branch layer rather than being an
+ * actionable error. It must never make the caller exit non-zero.
+ *
+ * The stamp is spliced as a single line so every other byte of the file —
+ * key order, comments, quoting style, and CRLF or LF line endings — survives
+ * untouched. A CONTEXT.md with no frontmatter block is left alone: inventing
+ * structure is a bigger lie than an absent stamp.
+ *
+ * @param {string} cwd - the lane the stamp speaks for
+ * @param {string} slug
+ * @returns {boolean} true when the stamp is present after the call (written,
+ *          or already byte-identical), false on any failure
+ */
+function stampLane(cwd, slug) {
+  try {
+    if (!isValidSlug(slug)) return false; // never let it reach path.join
+
+    const branchRun = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, encoding: 'utf8' });
+    if (!branchRun || branchRun.status !== 0) return false;
+    let branch = (branchRun.stdout || '').trim();
+    if (branch === '') return false;
+    // A detached HEAD reports `HEAD` — use the dashboard's own label for a
+    // branchless lane so both surfaces name it identically.
+    if (branch === 'HEAD') branch = 'detached';
+
+    const topRun = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
+    if (!topRun || topRun.status !== 0) return false;
+    const toplevel = (topRun.stdout || '').trim().replace(/\\/g, '/');
+    if (toplevel === '') return false;
+
+    const contextPath = path.join(cwd, '.planning', 'features', slug, 'CONTEXT.md');
+    if (!fs.existsSync(contextPath)) return false;
+    const content = fs.readFileSync(contextPath, 'utf8');
+
+    // Same CRLF-tolerant leading block frontmatter() reads, with the two line
+    // endings captured so the splice can reuse the file's own.
+    const fm = content.match(/^---(\r?\n)([\s\S]*?)(\r?\n)---/);
+    if (fm === null) return false;
+    const [full, openEol, block, closeEol] = fm;
+
+    const line = `lane: ${branch} @ ${toplevel}`;
+    const existing = block.match(/^lane:[^\r\n]*/m);
+
+    let updatedBlock;
+    if (existing) {
+      if (existing[0] === line) return true; // already exact — no rewrite, no mtime churn
+      updatedBlock = block.slice(0, existing.index) + line + block.slice(existing.index + existing[0].length);
+    } else {
+      updatedBlock = `${block}${closeEol}${line}`; // last line of the block
+    }
+
+    const updated =
+      content.slice(0, fm.index) +
+      `---${openEol}${updatedBlock}${closeEol}---` +
+      content.slice(fm.index + full.length);
+
+    writeFileAtomic(contextPath, updated);
+    return true;
+  } catch (e) {
+    return false; // silent on both streams by contract
+  }
+}
+
 /** HTML-escape every value taken from state files before interpolation. */
 function esc(value) {
   return String(value == null ? '' : value)
@@ -541,7 +615,7 @@ function generateDashboard(root, laneData) {
     .replace('<!-- PM:DECISIONS -->', () => decisionsHtml);
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard, writeFileAtomic };
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard, writeFileAtomic, stampLane };
 
 if (require.main === module) {
   try {
@@ -549,6 +623,21 @@ if (require.main === module) {
     const wantNext = args.includes('--next');
     const slugs = args.filter(a => a !== '--next');
     const cwd = process.cwd();
+
+    // Lane stamp — best effort, and deliberately BEFORE the .project-manager/
+    // early-exit: the stamp records which lane owns the feature and must not
+    // become conditional on a PM directory existing. `--next` means "write
+    // nothing", so it suppresses this too.
+    if (!wantNext) {
+      for (const slug of slugs) {
+        try {
+          stampLane(cwd, slug);
+        } catch (e) {
+          // silent by contract — a missing stamp degrades to the sweep's branch layer
+        }
+      }
+    }
+
     // Shared state lives at the resolved root; feature status stays
     // lane-local, so applyStatusUpdates below keeps cwd by design.
     const { root } = resolveStateRoot(cwd);
