@@ -5,7 +5,8 @@
  * in ship-pm and /ship:pm, the prune guard replacing the unconditional
  * handover prune, the 8-column Lane roadmap spec and fleet hard rules in
  * pm-state, Lane growth + tracked-state degrade in pm-sync, the main-root
- * archive in finish, and the dashboard Lanes placeholder.
+ * archive in finish, the dashboard Lanes placeholder, and the lane-ownership
+ * binding doctrine (unowned, ownedBy, the CONTEXT.md lane stamp).
  *
  * Scoped to the canonical `skills/`, `agents/`, and `ship/templates/` trees
  * only — never the legacy `.claude/` mirrors.
@@ -162,5 +163,59 @@ describe('multi-worktree — dashboard template', () => {
   it('carries the PM:LANES placeholder', () => {
     assert.ok(readSrc('ship/templates/dashboard.html').includes('<!-- PM:LANES -->'),
       'dashboard.html must carry the Lanes panel placeholder');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lane ownership binding — the sweep reports each slug under one lane only
+// ---------------------------------------------------------------------------
+
+describe('multi-worktree — lane ownership doctrine', () => {
+  it('ship-pm describes ownership binding and the unowned list', () => {
+    const agent = readSrc('agents/ship-pm.md');
+    assert.ok(agent.includes('unowned'), 'ship-pm must name the fleet-level unowned list');
+    assert.ok(agent.includes('ownedBy'), 'ship-pm must name the ownedBy ownership reason');
+    assert.ok(/at most one owning lane/i.test(agent),
+      'the sweep bullet must state that a slug binds to at most one lane');
+  });
+
+  it('ship-pm forbids guessing an owner in the fleet view', () => {
+    const agent = readSrc('agents/ship-pm.md');
+    assert.ok(/never guess an owner/i.test(agent),
+      'an unresolvable slug is reported unowned, never attributed to a lane');
+    assert.ok(/unowned[\s\S]{0,400}Lane/i.test(agent),
+      'the unowned reporting rule must tie back to the ROADMAP Lane column');
+  });
+
+  it('/ship:pm reports unowned features separately from lane rows', () => {
+    const skill = readSrc('skills/pm/SKILL.md');
+    assert.ok(skill.includes('unowned'), 'the brief must report unowned entries');
+    assert.ok(/bound to at most one lane/i.test(skill),
+      'per-lane rows must state the one-lane-per-slug binding, not merely mention ownership');
+    assert.ok(/Only \*\*owned\*\* in-flight claims count/i.test(skill),
+      'file-overlap judgement must be restricted to owned claims');
+  });
+
+  it('pm-state documents the CONTEXT.md lane stamp and its precedence', () => {
+    const skill = readSrc('skills/pm-state/SKILL.md');
+    assert.ok(skill.includes('lane: {branch} @ {worktree-path}'),
+      'pm-state must document the CONTEXT.md lane stamp format');
+    assert.ok(/branch match outranks it/i.test(skill),
+      'a branch is a fleet-unique fact; the stamp is self-testimony and ranks below it');
+    assert.ok(/pm-update\.cjs/.test(skill), 'pm-state must name the stamp writer');
+  });
+
+  it('pm-state keeps the Lane column blank for an unowned feature', () => {
+    const skill = readSrc('skills/pm-state/SKILL.md');
+    assert.ok(/unowned[\s\S]{0,200}never guess an owner/i.test(skill),
+      'the Lane column definition must stay `—` for an unowned feature rather than guessing');
+  });
+
+  it('CLAUDE.md describes the ownership chain', () => {
+    const claude = readSrc('CLAUDE.md');
+    assert.ok(/binds each feature slug to at most one owning lane/i.test(claude),
+      'the project-manager bullet must describe ownership binding');
+    assert.ok(claude.includes('unowned') && claude.includes('ownedBy'),
+      'CLAUDE.md must name both the unowned array and the ownedBy reason');
   });
 });

@@ -32,7 +32,7 @@ YAML frontmatter with exactly two fields (`project`, `updated`), then a `## Mile
 - **Depends on** — comma-separated item names from any milestone, or `—` when independent
 - **Source** — where the item came from: a `VERIFY.md` line reference, a DECISIONS.md entry title, or a `file:line`. **Mandatory, never `—`. Do not add an item you cannot point at.**
 - **Ship feature** — the feature slug matching `.planning/features/{slug}` (or `.planning/archive/{slug}`), or `—` when no Ship feature exists yet
-- **Lane** — `{branch} @ {worktree-path}` (forward slashes) while the item's feature is in flight in a worktree, `—` otherwise. Derived data written only by the PM layer from sweep results — never hand-maintained.
+- **Lane** — `{branch} @ {worktree-path}` (forward slashes) while the item's feature is in flight in a worktree, `—` otherwise. Derived data written only by the PM layer from sweep results — never hand-maintained. Populated from sweep **ownership**: the lane the sweep bound the slug to. A feature the sweep reports as `unowned` stays `—`; never guess an owner.
 
 The table header must be exactly:
 
@@ -93,7 +93,7 @@ A `# {project} — Status` title, frontmatter with `updated: "{YYYY-MM-DD}"`, th
 - `## Blocked` — each blocker with its reasoning: what is blocked, on what, and what would unblock it.
 - `## Recently shipped` — with any missing verify gate called out explicitly.
 - `## Repo hygiene` — branches, worktrees, divergence from origin.
-- `## Lanes` — one line per worktree from the fleet sweep: branch, path, active feature and its stage; "single lane" when only the main worktree exists. Written by the PM from sweep results. An absent section is legacy, not damage — degrade silently.
+- `## Lanes` — one line per worktree from the fleet sweep: branch, path, the features that lane **owns** and their stage; "single lane" when only the main worktree exists. When the sweep's `unowned` list is non-empty, add one **Unowned** line naming those slugs and the lanes holding a copy. Written by the PM from sweep results. An absent section is legacy, not damage — degrade silently.
 
 ### Complete example
 
@@ -205,6 +205,15 @@ The output must stay a single file: inline CSS only, no JavaScript required, no 
 6. **Writer ownership:** lanes (builder sessions) write only their own worktree's `.planning/features/{slug}/`; only the PM layer writes the shared `.project-manager/` files. `pm-update.cjs` writes them via temp-then-rename, so a crashed write never leaves a partial file.
 7. **Fleet view requires gitignored state:** the cross-worktree view exists only when `.project-manager/` is gitignored — shared, untracked, one canonical copy at the main worktree root. When it is tracked, PM state is per-worktree and the PM must say it cannot aggregate rather than fake a fleet view. Rule 3 still holds: the resolver adapts to the owner's choice, never changes it.
 8. **Deferral, not failure:** when a lane's work requires an authored `.project-manager/` edit, it records a `PM-HANDOFF.md` (below) and the verifier marks that acceptance criterion `DEFERRED`. It is never a `FAIL` and never produces a Fix Task — no builder can clear it, so a fix round would re-run into the same wall and change nothing. `pm-update.cjs` is the exception that proves the rule: mechanical status and dashboard reconciliation runs from any lane through Node, so a criterion satisfied by running it verifies normally.
+
+## CONTEXT.md lane stamp
+
+`.planning/features/{slug}/CONTEXT.md` frontmatter may carry `lane: {branch} @ {worktree-path}` (forward slashes) — the same shape as the PM-HANDOFF.md `lane:` field and the ROADMAP `Lane` column.
+
+- **Written best-effort by `ship/pm-update.cjs`** in whichever lane it runs, naming that lane's own branch and worktree path. It runs after every CONTEXT.md status transition, so one writer covers every stage. A failed stamp is silent: the `.project-manager/` sync still completes and the CLI still exits 0.
+- **Read by the fleet sweep as the last ownership layer**, and only when the stamp is *self-consistent* — the path it names is the path of the lane holding that copy.
+- **Self-testimony only. A branch match outranks it**, because `/worktree` copies the feature directory and `pm-update.cjs` re-stamps in whichever lane it runs, so two lanes can both hold a self-consistent stamp for the same slug while only one can be on `feature/{slug}`.
+- **Additive frontmatter.** An unstamped CONTEXT.md stays valid indefinitely and no existing feature needs migrating — it simply falls through to the layer above.
 
 ## PM-HANDOFF.md
 

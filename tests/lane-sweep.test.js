@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const SCRIPT_PATH = path.join(__dirname, '..', 'ship', 'lane-sweep.cjs');
-const { parseWorktrees, planFiles, findOverlaps, sweep } = require(SCRIPT_PATH);
+const { parseWorktrees, planFiles, findOverlaps, parseLaneStamp, resolveOwnership, sweep } = require(SCRIPT_PATH);
 
 /** Real git is needed only for the CLI smoke suite. */
 const gitAvailable = (() => {
@@ -167,6 +167,8 @@ describe('lane-sweep: sweep degrade', () => {
       const result = sweep(tmpDir);
       assert.deepEqual(result.lanes, []);
       assert.deepEqual(result.overlaps, []);
+      assert.deepEqual(result.unowned, [], 'the degrade shape is identical on every path');
+      assert.deepEqual(result.pendingHandoffs, []);
       assert.equal(result.error, 'not a git repository or git unavailable');
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -197,8 +199,240 @@ describe('lane-sweep: CLI smoke', { skip: !gitAvailable }, () => {
       assert.equal(result.lanes[0].isMain, true);
       assert.deepEqual(result.lanes[0].features, [], 'no .planning/ → no features');
       assert.deepEqual(result.overlaps, []);
+      assert.ok(Array.isArray(result.unowned), 'the CLI JSON always carries an unowned array');
+      assert.deepEqual(result.unowned, []);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('lane-sweep: parseLaneStamp', () => {
+  it('splits a well-formed stamp into branch and path', () => {
+    assert.deepEqual(parseLaneStamp('feature/x @ C:/repos/lanes/x'), {
+      branch: 'feature/x',
+      path: 'C:/repos/lanes/x',
+    });
+  });
+
+  it('strips one layer of surrounding quotes and normalizes slashes', () => {
+    assert.deepEqual(parseLaneStamp('"main @ C:\\repos\\main"'), {
+      branch: 'main',
+      path: 'C:/repos/main',
+    });
+  });
+
+  it('splits on the LAST separator', () => {
+    assert.deepEqual(parseLaneStamp('feature/a @ b @ /repos/main'), {
+      branch: 'feature/a @ b',
+      path: '/repos/main',
+    });
+  });
+
+  it('malformed stamps → null', () => {
+    assert.equal(parseLaneStamp('no-separator'), null);
+    assert.equal(parseLaneStamp(' @ /repos/main'), null, 'empty branch');
+    assert.equal(parseLaneStamp('main @ '), null, 'empty path');
+    assert.equal(parseLaneStamp(''), null);
+    assert.equal(parseLaneStamp(null), null);
+    assert.equal(parseLaneStamp(undefined), null);
+    assert.equal(parseLaneStamp({ branch: 'main' }), null, 'non-string input');
+  });
+});
+
+describe('lane-sweep: resolveOwnership', () => {
+  const lane = (p, branch, features, extra = {}) =>
+    ({ path: p, branch, isMain: false, features, handoffs: [], ...extra });
+  const feat = (name, status, files, laneStamp = null) =>
+    ({ name, status, currentPhase: null, tasks: null, files, lane: laneStamp });
+
+  const ownedNames = (l) => l.features.map(f => f.name);
+
+  it('a fleet of one owns every feature it holds, reason sole-lane', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [
+        feat('alpha', 'building', ['src/a.js']),
+        feat('beta', 'planned', ['src/b.js']),
+      ], { isMain: true }),
+    ]);
+
+    assert.deepEqual(ownedNames(result.lanes[0]), ['alpha', 'beta']);
+    assert.deepEqual(result.lanes[0].features.map(f => f.ownedBy), ['sole-lane', 'sole-lane']);
+    assert.deepEqual(result.unowned, []);
+  });
+
+  it('a slug held by one of three lanes resolves sole-lane', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [feat('alpha', 'building', [])], { isMain: true }),
+      lane('/repos/lanes/x', 'feature/x', []),
+      lane('/repos/lanes/y', 'feature/y', []),
+    ]);
+
+    assert.deepEqual(ownedNames(result.lanes[0]), ['alpha']);
+    assert.equal(result.lanes[0].features[0].ownedBy, 'sole-lane');
+    assert.deepEqual(ownedNames(result.lanes[1]), []);
+    assert.deepEqual(result.unowned, []);
+  });
+
+  it('copy-into-worktree tie: branch outranks two self-consistent stamps', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [
+        feat('alpha', 'building', ['src/a.js'], 'main @ /repos/main'),
+      ], { isMain: true }),
+      lane('/repos/lanes/alpha', 'feature/alpha', [
+        feat('alpha', 'building', ['src/a.js'], 'feature/alpha @ /repos/lanes/alpha'),
+      ]),
+    ]);
+
+    assert.deepEqual(ownedNames(result.lanes[0]), [], 'main reports zero rows for alpha');
+    assert.deepEqual(ownedNames(result.lanes[1]), ['alpha']);
+    assert.equal(result.lanes[1].features[0].ownedBy, 'branch');
+    assert.deepEqual(result.unowned, []);
+    assert.deepEqual(findOverlaps(result.lanes), [], 'one owner, so no phantom overlap');
+  });
+
+  it('a bare-{slug} branch matches, case-insensitively', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [feat('alpha', 'building', [])], { isMain: true }),
+      lane('/repos/lanes/alpha', ' Alpha ', [feat('alpha', 'building', [])]),
+    ]);
+
+    assert.deepEqual(ownedNames(result.lanes[0]), []);
+    assert.equal(result.lanes[1].features[0].ownedBy, 'branch');
+  });
+
+  it('a detached lane never branch-matches', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [feat('alpha', 'building', [])], { isMain: true }),
+      lane('/repos/lanes/alpha', null, [feat('alpha', 'building', [], 'x @ /repos/lanes/alpha')]),
+    ]);
+
+    assert.equal(result.lanes[1].features[0].ownedBy, 'stamp', 'falls through to the stamp layer');
+  });
+
+  it('two branch-matching lanes fall through to the stamp layer', () => {
+    const result = resolveOwnership([
+      lane('/repos/one', 'feature/alpha', [feat('alpha', 'building', [])]),
+      lane('/repos/two', 'alpha', [feat('alpha', 'building', [], 'alpha @ /repos/two')]),
+    ]);
+
+    assert.deepEqual(ownedNames(result.lanes[0]), []);
+    assert.deepEqual(ownedNames(result.lanes[1]), ['alpha']);
+    assert.equal(result.lanes[1].features[0].ownedBy, 'stamp');
+    assert.deepEqual(result.unowned, []);
+  });
+
+  it('resolves by stamp when no branch matches, comparing path case-insensitively', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [feat('alpha', 'building', [])]),
+      lane('C:/Repos/Lanes/Alpha', 'wip', [feat('alpha', 'building', [], 'renamed @ c:/repos/lanes/alpha')]),
+    ]);
+
+    assert.equal(result.lanes[1].features[0].ownedBy, 'stamp',
+      'the worktree path is the identity — the branch component need not match');
+    assert.deepEqual(ownedNames(result.lanes[0]), []);
+  });
+
+  it('two self-consistent stamps and no branch match → unowned', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [feat('alpha', 'building', ['src/a.js'], 'main @ /repos/main')], { isMain: true }),
+      lane('/repos/lanes/wip', 'wip', [feat('alpha', 'planned', ['src/a.js'], 'wip @ /repos/lanes/wip')]),
+    ]);
+
+    assert.deepEqual(ownedNames(result.lanes[0]), []);
+    assert.deepEqual(ownedNames(result.lanes[1]), []);
+    assert.equal(result.unowned.length, 1, 'hoisted once, not once per lane');
+    assert.deepEqual(result.unowned[0], {
+      name: 'alpha',
+      lanes: [
+        { path: '/repos/main', branch: 'main', status: 'building' },
+        { path: '/repos/lanes/wip', branch: 'wip', status: 'planned' },
+      ],
+    });
+    assert.deepEqual(findOverlaps(result.lanes), [], 'an unowned copy contributes no claim');
+  });
+
+  it('unowned entries carry no file claims', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [feat('alpha', 'building', ['src/a.js'])]),
+      lane('/repos/other', 'other', [feat('alpha', 'building', ['src/a.js'])]),
+    ]);
+
+    assert.equal(result.unowned.length, 1);
+    assert.ok(!('files' in result.unowned[0]), 'an unowned feature is not a collision participant');
+    for (const holder of result.unowned[0].lanes) {
+      assert.deepEqual(Object.keys(holder).sort(), ['branch', 'path', 'status']);
+    }
+  });
+
+  it('a stamp naming a different lane is not self-consistent', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [feat('alpha', 'building', [], 'main @ /repos/elsewhere')]),
+      lane('/repos/other', 'other', [feat('alpha', 'building', [], 'other @ /repos/elsewhere')]),
+    ]);
+
+    assert.equal(result.unowned.length, 1, 'neither stamp vouches for its own lane');
+  });
+
+  it('a malformed stamp is never self-consistent', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [feat('alpha', 'building', [], 'no-separator')]),
+      lane('/repos/other', 'other', [feat('alpha', 'building', [], 42)]),
+    ]);
+
+    assert.equal(result.unowned.length, 1);
+    assert.deepEqual(ownedNames(result.lanes[0]), []);
+    assert.deepEqual(ownedNames(result.lanes[1]), []);
+  });
+
+  it('unowned is sorted by name ascending', () => {
+    const twice = (name) => [
+      feat(name, 'building', []),
+    ];
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [...twice('zulu'), ...twice('alpha'), ...twice('mike')]),
+      lane('/repos/other', 'other', [...twice('mike'), ...twice('zulu'), ...twice('alpha')]),
+    ]);
+
+    assert.deepEqual(result.unowned.map(u => u.name), ['alpha', 'mike', 'zulu']);
+  });
+
+  it('does not mutate its input', () => {
+    const mainFeature = feat('alpha', 'building', ['src/a.js']);
+    const laneFeature = feat('alpha', 'building', ['src/a.js']);
+    const input = [
+      lane('/repos/main', 'main', [mainFeature]),
+      lane('/repos/lanes/alpha', 'feature/alpha', [laneFeature]),
+    ];
+
+    const result = resolveOwnership(input);
+
+    assert.equal(input[0].features.length, 1, 'the original lane still holds every copy');
+    assert.equal(input[1].features.length, 1);
+    assert.ok(!('ownedBy' in mainFeature), 'original records are untouched');
+    assert.ok(!('ownedBy' in laneFeature));
+    assert.notEqual(result.lanes[0], input[0], 'new lane objects are returned');
+  });
+
+  it('preserves every other lane key', () => {
+    const result = resolveOwnership([
+      lane('/repos/main', 'main', [feat('alpha', 'building', [])], {
+        isMain: true,
+        handoffs: [{ feature: 'alpha' }],
+      }),
+    ]);
+
+    assert.equal(result.lanes[0].isMain, true);
+    assert.deepEqual(result.lanes[0].handoffs, [{ feature: 'alpha' }]);
+  });
+
+  it('never throws on degenerate input', () => {
+    assert.deepEqual(resolveOwnership(null), { lanes: [], unowned: [] });
+    assert.deepEqual(resolveOwnership(undefined), { lanes: [], unowned: [] });
+    assert.deepEqual(resolveOwnership([]), { lanes: [], unowned: [] });
+
+    const noFeatures = resolveOwnership([{ path: '/repos/main', branch: 'main' }]);
+    assert.deepEqual(noFeatures.lanes[0].features, []);
+    assert.deepEqual(noFeatures.unowned, []);
   });
 });
