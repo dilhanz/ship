@@ -1,5 +1,30 @@
 # Changelog
 
+## 5.15.0
+
+Minor release — the fleet sweep binds every feature slug to exactly one owning lane. A feature directory copied into several worktrees was reported under every lane holding a copy, and every copy fed `findOverlaps()`, so one in-flight feature surfaced as a fleet-wide file collision. Reproduced at the reported scale — 23 feature dirs across two checkouts — the sweep now yields one owned row and `overlaps: []`.
+
+### Fixed
+
+- **A copied feature directory was reported as many features.** `ship/lane-sweep.cjs` listed each lane's feature dirs independently, so a slug present in three worktrees appeared under three lanes with no way to tell which one was actually working on it. Ownership now resolves through a four-layer chain, first match wins: **sole holder** (only one lane has it) → **branch match** (a lane on `feature/{slug}`) → **self-consistent CONTEXT.md `lane:` stamp** (the stamp names the lane it is sitting in) → **unowned**. The deciding layer is recorded on each owned feature as `ownedBy`, so a brief can say *why* a lane owns a slug rather than asserting it. A stamp naming a different lane never wins — branch match outranks it, and a stamp inconsistent with its own location is ignored rather than trusted.
+- **One feature read as a fleet-wide collision.** `findOverlaps()` was fed every lane's claims including duplicates, so two copies of the same plan naming the same file were reported as two lanes colliding. It now receives owned claims only: an unowned copy is a leftover, not a claim.
+- **An unowned slug was reported once per holder.** A slug no layer could bind is now hoisted once into a fleet-level `unowned` array naming the lanes that hold a copy, instead of being repeated under each of them. `never guess an owner` is doctrine in `agents/ship-pm.md`: an unresolvable slug is reported unowned, never attributed.
+- **`scanFeatures()` dropped only `done`.** `hooks/scan-features.cjs` now filters the full tombstone set — `done`, `superseded`, `abandoned`, `cancelled` — case- and whitespace-insensitively, while still surfacing a feature whose status is unrecognised or absent. A typo in a status field makes a feature visible, not invisible.
+
+### Added
+
+- **The `lane:` stamp.** `ship/pm-update.cjs` writes `lane: {branch} @ {worktree-path}` into its own lane's CONTEXT.md frontmatter on every slugged run; a later run from a different lane rewrites it, leaving exactly one `lane:` line. It is **best-effort by construction**: a stamp that cannot be written (read-only file, read-only directory, unresolvable worktree) is silent on stdout *and* stderr, exits 0, leaves CONTEXT.md byte-identical, and never blocks the `.project-manager/` sync or the dashboard regeneration that are the command's actual job. The stamp is the third ownership layer, not the first — a stale stamp cannot outrank a live branch match.
+- **`unowned` on the degrade path.** `sweep()` never throws, and its error result now carries `unowned: []` alongside `lanes`, `overlaps`, and `pendingHandoffs`, so a consumer destructuring the result cannot crash on a non-repo directory, a missing path, or `undefined`.
+- **Ownership doctrine in all four consumers** — `agents/ship-pm.md`, `skills/pm/SKILL.md`, `skills/pm-state/SKILL.md`, and `CLAUDE.md` describe the binding, the `unowned` array, and the stamp's precedence, asserted by six new cases in `tests/multi-worktree-doctrine.test.js`.
+- **Coverage** — `tests/lane-ownership-adversarial.test.js` (the 23-dir two-checkout reproduction, tombstone variants, stamp self-consistency over symlinked tmp, silent-failure guarantees), `tests/lane-stamp.test.js` and `tests/lane-stamp-integration.test.js` (the stamp writer and cross-lane restamp over real worktrees), `tests/scan-features.test.js`, plus additions to `lane-sweep`, `multi-worktree-integration`, and `multi-worktree-doctrine`. Suite: **921 pass / 0 fail**, up from 896.
+
+### Notes
+
+- **`pendingHandoffs` is deliberately not routed through `scanFeatures()`** — that function drops `done` features, which is exactly the state a lane holding an unapplied handoff is in. A handoff from a lane that owns no features is still reported.
+- **The dashboard's Lanes panel renders `lanes[].features` only.** An unowned slug that previously appeared under every lane now appears in the `unowned` array that the panel does not read — out of scope for this release, and the one place the fix trades noise for silence. `/ship:pm`'s brief does report it.
+- **Every slugged `pm-update.cjs` run now writes to that feature's CONTEXT.md.** Intended, and wider than the test fixtures: a Ship build inside this repo stamps its own CONTEXT.md.
+- Windows path semantics were exercised through normalization on macOS, not on Windows.
+
 ## 5.12.0
 
 Minor release — the PM dashboard renders markdown code spans, and the suite now runs on every push and pull request instead of waiting for a version tag. Both halves come from the same defect: an assertion that had never passed on any machine holding real state, sitting behind a skip guard that made CI green regardless.
