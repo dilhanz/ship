@@ -1,15 +1,44 @@
 #!/usr/bin/env node
 // Ship shared utility — feature state scanner
-// Extracts feature status, task progress, current phase, goal, and decisions
-// from .planning/features/. Used by guide.cjs and post-compact.cjs.
+// Extracts feature status, task progress, current phase, goal, decisions, and
+// the owning-lane stamp from .planning/features/. Features carrying a terminal
+// status (the fixed tombstone set below) are excluded. Used by guide.cjs,
+// post-compact.cjs, pm-sync-nudge.cjs, and ship/lane-sweep.cjs.
 
 const fs = require('fs');
 const path = require('path');
 
+// Statuses that mean "do not pick this up". Deliberately an additive fixed set
+// rather than an allowlist of Ship's known in-flight statuses: an unrecognised
+// or missing status must still surface, so a typo never silently disappears
+// live work.
+const TERMINAL_STATUSES = new Set(['done', 'superseded', 'abandoned', 'cancelled']);
+
 /**
- * Scan .planning/features/ and return snapshots of all non-done features.
+ * Read the `lane:` stamp from a CONTEXT.md's leading frontmatter block only.
+ *
+ * Deliberately not a whole-file match (unlike the `status:` parse below):
+ * CONTEXT.md bodies quote the literal string `lane: {branch} @ {worktree-path}`
+ * as prose, and a whole-file match would read documentation as testimony.
+ *
+ * @param {string} content
+ * @returns {string|null} the trimmed, unquoted value, or null when absent
+ */
+function parseLaneField(content) {
+  const block = String(content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!block) return null;
+
+  const match = block[1].match(/^lane:\s*(.+)$/m);
+  if (!match) return null;
+
+  const value = match[1].trim().replace(/^["']|["']$/g, '').trim();
+  return value === '' ? null : value;
+}
+
+/**
+ * Scan .planning/features/ and return snapshots of all non-terminal features.
  * @param {string} cwd - working directory
- * @returns {{ name: string, status: string, goal?: string, currentPhase?: string, tasks?: { done: number, pending: number, building: number, total: number }, decisions?: string[] }[]}
+ * @returns {{ name: string, status: string, lane: string|null, goal?: string, currentPhase?: string, tasks?: { done: number, pending: number, building: number, total: number }, decisions?: string[] }[]}
  */
 function scanFeatures(cwd) {
   const featuresDir = path.join(cwd, '.planning', 'features');
@@ -40,10 +69,11 @@ function scanFeatures(cwd) {
     const statusMatch = contextContent.match(/^status:\s*(.+)$/m);
     const status = statusMatch ? statusMatch[1].trim() : 'unknown';
 
-    // Only include active features (not done)
-    if (status === 'done') continue;
+    // Only include active features — the recorded status stays verbatim,
+    // normalization is for the filter only.
+    if (TERMINAL_STATUSES.has(status.trim().toLowerCase())) continue;
 
-    const snapshot = { name: dir.name, status };
+    const snapshot = { name: dir.name, status, lane: parseLaneField(contextContent) };
 
     // Extract key decisions if present
     const decisionsMatch = contextContent.match(/## Decisions\n([\s\S]*?)(?=\n## |\n---|$)/);

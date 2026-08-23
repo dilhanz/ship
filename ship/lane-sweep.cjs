@@ -4,12 +4,20 @@
 // <files> claims, reports cross-lane file overlaps, and collects pending PM
 // handoffs (shared .project-manager/ edits a lane could not make). The ship-pm
 // agent consumes the CLI's single JSON document: `node lane-sweep.cjs` prints
-// { lanes, overlaps, pendingHandoffs } to stdout.
+// { lanes, overlaps, unowned, pendingHandoffs } to stdout.
+//
+// Every feature slug is bound to at most one owning lane (see
+// resolveOwnership): lanes[].features lists only what that lane owns, each
+// owned feature carrying `ownedBy` — `sole-lane` | `branch` | `stamp` — and a
+// slug no lane owns is hoisted once into the fleet-level `unowned` array
+// instead of appearing under every lane that happens to hold a copy. Overlap
+// detection is fed owned claims only, so it reports collisions rather than
+// copies.
 //
 // Zero dependencies. The pure functions (parseWorktrees, planFiles,
-// parseHandoff, laneHandoffs, findOverlaps) are exported for fixture tests;
-// sweep(cwd) never throws — git failure degrades to
-// { lanes: [], overlaps: [], pendingHandoffs: [], error }.
+// parseHandoff, laneHandoffs, findOverlaps, parseLaneStamp, resolveOwnership)
+// are exported for fixture tests; sweep(cwd) never throws — git failure
+// degrades to { lanes: [], overlaps: [], unowned: [], pendingHandoffs: [], error }.
 
 const fs = require('fs');
 const path = require('path');
@@ -215,28 +223,166 @@ function findOverlaps(lanes) {
 }
 
 /**
+ * Parse a CONTEXT.md `lane:` stamp — `{branch} @ {worktree-path}` — into its
+ * two components. Split on the LAST ` @ ` occurrence: a branch name may
+ * contain one, a worktree path will not, so splitting last is the safe
+ * direction. One layer of surrounding quotes is stripped and the path is
+ * normalized to forward slashes.
+ *
+ * @param {*} value
+ * @returns {{ branch: string, path: string }|null} null when the value is not
+ *          a string, has no separator, or has an empty branch or path
+ */
+function parseLaneStamp(value) {
+  if (typeof value !== 'string') return null;
+
+  const raw = value.trim().replace(/^["']|["']$/g, '').trim();
+  const sep = raw.lastIndexOf(' @ ');
+  if (sep === -1) return null;
+
+  const branch = raw.slice(0, sep).trim();
+  const stamped = raw.slice(sep + ' @ '.length).trim();
+  if (branch === '' || stamped === '') return null;
+
+  return { branch, path: toForwardSlashes(stamped) };
+}
+
+/**
+ * Bind every feature slug in the fleet to at most one owning lane.
+ *
+ * Resolution is fleet-wide per slug (not per-copy — a copy only vouches for
+ * itself and so can never break a tie), first match wins:
+ *
+ *   1. sole holder  — exactly one lane in the fleet holds a copy of the slug.
+ *                     No ambiguity exists and a single-holder slug cannot
+ *                     produce a cross-lane overlap by definition, so this
+ *                     fires before any tie-breaking. The fleet-of-one case is
+ *                     a strict subset.  → ownedBy: 'sole-lane'
+ *   2. branch match — exactly one holding lane whose branch is `feature/{slug}`
+ *                     or bare `{slug}` (case-insensitive, trimmed; a detached
+ *                     lane never matches).  → ownedBy: 'branch'
+ *   3. stamp        — exactly one holding lane whose copy's `lane:` stamp names
+ *                     that same lane's own path. The stamp's branch component
+ *                     is NOT required to match: the worktree path is the
+ *                     identity and a lane can be re-branched in place.
+ *                     → ownedBy: 'stamp'
+ *   4. unowned      — reported once at fleet level, in no lane's features.
+ *
+ * A branch outranks a stamp because a branch is a fleet-unique fact while a
+ * stamp is self-testimony: `/worktree` copies the feature directory and
+ * pm-update.cjs re-stamps in whichever lane it runs, so both copies can carry
+ * self-consistent stamps and both would claim the slug.
+ *
+ * Pure and non-mutating: new lane objects are returned with a filtered
+ * `features` array (each owned feature is the original record plus `ownedBy`)
+ * and every other lane key preserved. Never throws.
+ *
+ * @param {{ path: string, branch: string|null, features?: { name: string, status: string, lane?: string|null }[] }[]} lanes
+ * @returns {{ lanes: object[], unowned: { name: string, lanes: { path: string, branch: string|null, status: string }[] }[] }}
+ */
+function resolveOwnership(lanes) {
+  const input = Array.isArray(lanes) ? lanes : [];
+
+  // slug → holders, in fleet order
+  const holders = new Map();
+  input.forEach((lane, index) => {
+    for (const feature of (lane && lane.features) || []) {
+      const name = feature && feature.name;
+      if (typeof name !== 'string' || name === '') continue;
+      if (!holders.has(name)) holders.set(name, []);
+      holders.get(name).push({ index, lane, feature });
+    }
+  });
+
+  const ownership = new Map(); // laneIndex → Map(slug → reason)
+  const unowned = [];
+
+  const own = (holder, slug, reason) => {
+    if (!ownership.has(holder.index)) ownership.set(holder.index, new Map());
+    ownership.get(holder.index).set(slug, reason);
+  };
+
+  for (const [slug, held] of holders) {
+    if (held.length === 1) {
+      own(held[0], slug, 'sole-lane');
+      continue;
+    }
+
+    const wanted = [`feature/${slug}`.toLowerCase(), slug.toLowerCase()];
+    const byBranch = held.filter(h => {
+      const branch = h.lane && h.lane.branch;
+      if (typeof branch !== 'string') return false;
+      return wanted.includes(branch.trim().toLowerCase());
+    });
+    if (byBranch.length === 1) {
+      own(byBranch[0], slug, 'branch');
+      continue;
+    }
+
+    const byStamp = held.filter(h => {
+      const stamp = parseLaneStamp(h.feature.lane);
+      if (!stamp) return false;
+      const lanePath = toForwardSlashes(h.lane.path || '').toLowerCase();
+      return lanePath !== '' && stamp.path.toLowerCase() === lanePath;
+    });
+    if (byStamp.length === 1) {
+      own(byStamp[0], slug, 'stamp');
+      continue;
+    }
+
+    unowned.push({
+      name: slug,
+      lanes: held.map(h => ({
+        path: h.lane.path,
+        branch: typeof h.lane.branch === 'string' ? h.lane.branch : null,
+        status: h.feature.status
+      }))
+    });
+  }
+
+  unowned.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+
+  const ownedLanes = input.map((lane, index) => {
+    const owned = ownership.get(index) || new Map();
+    const features = ((lane && lane.features) || [])
+      .filter(f => f && owned.has(f.name))
+      .map(f => ({ ...f, ownedBy: owned.get(f.name) }));
+    return { ...lane, features };
+  });
+
+  return { lanes: ownedLanes, unowned };
+}
+
+/**
  * Run the full fleet sweep from a working directory: enumerate worktrees,
  * scan each lane's active features (scanFeatures already excludes done and
  * provides task counts), and read each feature's PLAN.md file claims.
  * Never throws — git failure or a non-repo degrades to an empty sweep with
  * an `error` field the PM agent reports.
  *
+ * Ownership is then resolved fleet-wide (see resolveOwnership), so each lane
+ * reports only the features it owns and unattributed slugs are hoisted once
+ * into `unowned` rather than repeated under every lane holding a copy.
+ *
  * Pending PM handoffs are collected across every lane into `pendingHandoffs`
- * — deferred PM-layer edits no lane may perform (see parseHandoff).
+ * — deferred PM-layer edits no lane may perform (see parseHandoff). They are
+ * never ownership-gated: a lane that owns no feature still reports its handoff.
  *
  * @param {string} cwd
  * @returns {{ lanes: { path: string, branch: string|null, isMain: boolean,
  *             features: { name: string, status: string, currentPhase: string|null,
- *                         tasks: object|null, files: string[] }[],
+ *                         tasks: object|null, lane: string|null, files: string[],
+ *                         ownedBy: 'sole-lane'|'branch'|'stamp' }[],
  *             handoffs: ReturnType<typeof laneHandoffs> }[],
  *             overlaps: ReturnType<typeof findOverlaps>,
+ *             unowned: ReturnType<typeof resolveOwnership>['unowned'],
  *             pendingHandoffs: object[], error?: string }}
  */
 function sweep(cwd) {
   try {
     const result = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd, encoding: 'utf8' });
     if (!result || result.status !== 0 || !result.stdout || result.stdout.trim() === '') {
-      return { lanes: [], overlaps: [], pendingHandoffs: [], error: 'not a git repository or git unavailable' };
+      return { lanes: [], overlaps: [], unowned: [], pendingHandoffs: [], error: 'not a git repository or git unavailable' };
     }
 
     const lanes = parseWorktrees(result.stdout).map(wt => {
@@ -253,6 +399,7 @@ function sweep(cwd) {
           status: f.status,
           currentPhase: f.currentPhase || null,
           tasks: f.tasks || null,
+          lane: f.lane || null,
           files
         };
       });
@@ -265,24 +412,32 @@ function sweep(cwd) {
       };
     });
 
+    // Bind each slug to at most one lane before anything downstream reads the
+    // feature lists. findOverlaps is unchanged — feeding it owned claims only
+    // is the entire fix for phantom cross-lane collisions.
+    const { lanes: ownedLanes, unowned } = resolveOwnership(lanes);
+
     // Pending PM handoffs are fleet-level, not lane-level: whichever lane
     // raised one, only the PM layer at the main root can apply it. Hoisting
     // them here means the PM never has to walk every lane to find them.
+    // Deliberately not gated on features.length — ownership filtering never
+    // touches lane.handoffs, and a lane that owns nothing may still be holding
+    // the handoff that matters most.
     const pendingHandoffs = [];
-    for (const lane of lanes) {
+    for (const lane of ownedLanes) {
       for (const handoff of lane.handoffs) {
         if (handoff.applied) continue;
         pendingHandoffs.push({ ...handoff, lane: lane.path, branch: lane.branch, isMain: lane.isMain });
       }
     }
 
-    return { lanes, overlaps: findOverlaps(lanes), pendingHandoffs };
+    return { lanes: ownedLanes, overlaps: findOverlaps(ownedLanes), unowned, pendingHandoffs };
   } catch (e) {
-    return { lanes: [], overlaps: [], pendingHandoffs: [], error: 'not a git repository or git unavailable' };
+    return { lanes: [], overlaps: [], unowned: [], pendingHandoffs: [], error: 'not a git repository or git unavailable' };
   }
 }
 
-module.exports = { parseWorktrees, planFiles, parseHandoff, laneHandoffs, findOverlaps, sweep };
+module.exports = { parseWorktrees, planFiles, parseHandoff, laneHandoffs, findOverlaps, parseLaneStamp, resolveOwnership, sweep };
 
 if (require.main === module) {
   process.stdout.write(JSON.stringify(sweep(process.cwd())) + '\n');
