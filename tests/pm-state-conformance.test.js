@@ -27,16 +27,29 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { generateDashboard } = require('../ship/pm-update.cjs');
+const { generateDashboard, renderLedgerRow } = require('../ship/pm-update.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
 const fixtureRoot = path.join(repoRoot, 'tests', 'fixtures', 'pm-state');
 const fixture = (rel) => path.join(fixtureRoot, rel);
 const read = (rel) => fs.readFileSync(fixture(rel), 'utf8');
 
-const STATE_FILES = ['ROADMAP.md', 'STATUS.md', 'DECISIONS.md', 'CONVENTIONS.md'];
+const STATE_FILES = ['ROADMAP.md', 'STATUS.md', 'DECISIONS.md', 'CONVENTIONS.md', 'LEDGER.md'];
 
+/**
+ * The fixture deliberately holds two table widths in one file: M1 carries the
+ * enriched 11-column shape, M2 the narrower 7-column one. That is itself the
+ * compatibility assertion — both parsers key off the header, so neither table
+ * may inherit the other's layout.
+ */
 const HEADER = '| Item | Status | Priority | Size | Depends on | Source | Ship feature |';
+const ENRICHED_HEADER =
+  '| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane | Blast radius | Confidence | First seen |';
+
+const LEDGER_HEADER =
+  '| Feature | Shipped | Profile | Verify | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |';
+
+const VERIFY_VOCABULARY = ['PASS', 'FAIL', 'INCONCLUSIVE', 'DEFERRED', 'in-progress', 'unknown', 'none'];
 
 /** Copy the fixture state into a throwaway `.project-manager/` and return its root. */
 function stageFixture() {
@@ -68,6 +81,32 @@ function backlogRows(content) {
   return rows;
 }
 
+/**
+ * Parse LEDGER.md's single table into { cells, header } rows, by header name —
+ * the same discipline every other reader of PM state uses.
+ */
+function ledgerRows(content) {
+  const rows = [];
+  let ctx = null;
+  for (const line of content.split('\n')) {
+    const t = line.trim();
+    if (!t.startsWith('|') || !t.endsWith('|')) {
+      if (t !== '') ctx = null;
+      continue;
+    }
+    const cells = t.slice(1, -1).split('|').map((c) => c.trim());
+    if (cells.includes('Feature') && cells.includes('Shipped') && cells.includes('Verify')) {
+      ctx = cells;
+      continue;
+    }
+    if (!ctx) continue;
+    if (cells.every((c) => /^:?-+:?$/.test(c))) continue;
+    if (cells.length !== ctx.length) continue;
+    rows.push({ cells, header: ctx });
+  }
+  return rows;
+}
+
 describe('pm-state format — the committed fixture conforms', () => {
   let tmpRoot;
   let dashboard;
@@ -81,7 +120,7 @@ describe('pm-state format — the committed fixture conforms', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  it('all four state files exist and are non-empty, and a dashboard generates from them', () => {
+  it('every state file exists and is non-empty, and a dashboard generates from them', () => {
     for (const f of STATE_FILES) {
       assert.ok(fs.existsSync(fixture(f)), `${f} exists`);
       assert.ok(fs.statSync(fixture(f)).size > 0, `${f} is non-empty`);
@@ -89,10 +128,11 @@ describe('pm-state format — the committed fixture conforms', () => {
     assert.ok(dashboard && dashboard.length > 0, 'dashboard.html generates non-empty from the state');
   });
 
-  it('ROADMAP.md carries frontmatter, the exact 7-column header, and at least one milestone', () => {
+  it('ROADMAP.md carries frontmatter, both documented header widths, and at least one milestone', () => {
     const c = read('ROADMAP.md');
     assert.match(c, /^---\nproject: "[^"]+"\nupdated: "\d{4}-\d{2}-\d{2}"\n---/, 'frontmatter shape');
-    assert.ok(c.includes(HEADER), 'exact documented header');
+    assert.ok(c.includes(HEADER), 'exact documented core header');
+    assert.ok(c.includes(ENRICHED_HEADER), 'exact documented enriched header');
     assert.match(c, /^### M\d+ — .+ \(status: (active|pending|done)\)$/m, 'milestone heading form');
     assert.match(c, /^Goal: .+$/m, 'milestone goal line');
   });
@@ -110,6 +150,18 @@ describe('pm-state format — the committed fixture conforms', () => {
       assert.match(at('Size'), /^(S|M|L|XL|—)$/, `row "${label}" size is S/M/L/XL or em dash`);
       const source = at('Source');
       assert.ok(source && source !== '—' && source !== '-', `row "${label}" has a mandatory Source`);
+
+      // Optional evidence columns: present only on the enriched table, and
+      // constrained to the documented vocabulary wherever they appear.
+      if (header.includes('Blast radius')) {
+        assert.match(at('Blast radius'), /^(users|contributors|internal|—)$/, `row "${label}" blast radius vocabulary`);
+      }
+      if (header.includes('Confidence')) {
+        assert.match(at('Confidence'), /^(proven|suspected|—)$/, `row "${label}" confidence vocabulary`);
+      }
+      if (header.includes('First seen')) {
+        assert.match(at('First seen'), /^(\d{4}-\d{2}-\d{2}|—)$/, `row "${label}" first seen is a date or em dash`);
+      }
     }
   });
 
@@ -202,6 +254,105 @@ describe('pm-state format — the committed fixture conforms', () => {
     for (const l of c.split('\n')) {
       if (l.trim() === '' || l.startsWith('# ') || l.startsWith('- ') || l.startsWith('  ')) continue;
       assert.fail(`CONVENTIONS.md should be a flat bullet list; found: "${l}"`);
+    }
+  });
+});
+
+describe('LEDGER.md — the committed fixture obeys the harvested format', () => {
+  const content = read('LEDGER.md');
+  const rows = ledgerRows(content);
+
+  it('carries the frontmatter, the never-hand-edited note, and the exact ten-column header', () => {
+    assert.match(content, /^---\nupdated: "\d{4}-\d{2}-\d{2}"\n---/, 'updated frontmatter');
+    assert.match(content, /^# Ledger$/m, 'title');
+    assert.match(content, /never hand-edited/, 'the append-only note travels with the file');
+    assert.ok(content.includes(LEDGER_HEADER), 'exact documented ten-column header');
+    assert.ok(rows.length >= 3, 'the fixture exercises several verdicts');
+  });
+
+  it('every Verify cell is in the documented vocabulary, and the fixture covers PASS, INCONCLUSIVE, and none', () => {
+    const verdicts = rows.map(({ cells, header }) => cells[header.indexOf('Verify')]);
+    for (const v of verdicts) {
+      assert.ok(VERIFY_VOCABULARY.includes(v), `verdict "${v}" is in the documented vocabulary`);
+    }
+    for (const required of ['PASS', 'INCONCLUSIVE', 'none']) {
+      assert.ok(verdicts.includes(required), `the fixture records at least one ${required} row`);
+    }
+  });
+
+  it('every Findings cell renders as C/H/M/L and every count cell is a number', () => {
+    for (const { cells, header } of rows) {
+      const at = (name) => cells[header.indexOf(name)];
+      const label = cells[0];
+      assert.match(at('Findings (C/H/M/L)'), /^\d+\/\d+\/\d+\/\d+$/, `row "${label}" findings rendering`);
+      for (const col of ['Unresolved carried', 'Fix rounds', 'Phases']) {
+        assert.match(at(col), /^\d+$/, `row "${label}" ${col} is a count`);
+      }
+      assert.match(at('Plan rounds'), /^(\d+|unknown)$/, `row "${label}" plan rounds is a count or unknown`);
+      assert.match(at('Shipped'), /^\d{4}-\d{2}-\d{2}$/, `row "${label}" shipped is a date`);
+    }
+  });
+
+  it('every Artifacts cell is four tokens in CONTEXT/PLAN/REVIEW/VERIFY order, never a bare dash', () => {
+    const order = ['CONTEXT.md', 'PLAN.md', 'REVIEW.md', 'VERIFY.md'];
+    let sawAbsent = false;
+    for (const { cells, header } of rows) {
+      const label = cells[0];
+      const cell = cells[header.indexOf('Artifacts')];
+      assert.ok(cell !== '—' && cell !== '-' && cell !== '', `row "${label}" artifacts cell is never a bare dash`);
+      const tokens = cell.split('; ');
+      assert.equal(tokens.length, 4, `row "${label}" names all four artifacts`);
+      for (let i = 0; i < 4; i++) {
+        const t = tokens[i];
+        const clean = t === order[i];
+        const qualified = t.startsWith(`${order[i]} (`) && t.endsWith(')');
+        const absent = t === `no ${order[i]}`;
+        assert.ok(clean || qualified || absent,
+          `row "${label}" token ${i + 1} ("${t}") is ${order[i]}, ${order[i]} + a qualifier, or "no ${order[i]}"`);
+        if (absent || qualified) sawAbsent = true;
+      }
+    }
+    assert.ok(sawAbsent, 'the fixture exercises the missing-artifact rendering');
+  });
+
+  it('no Feature value repeats — the ledger is keyed on slug', () => {
+    const slugs = rows.map(({ cells, header }) => cells[header.indexOf('Feature')]);
+    assert.equal(new Set(slugs).size, slugs.length, 'every slug appears once');
+  });
+
+  it('the documented header matches the one renderLedgerRow actually produces', () => {
+    // Render a record whose every value *is* its column name: the resulting row
+    // is the header if and only if the code emits the documented columns in the
+    // documented order. A reordering or a renamed column breaks this, not a test
+    // that merely counts cells.
+    const asHeader = renderLedgerRow({
+      slug: 'Feature',
+      shipped: 'Shipped',
+      profile: 'Profile',
+      verify: 'Verify',
+      unresolvedCarried: 'Unresolved carried',
+      planRounds: 'Plan rounds',
+      fixRounds: 'Fix rounds',
+      findings: { critical: 'Findings (C', high: 'H', medium: 'M', low: 'L)' },
+      phases: 'Phases',
+      artifacts: ['Artifacts']
+    });
+    assert.equal(asHeader, LEDGER_HEADER, 'renderLedgerRow emits the documented columns in order');
+  });
+
+  it('skills/pm-state/SKILL.md documents the same ledger and enriched-roadmap headers the code and fixture use', () => {
+    const skill = fs.readFileSync(path.join(repoRoot, 'skills', 'pm-state', 'SKILL.md'), 'utf8');
+    assert.ok(skill.includes(LEDGER_HEADER), 'pm-state documents the exact ledger header');
+    assert.ok(skill.includes(ENRICHED_HEADER), 'pm-state documents the exact enriched backlog header');
+    assert.ok(read('ROADMAP.md').includes(ENRICHED_HEADER), 'the fixture carries the documented enriched header');
+  });
+
+  it('the ledger is staged with the rest of the state files', () => {
+    const root = stageFixture();
+    try {
+      assert.ok(fs.existsSync(path.join(root, '.project-manager', 'LEDGER.md')), 'stageFixture copies LEDGER.md');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 });

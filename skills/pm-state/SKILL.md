@@ -52,6 +52,12 @@ An absent column and a `—` cell are the same thing: **`unknown`**, which produ
 (see PM:PRIORITY below). `pm-update.cjs` never widens a table on its own — a table grows into the
 enriched shape only through a confirmed `/ship:pm-sync` reconcile.
 
+The fully enriched shape — the mandatory core, then the three optional columns — is:
+
+```
+| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane | Blast radius | Confidence | First seen |
+```
+
 ### Detail sections
 
 An item that needs more room than a row gets a `#### {Item}` heading beneath its milestone, placed after all of that milestone's tables. The section carries prose, history, and strikethroughs for superseded reasoning — the table row stays the index into it.
