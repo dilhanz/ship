@@ -195,19 +195,54 @@ function applyStatusUpdates(content, cwd, slugs) {
 
   if (!changed) return { content, changed: false };
 
-  let result = lines.join('\n');
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-  // Bump frontmatter `updated` — within the leading --- block only, CRLF or LF.
-  const fmMatch = result.match(/^---\r?\n[\s\S]*?\r?\n---/);
-  if (fmMatch) {
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    // `.` excludes \r, so a CRLF line's terminator survives the replacement intact.
-    const bumped = fmMatch[0].replace(/^updated:.*$/m, `updated: "${today}"`);
-    result = bumped + result.slice(fmMatch[0].length);
+  return { content: bumpUpdated(lines.join('\n'), today), changed: true };
+}
+
+/**
+ * Stamp `today` into every empty `First seen` cell, recording when the script
+ * first saw the row.
+ *
+ * A row that already carries any non-empty, non-dash value is left untouched:
+ * the stamp is a first-sight record and is never rewritten. When the header
+ * has no `First seen` column nothing changes — `pm-update.cjs` never widens a
+ * table on its own, because a table grows into the enriched shape only
+ * through a confirmed `/ship:pm-sync` reconcile.
+ *
+ * Edits only the target segment of the raw line, so column padding elsewhere
+ * and CRLF terminators survive byte-identical. Does **not** bump the
+ * frontmatter `updated:` value — it stays a pure string transform, and the
+ * caller bumps once for all its passes.
+ *
+ * Never throws; a malformed row is skipped exactly as `parseRoadmap` skips it.
+ *
+ * @param {string} content - ROADMAP.md content
+ * @param {string} today - YYYY-MM-DD
+ * @returns {{ content: string, changed: boolean }}
+ */
+function stampFirstSeen(content, today) {
+  const lines = content.split('\n');
+  let changed = false;
+
+  for (const row of parseRoadmap(content)) {
+    const index = row.headers.indexOf('First seen');
+    if (index === -1) continue;
+
+    const current = row.cells['First seen'];
+    if (current && current !== '—' && current !== '-') continue;
+
+    // Segment 0 is whatever precedes the first `|`, so cell i lives at
+    // segment i + 1 — the same arithmetic applyStatusUpdates uses.
+    const segments = lines[row.lineIndex].split('|');
+    segments[index + 1] = ` ${today} `;
+    lines[row.lineIndex] = segments.join('|');
+    changed = true;
   }
 
-  return { content: result, changed: true };
+  if (!changed) return { content, changed: false };
+  return { content: lines.join('\n'), changed: true };
 }
 
 /**
@@ -1175,7 +1210,7 @@ function runHarvest(cwd, root, slugs, today) {
   }
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, renderLedgerRow, appendLedger, runHarvest };
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, stampFirstSeen, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, renderLedgerRow, appendLedger, runHarvest };
 
 if (require.main === module) {
   try {
@@ -1234,7 +1269,12 @@ if (require.main === module) {
     }
 
     const original = fs.readFileSync(roadmapPath, 'utf8');
-    const { content, changed } = applyStatusUpdates(original, cwd, slugs);
+    const updated = applyStatusUpdates(original, cwd, slugs);
+    // First-sight stamp runs on the status pass's output, so both edits land
+    // in one atomic write and one `updated:` bump.
+    const stamped = stampFirstSeen(updated.content, today);
+    const changed = updated.changed || stamped.changed;
+    const content = changed ? bumpUpdated(stamped.content, today) : stamped.content;
     if (changed) {
       try {
         writeFileAtomic(roadmapPath, content);
