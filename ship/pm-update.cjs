@@ -769,20 +769,259 @@ function harvestFeature(cwd, slug, today) {
   }
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard, writeFileAtomic, stampLane, harvestFeature };
+/** LEDGER.md's column set, in render order. The header is located by name. */
+const LEDGER_COLUMNS = [
+  'Feature',
+  'Shipped',
+  'Profile',
+  'Verify',
+  'Unresolved carried',
+  'Plan rounds',
+  'Fix rounds',
+  'Findings (C/H/M/L)',
+  'Phases',
+  'Artifacts'
+];
+
+/**
+ * The `Feature` values already recorded in a LEDGER.md string.
+ *
+ * The header row is located by name exactly as parseRoadmap does — the row
+ * whose cells include `Feature`, `Shipped`, and `Verify` — so a reordered or
+ * widened ledger still yields its slugs. Separator rows and rows whose cell
+ * count differs from the header's contribute nothing. An empty or
+ * unparseable string yields an empty Set; never throws.
+ *
+ * @param {string} content
+ * @returns {Set<string>}
+ */
+function ledgerSlugs(content) {
+  const slugs = new Set();
+  try {
+    if (typeof content !== 'string') return slugs;
+    let ctx = null;
+
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) {
+        if (trimmed !== '') ctx = null; // a non-table line ends the table
+        continue;
+      }
+
+      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+      const featureIdx = cells.indexOf('Feature');
+      if (featureIdx !== -1 && cells.includes('Shipped') && cells.includes('Verify')) {
+        ctx = { columnCount: cells.length, featureIdx };
+        continue;
+      }
+
+      if (!ctx) continue;
+      if (cells.every(c => /^:?-+:?$/.test(c))) continue; // separator row
+      if (cells.length !== ctx.columnCount) continue; // malformed row
+
+      const value = cells[ctx.featureIdx];
+      if (value) slugs.add(value);
+    }
+  } catch (e) {
+    // an unparseable ledger records nothing — the harvest re-appends instead
+  }
+  return slugs;
+}
+
+/**
+ * Sanitize one harvested value for a table cell.
+ *
+ * Every ledger value comes from a file on disk, so a newline would break the
+ * row and a `|` would invent a column. Newlines become spaces and pipes
+ * become slashes; an empty result reads as `unknown`, never as a blank cell
+ * that could be mistaken for an authored `—`.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+function ledgerCell(value) {
+  const text = String(value == null ? '' : value)
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\|/g, '/')
+    .trim();
+  return text === '' ? 'unknown' : text;
+}
+
+/**
+ * Render one harvestFeature record as a LEDGER.md table row.
+ *
+ * Cells are emitted in LEDGER_COLUMNS order; `Findings (C/H/M/L)` renders as
+ * `critical/high/medium/low` and `Artifacts` as the four provenance tokens
+ * joined with `; `. Every cell passes through ledgerCell, so no harvested
+ * value can break the table.
+ *
+ * @param {ReturnType<typeof harvestFeature>} record
+ * @returns {string}
+ */
+function renderLedgerRow(record) {
+  const r = record || {};
+  const f = r.findings || {};
+  const findings = `${f.critical || 0}/${f.high || 0}/${f.medium || 0}/${f.low || 0}`;
+  const artifacts = Array.isArray(r.artifacts) ? r.artifacts.join('; ') : '';
+
+  const cells = [
+    r.slug,
+    r.shipped,
+    r.profile,
+    r.verify,
+    r.unresolvedCarried,
+    r.planRounds,
+    r.fixRounds,
+    findings,
+    r.phases,
+    artifacts
+  ].map(ledgerCell);
+
+  return `| ${cells.join(' | ')} |`;
+}
+
+/**
+ * Append ledger rows to `{root}/.project-manager/LEDGER.md`.
+ *
+ * Creates the file with its frontmatter, heading, provenance note, header
+ * row, and separator when absent. When it exists, rows are appended after
+ * the last non-empty line and the frontmatter `updated:` value is bumped —
+ * existing rows are never re-read, re-rendered, or rewritten, which is what
+ * makes the ledger append-only rather than merely idempotent. The table is
+ * therefore assumed to be the last content in the file; the file is
+ * generated and never hand-edited, so an authored footer would be a bug.
+ *
+ * An empty `records` writes nothing at all — no mtime churn on the common
+ * path where every slug is already recorded.
+ *
+ * Never throws: any failure returns 0 silently, because a harvest failure
+ * must never break the status transition that triggered it.
+ *
+ * @param {string} root - the resolved state root holding .project-manager/
+ * @param {ReturnType<typeof harvestFeature>[]} records
+ * @param {string} today - YYYY-MM-DD
+ * @returns {number} rows appended
+ */
+function appendLedger(root, records, today) {
+  try {
+    if (!Array.isArray(records) || records.length === 0) return 0;
+
+    const ledgerPath = path.join(root, '.project-manager', 'LEDGER.md');
+    const rows = records.map(renderLedgerRow).join('\n');
+    const header = `| ${LEDGER_COLUMNS.join(' | ')} |`;
+    const separator = `|${LEDGER_COLUMNS.map(() => '---').join('|')}|`;
+
+    const existing = readOptional(ledgerPath);
+    let content;
+    if (existing === null) {
+      content =
+        `---\nupdated: "${today}"\n---\n\n# Ledger\n\n` +
+        'Mechanically harvested by `ship/pm-update.cjs` when a feature reaches `done` — one row per feature, keyed on slug.\n' +
+        'Append-only: a recorded row is never rewritten, and this file is never hand-edited.\n\n' +
+        `${header}\n${separator}\n${rows}\n`;
+    } else {
+      content = `${existing.trimEnd()}\n${rows}\n`;
+      content = bumpUpdated(content, today);
+    }
+
+    writeFileAtomic(ledgerPath, content);
+    return records.length;
+  } catch (e) {
+    return 0; // silent by contract
+  }
+}
+
+/**
+ * Bump a leading frontmatter block's `updated:` value to `today` (quoted
+ * form), leaving every other byte — including CRLF terminators — intact.
+ * Content with no frontmatter block, or none carrying `updated:`, is
+ * returned unchanged.
+ *
+ * @param {string} content
+ * @param {string} today - YYYY-MM-DD
+ * @returns {string}
+ */
+function bumpUpdated(content, today) {
+  const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
+  if (!fmMatch) return content;
+  // `.` excludes \r, so a CRLF line's terminator survives the replacement intact.
+  const bumped = fmMatch[0].replace(/^updated:.*$/m, `updated: "${today}"`);
+  return bumped + content.slice(fmMatch[0].length);
+}
+
+/**
+ * Harvest every not-yet-recorded feature into the ledger.
+ *
+ * Candidates are every directory under `{cwd}/.planning/archive/` plus every
+ * named slug the status mapping already calls `done`. Slugs already present
+ * in LEDGER.md are dropped **before any feature artifact is read**, so the
+ * archive is not re-parsed on every status transition — only the first
+ * backfill walks it.
+ *
+ * Gated on the `.project-manager/` *directory*, not on ROADMAP.md: the
+ * ledger is independent evidence, and a damaged roadmap must not silently
+ * disable it.
+ *
+ * Never throws; returns the number of rows appended.
+ *
+ * @param {string} cwd - the lane whose .planning/ holds the features
+ * @param {string} root - the resolved state root holding .project-manager/
+ * @param {string[]} slugs - slugs named on the command line
+ * @param {string} today - YYYY-MM-DD
+ * @returns {number}
+ */
+function runHarvest(cwd, root, slugs, today) {
+  try {
+    if (!fs.existsSync(path.join(root, '.project-manager'))) return 0;
+
+    const candidates = new Set();
+
+    try {
+      const archiveDir = path.join(cwd, '.planning', 'archive');
+      for (const entry of fs.readdirSync(archiveDir, { withFileTypes: true })) {
+        if (entry.isDirectory()) candidates.add(entry.name);
+      }
+    } catch (e) {
+      // no archive yet — forward appends still apply
+    }
+
+    for (const slug of slugs || []) {
+      if (mappedStatus(cwd, slug, '') === 'done') candidates.add(slug);
+    }
+
+    if (candidates.size === 0) return 0;
+
+    const recorded = ledgerSlugs(readOptional(path.join(root, '.project-manager', 'LEDGER.md')) || '');
+    const pending = [...candidates].filter(slug => !recorded.has(slug)).sort();
+    if (pending.length === 0) return 0;
+
+    const records = pending.map(slug => harvestFeature(cwd, slug, today)).filter(r => r !== null);
+    return appendLedger(root, records, today);
+  } catch (e) {
+    return 0; // silent by contract
+  }
+}
+
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, renderLedgerRow, appendLedger, runHarvest };
 
 if (require.main === module) {
   try {
     const args = process.argv.slice(2);
     const wantNext = args.includes('--next');
-    const slugs = args.filter(a => a !== '--next');
+    const wantEvidence = args.includes('--evidence');
+    const slugs = args.filter(a => a !== '--next' && a !== '--evidence');
     const cwd = process.cwd();
+
+    // One date for every stamp this run makes, so a ledger row and a
+    // frontmatter bump written together can never disagree.
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
     // Lane stamp — best effort, and deliberately BEFORE the .project-manager/
     // early-exit: the stamp records which lane owns the feature and must not
-    // become conditional on a PM directory existing. `--next` means "write
-    // nothing", so it suppresses this too.
-    if (!wantNext) {
+    // become conditional on a PM directory existing. `--next` and `--evidence`
+    // both mean "write nothing", so they suppress this too.
+    if (!wantNext && !wantEvidence) {
       for (const slug of slugs) {
         try {
           stampLane(cwd, slug);
@@ -795,6 +1034,19 @@ if (require.main === module) {
     // Shared state lives at the resolved root; feature status stays
     // lane-local, so applyStatusUpdates below keeps cwd by design.
     const { root } = resolveStateRoot(cwd);
+
+    // Ledger harvest — deliberately BEFORE the roadmap early-exit below: the
+    // ledger gates on the .project-manager/ directory, not on ROADMAP.md, so a
+    // damaged or missing roadmap cannot silently disable it. Query modes write
+    // nothing, so they suppress it. A harvest failure never reaches stderr and
+    // never changes the exit code — the status transition is the caller's job.
+    if (!wantNext && !wantEvidence) {
+      try {
+        runHarvest(cwd, root, slugs, today);
+      } catch (e) {
+        // silent by contract
+      }
+    }
 
     const roadmapPath = path.join(root, '.project-manager', 'ROADMAP.md');
     // Absent .project-manager/ (or just no roadmap): silent success, so
