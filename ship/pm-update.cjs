@@ -22,10 +22,18 @@ const { resolveStateRoot } = require('./resolve-state-root.cjs');
 /**
  * Parse ROADMAP.md backlog tables into row records.
  *
- * Columns are located by header *name*, not position or count, so both the
- * legacy 5-column table (`| Item | Status | Priority | Depends on | Ship feature |`)
- * and the enriched 7-column one (which adds `Size` and `Source`) parse — including
- * two tables of different shapes in the same file, and columns in any order.
+ * Columns are located by header *name*, not position or count, so every shape the
+ * project has ever written parses — including two tables of different widths in the
+ * same file, and columns in any order:
+ *
+ *   5-column legacy:  `| Item | Status | Priority | Depends on | Ship feature |`
+ *   8-column current: adds `Size`, `Source`, `Lane`
+ *   10-column:        adds the optional `Blast radius` and `Confidence` evidence columns
+ *   11-column:        adds the script-stamped `First seen`
+ *
+ * A column the header does not carry is simply absent from the parsed row; callers
+ * read an absent evidence column as `unknown` (see derivePriority) rather than
+ * treating the narrow shape as a parse failure.
  *
  * A table row is any line that starts and ends with `|`. A row is a header when its
  * cells include `Item`, `Status`, and `Ship feature`; that header becomes the active
