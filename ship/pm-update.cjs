@@ -1268,6 +1268,21 @@ if (require.main === module) {
       process.exit(0);
     }
 
+    if (wantEvidence) {
+      // Query only — the priority evidence behind PM:PRIORITY, in document
+      // order, one entry per backlog row including slugless ones. Writes
+      // nothing: no roadmap edit, no stamp, no dashboard, no ledger.
+      const rows = parseRoadmap(fs.readFileSync(roadmapPath, 'utf8'));
+      const unblocks = computeUnblocks(rows);
+      const out = rows.map(row => Object.assign(
+        { item: row.cells.Item },
+        derivePriority(row, unblocks.get(row.cells.Item)),
+        { milestone: row.milestone || null, status: row.recorded }
+      ));
+      console.log(JSON.stringify(out, null, 2));
+      process.exit(0);
+    }
+
     const original = fs.readFileSync(roadmapPath, 'utf8');
     const updated = applyStatusUpdates(original, cwd, slugs);
     // First-sight stamp runs on the status pass's output, so both edits land
