@@ -269,6 +269,179 @@ function selectNext(rows) {
 }
 
 /**
+ * Invert the Depends-on graph: for every item, how many rows are waiting on it.
+ *
+ * A row D depends on row R when D's `Depends on` cell, comma-split and
+ * trimmed, contains R's `Item` exactly — the same exact-name, case-sensitive
+ * convention `selectNext()` uses for dependency satisfaction, so a name that
+ * differs only in case is deliberately not a match. An empty, `—`, or `-`
+ * cell contributes nothing.
+ *
+ * `count` counts only dependents that are not `done` (case-insensitive):
+ * finishing an item cannot unblock work that is already finished.
+ * `inProgress` is true when at least one of those non-done dependents is
+ * `in-progress` — someone is waiting on this right now.
+ *
+ * Pure; never throws. Every row's Item gets an entry, so a lookup for a known
+ * item is never `undefined`.
+ *
+ * @param {ReturnType<typeof parseRoadmap>} rows
+ * @returns {Map<string, { count: number, inProgress: boolean }>}
+ */
+function computeUnblocks(rows) {
+  const unblocks = new Map();
+  if (!Array.isArray(rows)) return unblocks;
+
+  for (const row of rows) {
+    const item = row && row.cells ? row.cells.Item : null;
+    if (typeof item === 'string' && item !== '') {
+      if (!unblocks.has(item)) unblocks.set(item, { count: 0, inProgress: false });
+    }
+  }
+
+  for (const row of rows) {
+    if (!row || !row.cells) continue;
+    const depends = row.cells['Depends on'];
+    if (!depends || depends === '—' || depends === '-') continue;
+
+    const status = (row.recorded || '').toLowerCase();
+    if (status === 'done') continue; // a finished dependent is not waiting on anything
+
+    const names = depends.split(',').map(d => d.trim()).filter(d => d !== '');
+    for (const name of new Set(names)) { // a name listed twice counts once
+      const entry = unblocks.get(name) || { count: 0, inProgress: false };
+      entry.count += 1;
+      if (status === 'in-progress') entry.inProgress = true;
+      unblocks.set(name, entry);
+    }
+  }
+
+  return unblocks;
+}
+
+/**
+ * Normalise one authored evidence cell. Absent column, empty cell, `—`, and
+ * `-` all read as `unknown`; anything else is lowercased and trimmed.
+ *
+ * @param {string|undefined} value
+ * @returns {string}
+ */
+function evidenceCell(value) {
+  if (typeof value !== 'string') return 'unknown';
+  const normalised = value.trim().toLowerCase();
+  if (normalised === '' || normalised === '—' || normalised === '-') return 'unknown';
+  return normalised;
+}
+
+const BLAST_RADIUS_VALUES = new Set(['users', 'contributors', 'internal']);
+const CONFIDENCE_VALUES = new Set(['proven', 'suspected']);
+
+/**
+ * The priority derivation rule — the single home of the rule stated in
+ * skills/pm-state/SKILL.md (PM:PRIORITY). It proposes a priority from
+ * evidence; it never writes one, and `/ship:pm groom` relays the proposal
+ * for the user to accept or reject.
+ *
+ * The rule is **promotion-only**: the recorded rank is always among the
+ * candidates, so the proposal can never be a lower priority than the recorded
+ * value. Demotion is where a wrong rule quietly buries real work.
+ *
+ * 1. `confidence: unknown` is the evidence gate — no promotion at all, because
+ *    there is nothing to promote on.
+ * 2. Otherwise the candidates are the base rank plus:
+ *    - P0 for blast radius `users` with confidence `proven`
+ *    - P1 for blast radius `users` with confidence `suspected`
+ *    - P1 for blast radius `contributors` with confidence `proven`
+ *    - one level up, floored at P1, when 2+ non-done items depend on this one
+ *      or one of them is in progress. This clause is structural — it reads the
+ *      dependency graph, so an unknown blast radius does not block it.
+ * 3. `derived` is the strongest (lowest-rank) candidate.
+ * 4. `needsEvidence` is true when either authored column is `unknown`.
+ * 5. `reasons` is what groom argues with, one short string per clause that
+ *    fired — contract, not debug output.
+ *
+ * `recorded` is the recorded **Priority** (`P0`–`P3` or null), never the
+ * recorded Status — `parseRoadmap` uses the name `recorded` for status
+ * internally and the two must not be confused. The returned `unblocks` is the
+ * numeric count; `inProgress` surfaces through `reasons`.
+ *
+ * Pure; never throws — a missing cell reads as `unknown`.
+ *
+ * @param {ReturnType<typeof parseRoadmap>[number]} row
+ * @param {{ count: number, inProgress: boolean }|undefined} unblocks
+ * @returns {{ recorded: string|null, derived: string, unblocks: number,
+ *             firstSeen: string, blastRadius: string, confidence: string,
+ *             needsEvidence: boolean, reasons: string[] }}
+ */
+function derivePriority(row, unblocks) {
+  const cells = (row && row.cells) || {};
+
+  const priority = cells.Priority;
+  const recorded = typeof priority === 'string' && /^P[0-3]$/.test(priority.trim())
+    ? priority.trim()
+    : null;
+
+  let blastRadius = evidenceCell(cells['Blast radius']);
+  if (!BLAST_RADIUS_VALUES.has(blastRadius)) blastRadius = 'unknown';
+  let confidence = evidenceCell(cells.Confidence);
+  if (!CONFIDENCE_VALUES.has(confidence)) confidence = 'unknown';
+  const firstSeen = evidenceCell(cells['First seen']);
+
+  const count = unblocks && Number.isFinite(unblocks.count) ? unblocks.count : 0;
+  const inProgress = !!(unblocks && unblocks.inProgress);
+
+  const baseRank = recorded ? Number(recorded[1]) : 3;
+  const needsEvidence = confidence === 'unknown' || blastRadius === 'unknown';
+  const reasons = [];
+
+  let derivedRank = baseRank;
+
+  if (confidence === 'unknown') {
+    reasons.push('confidence unknown → no promotion');
+  } else {
+    const candidates = [baseRank];
+
+    if (blastRadius === 'users' && confidence === 'proven') {
+      candidates.push(0);
+      reasons.push('blast radius users + confidence proven → P0');
+    }
+    if (blastRadius === 'users' && confidence === 'suspected') {
+      candidates.push(1);
+      reasons.push('blast radius users + confidence suspected → P1');
+    }
+    if (blastRadius === 'contributors' && confidence === 'proven') {
+      candidates.push(1);
+      reasons.push('blast radius contributors + confidence proven → P1');
+    }
+    if (count >= 2 || inProgress) {
+      candidates.push(Math.max(baseRank - 1, 1));
+      reasons.push(
+        `unblocks ${count} non-done item${count === 1 ? '' : 's'}${inProgress ? ', 1 in flight' : ''} → promote one level (floor P1)`
+      );
+    }
+
+    derivedRank = Math.min(...candidates);
+    if (reasons.length === 0) reasons.push('no clause fired → unchanged');
+  }
+
+  // Promotion-only, asserted rather than inferred from the arithmetic: the
+  // base rank is always a candidate today, which is exactly what makes this
+  // easy to break by "simplifying" the candidate list later.
+  if (derivedRank > baseRank) derivedRank = baseRank;
+
+  return {
+    recorded,
+    derived: `P${derivedRank}`,
+    unblocks: count,
+    firstSeen,
+    blastRadius,
+    confidence,
+    needsEvidence,
+    reasons
+  };
+}
+
+/**
  * Write a file atomically: write `{file}.tmp-{pid}` in the same directory,
  * then rename over the target — an atomic same-volume replace on both POSIX
  * and Windows, so no reader ever observes a partial file. On failure the
@@ -1002,7 +1175,7 @@ function runHarvest(cwd, root, slugs, today) {
   }
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, renderLedgerRow, appendLedger, runHarvest };
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, renderLedgerRow, appendLedger, runHarvest };
 
 if (require.main === module) {
   try {
