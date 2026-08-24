@@ -1,7 +1,17 @@
 // LEDGER.md harvest — the mechanical shipped-feature ledger written by
-// ship/pm-update.cjs. Every claim here rests on temp repos and on this
-// repo's real .planning/archive/ artifacts, never on the local (gitignored)
-// .project-manager/, which CI never sees.
+// ship/pm-update.cjs. Every claim here rests on temp repos and on the
+// committed archive fixture in tests/fixtures/pm-ledger-archive/.
+//
+// The fixture exists because BOTH `.planning/` and `.project-manager/` are
+// gitignored (.gitignore:39-40), so a clean checkout — CI's, always — has no
+// archive to read. Sourcing these tests from the real .planning/archive/ made
+// them pass locally and die with ENOENT on every CI run, which is exactly the
+// clean-checkout blindness tests/fixtures/pm-state/ was introduced to end in
+// v5.12.0. The fixture keeps REVIEW.md and VERIFY.md verbatim and reduces
+// CONTEXT.md/PLAN.md to the bytes harvestFeature() actually parses; the
+// drift tripwire at the bottom of this file re-harvests the real archive
+// whenever it is present and asserts the fixture still yields identical
+// records, so a reduced copy can never silently drift from its source.
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
@@ -11,10 +21,13 @@ const os = require('node:os');
 const path = require('node:path');
 
 const SCRIPT_PATH = path.join(__dirname, '..', 'ship', 'pm-update.cjs');
+const { harvestFeature } = require(SCRIPT_PATH);
 const repoRoot = path.resolve(__dirname, '..');
-const archiveRoot = path.join(repoRoot, '.planning', 'archive');
+const archiveRoot = path.join(repoRoot, 'tests', 'fixtures', 'pm-ledger-archive');
+/** The real archive — present only on a machine that has built these features. */
+const realArchiveRoot = path.join(repoRoot, '.planning', 'archive');
 
-/** The five features archived when this feature was built — the harvest's real-artifact test set. */
+/** The five features the fixture carries — the harvest's real-artifact test set. */
 const KNOWN_ARCHIVED = [
   'dashboard-code-spans',
   'go-path-reliability',
@@ -91,7 +104,7 @@ function ledgerRows(content) {
   return rows;
 }
 
-/** Copy this repo's real archived features into a temp repo's .planning/archive/. */
+/** Copy the committed archive fixture into a temp repo's .planning/archive/. */
 function stageRealArchive(dir) {
   const slugs = fs
     .readdirSync(archiveRoot, { withFileTypes: true })
@@ -378,5 +391,38 @@ describe('pm ledger — resilience', () => {
     );
     assert.equal(rows[0].Verify, 'none');
     assert.equal(rows[0].Profile, 'unknown');
+  });
+});
+
+// The fixture reduces CONTEXT.md and PLAN.md to the bytes the harvest reads.
+// That reduction is only safe while it stays faithful, so on any machine that
+// still holds the real archive we harvest both and require identical records.
+// Skipped — never failed — where the real archive is absent, which is every
+// clean checkout including CI: the fixture is the source of truth there, and a
+// missing local archive is not a defect.
+describe('pm ledger — fixture fidelity', () => {
+  it('harvests the reduced fixture identically to the real archive', (t) => {
+    if (!fs.existsSync(realArchiveRoot)) {
+      t.skip('no local .planning/archive — fixture is authoritative on a clean checkout');
+      return;
+    }
+
+    const dir = tmpRepo();
+    stageRealArchive(dir);
+
+    let compared = 0;
+    for (const slug of KNOWN_ARCHIVED) {
+      if (!fs.existsSync(path.join(realArchiveRoot, slug))) continue;
+      const fromReal = harvestFeature(repoRoot, slug, '2026-01-01');
+      const fromFixture = harvestFeature(dir, slug, '2026-01-01');
+      assert.deepEqual(
+        fromFixture,
+        fromReal,
+        `${slug}: reduced fixture drifted from .planning/archive/${slug}`
+      );
+      compared += 1;
+    }
+
+    assert.ok(compared > 0, 'a present real archive must yield at least one comparison');
   });
 });
