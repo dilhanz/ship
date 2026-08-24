@@ -615,7 +615,161 @@ function generateDashboard(root, laneData) {
     .replace('<!-- PM:DECISIONS -->', () => decisionsHtml);
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard, writeFileAtomic, stampLane };
+/**
+ * Harvest one feature's on-disk artifacts into a ledger record.
+ *
+ * Reads `{cwd}/.planning/archive/{slug}/` when that directory exists, else
+ * `{cwd}/.planning/features/{slug}/`. The archive wins because a feature that
+ * has been archived is the finished record of itself.
+ *
+ * Never throws. Every artifact is optional and every parse degrades toward
+ * "absent" rather than toward a guess: an unreadable file is treated exactly
+ * as a missing one, and a file whose format has drifted yields `unknown`
+ * plus an explicit qualifier in `artifacts` rather than an exception.
+ *
+ * Fields:
+ * - `slug` — the feature slug, as given.
+ * - `shipped` — VERIFY.md's `**Verified:**` date, else `today`.
+ * - `profile` — CONTEXT.md frontmatter `profile:`, else `unknown`.
+ * - `verify` — VERIFY.md's `**Overall Status:**` uppercased; `in-progress`
+ *   for a report still in flight; `unknown` when the file has neither line;
+ *   `none` when the file is absent (a feature that reached `done` with no
+ *   verify gate — recorded, never suppressed).
+ * - `unresolvedCarried` — critical/high REVIEW.md findings still marked
+ *   unresolved; exactly the set the verifier must carry into Stage 2b.
+ * - `planRounds` — plan-revision rounds, from PLAN.md's `**Rounds:**` line.
+ * - `fixRounds` — REVIEW.md phase headings at round 2 or later.
+ * - `findings` — per-severity REVIEW.md finding counts.
+ * - `phases` — distinct REVIEW.md phase ids.
+ * - `artifacts` — exactly four provenance tokens, always in CONTEXT, PLAN,
+ *   REVIEW, VERIFY order: the filename, the filename plus a missing-field
+ *   qualifier, or `no {filename}`. The array is never short and never `—`,
+ *   so a reader can always tell a clean run from a missing record.
+ *
+ * `today` is injected (never `new Date()` here) so a harvest is deterministic
+ * and testable.
+ *
+ * @param {string} cwd - the lane whose .planning/ holds the feature
+ * @param {string} slug
+ * @param {string} today - YYYY-MM-DD
+ * @returns {{ slug: string, shipped: string, profile: string, verify: string,
+ *             unresolvedCarried: number, planRounds: number|string,
+ *             fixRounds: number,
+ *             findings: { critical: number, high: number, medium: number, low: number },
+ *             phases: number, artifacts: string[] }|null}
+ */
+function harvestFeature(cwd, slug, today) {
+  try {
+    if (!isValidSlug(slug)) return null; // never let it reach path.join
+
+    let dir = path.join(cwd, '.planning', 'archive', slug);
+    if (!fs.existsSync(dir)) {
+      dir = path.join(cwd, '.planning', 'features', slug);
+      if (!fs.existsSync(dir)) return null;
+    }
+
+    const read = name => readOptional(path.join(dir, name));
+
+    // --- CONTEXT.md — the profile the run was executed under
+    const context = read('CONTEXT.md');
+    let profile = 'unknown';
+    let contextToken = 'no CONTEXT.md';
+    if (context !== null) {
+      const fm = frontmatter(context); // frontmatter block only — a body `profile:` is prose
+      const match = fm === null ? null : fm.match(/^profile:\s*(.+)$/m);
+      const value = match ? match[1].trim() : '';
+      if (value !== '') {
+        profile = value;
+        contextToken = 'CONTEXT.md';
+      } else {
+        contextToken = 'CONTEXT.md (no profile)';
+      }
+    }
+
+    // --- PLAN.md — plan-revision rounds
+    const plan = read('PLAN.md');
+    let planRounds = 'unknown';
+    let planToken = 'no PLAN.md';
+    if (plan !== null) {
+      const stated = plan.match(/^\*\*Rounds:\*\*\s*(\d+)/m);
+      if (stated) {
+        planRounds = Number(stated[1]);
+      } else {
+        // `**Rounds:** N` is authoritative; counting `### Round n` subsections
+        // is the fallback, and a plan can state rounds while carrying none.
+        const headings = plan.match(/^### Round \d+/gm);
+        if (headings && headings.length > 0) planRounds = headings.length;
+      }
+      planToken = planRounds === 'unknown' ? 'PLAN.md (no rounds)' : 'PLAN.md';
+    }
+
+    // --- REVIEW.md — phases, fix rounds, findings, unresolved carries
+    const review = read('REVIEW.md');
+    const findings = { critical: 0, high: 0, medium: 0, low: 0 };
+    let phases = 0;
+    let fixRounds = 0;
+    let unresolvedCarried = 0;
+    let reviewToken = 'no REVIEW.md';
+    if (review !== null) {
+      const phaseIds = new Set();
+      const headingRe = /^## Phase (.+?) — (.*?) \(round (\d+)\)\s*$/gm;
+      let m;
+      while ((m = headingRe.exec(review)) !== null) {
+        phaseIds.add(m[1]);
+        if (Number(m[3]) >= 2) fixRounds++;
+      }
+      phases = phaseIds.size;
+
+      const findingRe = /^- \[(critical|high|medium|low)\].*$/gm;
+      let f;
+      while ((f = findingRe.exec(review)) !== null) {
+        findings[f[1]]++;
+        if ((f[1] === 'critical' || f[1] === 'high') && /—\s*unresolved\s*$/.test(f[0])) {
+          unresolvedCarried++;
+        }
+      }
+
+      const hasEvidence = /^Verify: \d+ re-run/m.test(review);
+      reviewToken = phases > 0 && !hasEvidence ? 'REVIEW.md (no evidence lines)' : 'REVIEW.md';
+    }
+
+    // --- VERIFY.md — the verdict
+    const verifyDoc = read('VERIFY.md');
+    let verify = 'none';
+    let shipped = today;
+    let verifyToken = 'no VERIFY.md';
+    if (verifyDoc !== null) {
+      const overall = verifyDoc.match(/^\*\*Overall Status:\*\*\s*(.+)$/m);
+      if (overall) {
+        verify = overall[1].trim().toUpperCase();
+      } else if (/^\*\*Status:\*\*\s*IN PROGRESS\s*$/m.test(verifyDoc)) {
+        verify = 'in-progress';
+      } else {
+        verify = 'unknown';
+      }
+      const verified = verifyDoc.match(/^\*\*Verified:\*\*\s*(.+)$/m);
+      if (verified && verified[1].trim() !== '') shipped = verified[1].trim();
+      verifyToken = /^\*\*Head:\*\*/m.test(verifyDoc) ? 'VERIFY.md' : 'VERIFY.md (no head)';
+    }
+
+    return {
+      slug,
+      shipped,
+      profile,
+      verify,
+      unresolvedCarried,
+      planRounds,
+      fixRounds,
+      findings,
+      phases,
+      artifacts: [contextToken, planToken, reviewToken, verifyToken]
+    };
+  } catch (e) {
+    return null; // an unreadable feature is an absent one, never a crash
+  }
+}
+
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard, writeFileAtomic, stampLane, harvestFeature };
 
 if (require.main === module) {
   try {
