@@ -1,18 +1,19 @@
 ---
 name: ship:pm-state
-description: Use when reading or writing .project-manager/ state files — defines the ROADMAP.md, STATUS.md, DECISIONS.md, CONVENTIONS.md, and dashboard.html formats shared by /ship:pm, /ship:pm-sync, and the ship-pm agent
+description: Use when reading or writing .project-manager/ state files — defines the ROADMAP.md, STATUS.md, DECISIONS.md, CONVENTIONS.md, LEDGER.md, and dashboard.html formats shared by /ship:pm, /ship:pm-sync, and the ship-pm agent
 effort: medium
 user-invocable: false
 ---
 
 # Project Manager State Conventions
 
-All PM state lives in `.project-manager/` at the repo root. Five files:
+All PM state lives in `.project-manager/` at the repo root. Six files:
 
 - `ROADMAP.md` — milestones + backlog
 - `STATUS.md` — narrative snapshot of right now
 - `DECISIONS.md` — short dated entries
 - `CONVENTIONS.md` — project conventions + learning
+- `LEDGER.md` — generated, append-only, never hand-edited
 - `dashboard.html` — generated, never hand-edited
 
 Plus a `decisions/` subdirectory holding spill files for decisions too long for a DECISIONS.md entry.
@@ -39,6 +40,17 @@ The table header must be exactly:
 ```
 | Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane |
 ```
+
+Those eight are the **mandatory core** — every reader locates columns by header *name*, so a table may
+carry further columns beyond them, in any order, and still parse. Three optional columns are defined:
+
+- **Blast radius** ∈ `users | contributors | internal | —` — who feels it if this stays undone. Authored.
+- **Confidence** ∈ `proven | suspected | —` — whether the problem is demonstrated or suspected. Authored; never inferred from the `Source` shape.
+- **First seen** — `YYYY-MM-DD`, stamped by `ship/pm-update.cjs` the first time it sees the row and never rewritten. Derived data like `Lane` — never hand-maintained. It records when the script first saw the row, not a claim about when the item was filed.
+
+An absent column and a `—` cell are the same thing: **`unknown`**, which produces no priority promotion
+(see PM:PRIORITY below). `pm-update.cjs` never widens a table on its own — a table grows into the
+enriched shape only through a confirmed `/ship:pm-sync` reconcile.
 
 ### Detail sections
 
@@ -175,6 +187,74 @@ Deliberately named `CONVENTIONS.md` rather than `README.md` so it can never be c
 - Release notes are written from the CHANGELOG, never from the commit log.
 ```
 
+## LEDGER.md
+
+The shipped-feature ledger: one row per feature that reached `done`, recording what its own artifacts say
+about how it got there. **Mechanically harvested by `ship/pm-update.cjs`** on the `done` transition it
+already runs on, and backfilled once from `.planning/archive/` the first time it runs. Never
+agent-authored, never hand-edited — the counts are always true and cost zero tokens, and naming the
+*pattern* in them stays the PM's job at read time.
+
+- **Append-only, keyed on feature slug.** A slug already present is skipped before any artifact is read;
+  an existing row is never re-read, re-rendered, or rewritten. Re-running the script any number of times
+  adds nothing.
+- **The table is the last content in the file.** Rows are appended after the last non-empty line, so
+  nothing may be authored below it — a footer would silently push later rows past the table.
+- **A row is written even when the artifacts are missing.** A feature that reached `done` with no
+  VERIFY.md is the highest-signal row the ledger can hold; suppressing it would defeat the purpose.
+
+Frontmatter carries `updated: "{YYYY-MM-DD}"`, bumped on every append. The table header is exactly:
+
+```
+| Feature | Shipped | Profile | Verify | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |
+```
+
+Cell vocabulary:
+
+- **Feature** — the feature slug. Unique: the ledger holds one row per slug, forever.
+- **Shipped** — VERIFY.md's `**Verified:**` date, falling back to the harvest date when there is no
+  VERIFY.md. The Artifacts cell discloses which, so the provenance stays unambiguous.
+- **Profile** — the CONTEXT.md frontmatter `profile:` value (`quick | standard | thorough`), or `unknown`.
+- **Verify** ∈ `PASS | FAIL | INCONCLUSIVE | DEFERRED | in-progress | unknown | none`. **`none` means the
+  feature reached `done` with no VERIFY.md on disk** — deliberately recorded rather than suppressed, and
+  read as verification debt. `unknown` means the file exists but states no verdict.
+- **Unresolved carried** — REVIEW.md findings marked `unresolved` at `critical` or `high` severity: exactly
+  the set the go workflow hands the verifier as mandatory Stage 2b targets.
+- **Plan rounds** — PLAN.md's `**Rounds:** {n}`, else the count of `### Round {n}` subsections, else `unknown`.
+- **Fix rounds** — REVIEW.md phase headings at round 2 or higher.
+- **Findings (C/H/M/L)** — one cell, rendered `{critical}/{high}/{medium}/{low}`.
+- **Phases** — distinct phase ids in REVIEW.md.
+- **Artifacts** — the provenance contract, below.
+
+**The Artifacts cell is never `—` and never a bare filename list.** It is exactly four `; `-joined tokens
+in fixed `CONTEXT.md`, `PLAN.md`, `REVIEW.md`, `VERIFY.md` order. Each token is either the filename (read
+cleanly), the filename plus a parenthesised missing-field qualifier (`CONTEXT.md (no profile)`,
+`PLAN.md (no rounds)`, `REVIEW.md (no evidence lines)`, `VERIFY.md (no head)`), or `no {filename}` when the
+file was absent. That is what makes a cell structurally unable to be ambiguous between "clean run" and
+"no record" — the same ambiguity the VERIFY.md three-state rule exists to prevent.
+
+Every cell is sanitized on the way in (newline → space, `|` → `/`, empty → `unknown`), so a value
+harvested from a file on disk can never break the table or invent a column.
+
+### Complete example
+
+```markdown
+---
+updated: "2026-08-25"
+---
+
+# Ledger
+
+Mechanically harvested by `ship/pm-update.cjs` when a feature reaches `done` — one row per feature, keyed on slug.
+Append-only: a recorded row is never rewritten, and this file is never hand-edited.
+
+| Feature | Shipped | Profile | Verify | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |
+|---|---|---|---|---|---|---|---|---|---|
+| go-path-reliability | 2026-08-22 | thorough | PASS | 0 | 2 | 0 | 0/1/5/9 | 4 | CONTEXT.md; PLAN.md; REVIEW.md; VERIFY.md |
+| lane-ownership | 2026-08-23 | thorough | PASS | 0 | 1 | 0 | 0/0/1/2 | 3 | CONTEXT.md; PLAN.md; REVIEW.md; VERIFY.md |
+| pm-capability-uplift | 2026-08-11 | unknown | INCONCLUSIVE | 0 | 2 | 0 | 0/0/4/10 | 3 | CONTEXT.md (no profile); PLAN.md; REVIEW.md (no evidence lines); VERIFY.md (no head) |
+```
+
 ## dashboard.html regeneration procedure
 
 1. Run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs"` from the repo root. With no slugs it regenerates `.project-manager/dashboard.html` from the state files and template, and reconciles every slugged row's Status per the status mapping table below, in one pass.
@@ -194,6 +274,32 @@ Deliberately named `CONVENTIONS.md` rather than `README.md` so it can never be c
 4. If the template cannot be read (legacy install), generate a minimal self-contained page with the same sections from scratch.
 
 The output must stay a single file: inline CSS only, no JavaScript required, no external references of any kind (no `http://`/`https://` URLs, scripts, stylesheets, fonts, or images). It must render via `file://` with zero network requests.
+
+## PM:PRIORITY (derived priority proposal)
+
+`node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --evidence` prints, as JSON, one entry per backlog item
+carrying `item`, `milestone`, `status`, `recorded`, `derived`, `unblocks`, `firstSeen`, `blastRadius`,
+`confidence`, `needsEvidence`, and `reasons`. It is a **query mode**: like `--next`, it writes nothing —
+no roadmap edit, no stamp, no dashboard, no ledger.
+
+`ship/pm-update.cjs` is the single home of this rule; it is never re-derived in prose, exactly as PM:NEXT
+is not. The shape of it:
+
+- **Promotion-only.** A proposal is never a *lower* priority than the recorded value. Demotion is where a
+  wrong rule quietly buries real work, so the rule cannot express it.
+- **Gated on `Confidence`.** `unknown` confidence means no promotion at all and `needsEvidence: true` —
+  without evidence there is nothing to promote on. `unknown` blast radius also sets `needsEvidence`, but
+  only gates the blast-radius clauses.
+- **Blast-radius clauses.** `users` + `proven` → P0; `users` + `suspected` → P1; `contributors` + `proven` → P1.
+- **Unblocks clause.** Two or more non-done items depend on this one, or one such dependent is
+  `in-progress` → promote one level, floored at P1. `Unblocks` is computed at read time by inverting the
+  `Depends on` graph (exact-name, case-sensitive — the same convention PM:NEXT uses) and is stored nowhere.
+- **`derived` is the best (lowest-numbered) clause that fired**, and the recorded priority is always a
+  candidate, which is what makes demotion arithmetically impossible.
+
+**`groom` proposes and argues; it never writes the Priority cell.** The user decides. An item with
+`needsEvidence: true` is reported as a request for the missing `Blast radius` / `Confidence` value, never
+promoted on a guess.
 
 ## Hard rules
 
@@ -253,9 +359,9 @@ Rules:
 
 A v5.3.0 directory — three files (`ROADMAP.md`, `DECISIONS.md`, `dashboard.html`), a 5-column backlog table, priorities P1–P3 — stays valid and readable.
 
-- Readers key off the **table header**, never a fixed column count, so the 5-column, 7-column (`| Item | Status | Priority | Size | Depends on | Source | Ship feature |`), and 8-column shapes all parse.
-- The `Lane` column arrives only via a confirmed `/ship:pm-sync` reconcile — the same growth pattern that took v5.3.0 tables from 5 to 7 columns. A 7-column table without it stays valid indefinitely.
-- Missing `STATUS.md`, `CONVENTIONS.md`, and `decisions/` mean absent, not broken. Degrade gracefully; never report a legacy directory as damaged.
+- Readers key off the **table header**, never a fixed column count, so the 5-column, 7-column (`| Item | Status | Priority | Size | Depends on | Source | Ship feature |`), 8-column, 10-column (adding `Blast radius` and `Confidence`), and 11-column (adding `First seen`) shapes all parse — including two tables of different widths in the same file.
+- The `Lane` column arrives only via a confirmed `/ship:pm-sync` reconcile — the same growth pattern that took v5.3.0 tables from 5 to 7 columns. A 7-column table without it stays valid indefinitely. `Blast radius`, `Confidence`, and `First seen` arrive the same way: `pm-update.cjs` never widens a table itself, so a narrower table simply reads those columns as `unknown` and receives no promotion.
+- Missing `STATUS.md`, `CONVENTIONS.md`, `LEDGER.md`, and `decisions/` mean absent, not broken. Degrade gracefully; never report a legacy directory as damaged. `LEDGER.md` is generated rather than migrated: a directory that has never had one gets it on the next `pm-update.cjs` run, backfilled from `.planning/archive/`.
 - `/ship:pm-sync` reconcile is the only path that grows an old directory into the new shape, and it does so with the user's confirmation. Nothing auto-migrates.
 
 ## Status mapping table (reconciliation)
