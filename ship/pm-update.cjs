@@ -344,7 +344,11 @@ function computeUnblocks(rows) {
 
   for (const row of rows) {
     if (!row || !row.cells) continue;
+    // A non-string cell is unreachable through `parseRoadmap` (which trims
+    // every cell to a string) but reachable for a direct module consumer
+    // building rows by hand — and the contract above promises never to throw.
     const depends = row.cells['Depends on'];
+    if (typeof depends !== 'string') continue;
     if (!depends || depends === '—' || depends === '-') continue;
 
     const status = (row.recorded || '').toLowerCase();
@@ -617,6 +621,30 @@ function readOptional(filePath) {
   }
 }
 
+/**
+ * Read a file the way `readOptional` does, but distinguish *absent* from
+ * *present and unreadable*. The ledger's provenance contract promises a row is
+ * never ambiguous between a clean run and a missing record; reporting a
+ * permission problem as `no VERIFY.md` breaks that promise in the one
+ * direction that matters, since it reads as verification debt when the
+ * evidence is actually sitting right there. Never throws.
+ *
+ * `ENOENT` and `ENOTDIR` (a path component that is not a directory) mean the
+ * artifact genuinely is not there. Anything else — `EACCES`, `EISDIR`, `EIO` —
+ * means something is there that could not be read.
+ *
+ * @param {string} filePath
+ * @returns {{ content: string|null, unreadable: boolean }}
+ */
+function readArtifact(filePath) {
+  try {
+    return { content: fs.readFileSync(filePath, 'utf8'), unreadable: false };
+  } catch (e) {
+    const absent = !e || e.code === 'ENOENT' || e.code === 'ENOTDIR';
+    return { content: null, unreadable: !absent };
+  }
+}
+
 /** Extract a `## {name}` section's body from a markdown document, or ''. */
 function sectionBody(content, name) {
   // `$(?![\s\S])` is end-of-string — a bare `$` under the m flag would match
@@ -859,8 +887,10 @@ function generateDashboard(root, laneData) {
  * - `phases` — distinct REVIEW.md phase ids.
  * - `artifacts` — exactly four provenance tokens, always in CONTEXT, PLAN,
  *   REVIEW, VERIFY order: the filename, the filename plus a missing-field
- *   qualifier, or `no {filename}`. The array is never short and never `—`,
- *   so a reader can always tell a clean run from a missing record.
+ *   qualifier, `no {filename}` when the file is absent, or
+ *   `unreadable {filename}` when it exists but could not be read. The array is
+ *   never short and never `—`, so a reader can always tell a clean run from a
+ *   missing record — and a permission problem from verification debt.
  *
  * `today` is injected (never `new Date()` here) so a harvest is deterministic
  * and testable.
@@ -884,12 +914,16 @@ function harvestFeature(cwd, slug, today) {
       if (!fs.existsSync(dir)) return null;
     }
 
-    const read = name => readOptional(path.join(dir, name));
+    const read = name => readArtifact(path.join(dir, name));
+    // The provenance token for an artifact that yielded no content: `no X`
+    // when it is absent, `unreadable X` when it exists but could not be read.
+    const absentToken = (state, name) => (state.unreadable ? `unreadable ${name}` : `no ${name}`);
 
     // --- CONTEXT.md — the profile the run was executed under
-    const context = read('CONTEXT.md');
+    const contextRead = read('CONTEXT.md');
+    const context = contextRead.content;
     let profile = 'unknown';
-    let contextToken = 'no CONTEXT.md';
+    let contextToken = absentToken(contextRead, 'CONTEXT.md');
     if (context !== null) {
       const fm = frontmatter(context); // frontmatter block only — a body `profile:` is prose
       const match = fm === null ? null : fm.match(/^profile:\s*(.+)$/m);
@@ -903,9 +937,10 @@ function harvestFeature(cwd, slug, today) {
     }
 
     // --- PLAN.md — plan-revision rounds
-    const plan = read('PLAN.md');
+    const planRead = read('PLAN.md');
+    const plan = planRead.content;
     let planRounds = 'unknown';
-    let planToken = 'no PLAN.md';
+    let planToken = absentToken(planRead, 'PLAN.md');
     if (plan !== null) {
       const stated = plan.match(/^\*\*Rounds:\*\*\s*(\d+)/m);
       if (stated) {
@@ -920,12 +955,13 @@ function harvestFeature(cwd, slug, today) {
     }
 
     // --- REVIEW.md — phases, fix rounds, findings, unresolved carries
-    const review = read('REVIEW.md');
+    const reviewRead = read('REVIEW.md');
+    const review = reviewRead.content;
     const findings = { critical: 0, high: 0, medium: 0, low: 0 };
     let phases = 0;
     let fixRounds = 0;
     let unresolvedCarried = 0;
-    let reviewToken = 'no REVIEW.md';
+    let reviewToken = absentToken(reviewRead, 'REVIEW.md');
     if (review !== null) {
       const phaseIds = new Set();
       const headingRe = /^## Phase (.+?) — (.*?) \(round (\d+)\)\s*$/gm;
@@ -940,7 +976,14 @@ function harvestFeature(cwd, slug, today) {
       let f;
       while ((f = findingRe.exec(review)) !== null) {
         findings[f[1]]++;
-        if ((f[1] === 'critical' || f[1] === 'high') && /—\s*unresolved\s*$/.test(f[0])) {
+        // `new (round n)` is the label the go and build skills give a
+        // critical/high finding the fix round *introduced*, and
+        // go.workflow.js hands those to the verifier as a subset of
+        // `unresolved` — so the cell must count them too.
+        if (
+          (f[1] === 'critical' || f[1] === 'high') &&
+          /—\s*(?:unresolved|new \(round \d+\))\s*$/.test(f[0])
+        ) {
           unresolvedCarried++;
         }
       }
@@ -950,15 +993,18 @@ function harvestFeature(cwd, slug, today) {
     }
 
     // --- VERIFY.md — the verdict
-    const verifyDoc = read('VERIFY.md');
+    const verifyRead = read('VERIFY.md');
+    const verifyDoc = verifyRead.content;
     let verify = 'none';
     let shipped = today;
-    let verifyToken = 'no VERIFY.md';
+    let verifyToken = absentToken(verifyRead, 'VERIFY.md');
     if (verifyDoc !== null) {
       const overall = verifyDoc.match(/^\*\*Overall Status:\*\*\s*(.+)$/m);
       if (overall) {
         verify = overall[1].trim().toUpperCase();
-      } else if (/^\*\*Status:\*\*\s*IN PROGRESS\s*$/m.test(verifyDoc)) {
+        // `\b`, not `\s*$`: the verifier's Stage-1 flush line is
+        // `**Status:** IN PROGRESS — Stage 1 only`, which an end-anchor rejects.
+      } else if (/^\*\*Status:\*\*\s*IN PROGRESS\b/m.test(verifyDoc)) {
         verify = 'in-progress';
       } else {
         verify = 'unknown';
@@ -998,6 +1044,37 @@ const LEDGER_COLUMNS = [
   'Phases',
   'Artifacts'
 ];
+
+/**
+ * Is this LEDGER.md body anchored by a parseable header row?
+ *
+ * `ledgerSlugs` keys the append-only contract off the header, so a body with
+ * none yields an empty slug set and every recorded feature re-harvests. The
+ * append branch would then write those rows again on every invocation, with
+ * no header ever restored. `appendLedger` uses this to rebuild instead.
+ *
+ * Header detection matches `ledgerSlugs` exactly — a table row whose cells
+ * include `Feature`, `Shipped`, and `Verify`. Pure; never throws.
+ *
+ * @param {string} content
+ * @returns {boolean}
+ */
+function hasLedgerHeader(content) {
+  try {
+    if (typeof content !== 'string') return false;
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) continue;
+      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+      if (cells.includes('Feature') && cells.includes('Shipped') && cells.includes('Verify')) {
+        return true;
+      }
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
 
 /**
  * The `Feature` values already recorded in a LEDGER.md string.
@@ -1128,8 +1205,14 @@ function appendLedger(root, records, today) {
     const separator = `|${LEDGER_COLUMNS.map(() => '---').join('|')}|`;
 
     const existing = readOptional(ledgerPath);
+    // A body with no header row holds no rows `ledgerSlugs` can key on, so
+    // appending to it would duplicate every record on every run and never
+    // restore the header. Nothing parseable is lost by rebuilding: without a
+    // header the column order is unknowable, so the bytes below it are not
+    // ledger data. This is the only path that does not append.
+    const rebuild = existing === null || !hasLedgerHeader(existing);
     let content;
-    if (existing === null) {
+    if (rebuild) {
       content =
         `---\nupdated: "${today}"\n---\n\n# Ledger\n\n` +
         'Mechanically harvested by `ship/pm-update.cjs` when a feature reaches `done` — one row per feature, keyed on slug.\n' +
@@ -1218,7 +1301,7 @@ function runHarvest(cwd, root, slugs, today) {
   }
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, stampFirstSeen, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, renderLedgerRow, appendLedger, runHarvest };
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, stampFirstSeen, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
 
 if (require.main === module) {
   try {

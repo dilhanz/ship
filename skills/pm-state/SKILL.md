@@ -204,6 +204,10 @@ agent-authored, never hand-edited — the counts are always true and cost zero t
 - **Append-only, keyed on feature slug.** A slug already present is skipped before any artifact is read;
   an existing row is never re-read, re-rendered, or rewritten. Re-running the script any number of times
   adds nothing.
+- **The header row is the key.** Slugs are located by the header, so a file carrying none holds no rows
+  the script can key on. A body with no parseable header row is therefore **rebuilt** from scratch, not
+  appended to — the one path that is not append-only. Nothing recoverable is lost: without a header the
+  column order is unknowable, so the bytes below it are not ledger data.
 - **The table is the last content in the file.** Rows are appended after the last non-empty line, so
   nothing may be authored below it — a footer would silently push later rows past the table.
 - **A row is written even when the artifacts are missing.** A feature that reached `done` with no
@@ -223,9 +227,14 @@ Cell vocabulary:
 - **Profile** — the CONTEXT.md frontmatter `profile:` value (`quick | standard | thorough`), or `unknown`.
 - **Verify** ∈ `PASS | FAIL | INCONCLUSIVE | DEFERRED | in-progress | unknown | none`. **`none` means the
   feature reached `done` with no VERIFY.md on disk** — deliberately recorded rather than suppressed, and
-  read as verification debt. `unknown` means the file exists but states no verdict.
-- **Unresolved carried** — REVIEW.md findings marked `unresolved` at `critical` or `high` severity: exactly
-  the set the go workflow hands the verifier as mandatory Stage 2b targets.
+  read as verification debt. `unknown` means the file exists but states no verdict. `in-progress` comes
+  from the verifier's Stage-1 flush line, matched on the `**Status:** IN PROGRESS` prefix — the line Ship
+  actually writes carries a trailing `— Stage 1 only`, so the match must not be end-anchored.
+- **Unresolved carried** — REVIEW.md findings at `critical` or `high` severity whose line ends `— unresolved`
+  **or** `— new (round {n})`: exactly the set the go workflow hands the verifier as mandatory Stage 2b
+  targets. The second marker is the label a fix round gets when it *introduced* the finding, and
+  `go.workflow.js` treats `introducedByFix` as a subset of `unresolved` — so counting only the first
+  undercounts whenever a fix round created a new critical or high issue.
 - **Plan rounds** — PLAN.md's `**Rounds:** {n}`, else the count of `### Round {n}` subsections, else `unknown`.
 - **Fix rounds** — REVIEW.md phase headings at round 2 or higher.
 - **Findings (C/H/M/L)** — one cell, rendered `{critical}/{high}/{medium}/{low}`.
@@ -235,9 +244,12 @@ Cell vocabulary:
 **The Artifacts cell is never `—` and never a bare filename list.** It is exactly four `; `-joined tokens
 in fixed `CONTEXT.md`, `PLAN.md`, `REVIEW.md`, `VERIFY.md` order. Each token is either the filename (read
 cleanly), the filename plus a parenthesised missing-field qualifier (`CONTEXT.md (no profile)`,
-`PLAN.md (no rounds)`, `REVIEW.md (no evidence lines)`, `VERIFY.md (no head)`), or `no {filename}` when the
-file was absent. That is what makes a cell structurally unable to be ambiguous between "clean run" and
-"no record" — the same ambiguity the VERIFY.md three-state rule exists to prevent.
+`PLAN.md (no rounds)`, `REVIEW.md (no evidence lines)`, `VERIFY.md (no head)`), `no {filename}` when the
+file was absent, or `unreadable {filename}` when it exists but could not be read. That is what makes a cell
+structurally unable to be ambiguous between "clean run" and "no record" — the same ambiguity the VERIFY.md
+three-state rule exists to prevent. `unreadable` is a distinct token on purpose: a permission problem is an
+access failure, not verification debt, and collapsing the two would report a feature as unverified when its
+evidence is sitting right there.
 
 Every cell is sanitized on the way in (newline → space, `|` → `/`, empty → `unknown`), so a value
 harvested from a file on disk can never break the table or invent a column.
