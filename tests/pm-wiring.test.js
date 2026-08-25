@@ -186,3 +186,59 @@ describe('pm wiring — state format contract', () => {
     }
   });
 });
+
+const ENRICHED_HEADER =
+  '| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane | Blast radius | Confidence | First seen |';
+
+describe('pm wiring — pm-sync grows a table to the enriched shape', () => {
+  const skill = readSrc(PM_SKILLS.pmSync);
+
+  it('bootstrap writes the enriched 11-column table, not the 8-column one', () => {
+    const write = skill.slice(skill.indexOf('4. **Write state**'), skill.indexOf('## Reconcile flow'));
+    assert.ok(write.includes(ENRICHED_HEADER), 'the bootstrap names the enriched header verbatim');
+    assert.ok(
+      !/8-column backlog table/.test(write),
+      'the bootstrap no longer stops at the 8-column shape'
+    );
+  });
+
+  it('the growth path targets the enriched header and names every narrower shape', () => {
+    const growth = skill.slice(skill.indexOf('3. **Growth path'), skill.indexOf('4. **Interview only'));
+    assert.ok(growth.includes(ENRICHED_HEADER), 'growth rewrites to the enriched header');
+    for (const shape of ['5-column', '7-column', '8-column', '10-column']) {
+      assert.ok(growth.includes(shape), `the growth path detects the ${shape} shape`);
+    }
+  });
+
+  it('the derived columns are marked never-authored, and only pm-sync widens a table', () => {
+    const growth = skill.slice(skill.indexOf('3. **Growth path'), skill.indexOf('4. **Interview only'));
+    assert.match(growth, /First seen/);
+    assert.match(growth, /never author|never by the user|never hand/i);
+    assert.match(growth, /only path that widens|never adds a column on its own/i);
+  });
+
+  it('the interview asks for blast radius and confidence, and allows an unsure answer', () => {
+    const interview = skill.slice(
+      skill.indexOf('3. **Interview via AskUserQuestion**'),
+      skill.indexOf('4. **Write state**')
+    );
+    assert.match(interview, /blast radius/i);
+    assert.match(interview, /confidence/i);
+    assert.match(interview, /`—` is a legitimate answer|unsure/i);
+    assert.match(interview, /[Nn]ever infer confidence/);
+  });
+
+  it('pm-sync knows LEDGER.md exists and that it never authors it', () => {
+    assert.match(skill, /LEDGER\.md/);
+    assert.match(skill, /`LEDGER\.md` is never authored here/);
+  });
+
+  it('every optional column pm-sync writes is one pm-state defines', () => {
+    const state = readSrc(PM_SKILLS.pmState);
+    for (const column of ['Blast radius', 'Confidence', 'First seen']) {
+      assert.ok(state.includes(`**${column}**`), `pm-state defines ${column}`);
+      assert.ok(skill.includes(column), `pm-sync knows ${column}`);
+    }
+    assert.ok(state.includes(ENRICHED_HEADER), 'both skills name the same enriched header');
+  });
+});
