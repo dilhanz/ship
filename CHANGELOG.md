@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.17.1
+
+Patch release — fixes doubly-prefixed slash commands.
+
+### Fixed
+
+- **Skill names no longer carry the `ship:` prefix.** The plugin loader namespaces a skill by plugin name plus its `name:` field, so `name: ship:go` was prefixed twice and surfaced in the slash menu as `/ship:ship-go` instead of `/ship:go` (every one of the 17 skills was affected, from v5.16.0's `7881b94`). Each `name:` is now the bare directory name, matching the convention every other plugin follows. A new `tests/skill-namespacing.test.js` asserts the invariant three ways — name present, no namespace separator in it, and name equal to its directory — so the prefix cannot come back silently.
+
 ## 5.17.0
 
 Minor release — Ship's PM layer stops recording only conclusions and starts keeping evidence. Two mechanical sources arrive, both owned by `ship/pm-update.cjs` and both harvested from artifacts already on disk: a shipped-feature **ledger**, and a **derived priority** proposal the PM must argue for rather than apply. Neither is agent-authored, so both cost zero tokens and cannot drift from what the artifacts say.
