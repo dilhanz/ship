@@ -1,5 +1,5 @@
 ---
-name: ship:go
+name: go
 description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, TaskOutput, TaskStop, ToolSearch, Skill, AskUserQuestion

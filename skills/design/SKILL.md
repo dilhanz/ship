@@ -1,5 +1,5 @@
 ---
-name: ship:design
+name: design
 description: Use when a brainstormed feature needs architectural decisions — presents 2-3 approaches for user to choose before planning
 effort: medium
 allowed-tools: Read, Write, Edit, Agent, Glob, Grep, AskUserQuestion
