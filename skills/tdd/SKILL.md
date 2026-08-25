@@ -1,5 +1,5 @@
 ---
-name: ship:tdd
+name: tdd
 description: Use when implementing tasks that have test-based verify commands — provides RED-GREEN-REFACTOR cycle guidance
 effort: medium
 user-invocable: false

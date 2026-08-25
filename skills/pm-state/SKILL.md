@@ -1,5 +1,5 @@
 ---
-name: ship:pm-state
+name: pm-state
 description: Use when reading or writing .project-manager/ state files — defines the ROADMAP.md, STATUS.md, DECISIONS.md, CONVENTIONS.md, LEDGER.md, and dashboard.html formats shared by /ship:pm, /ship:pm-sync, and the ship-pm agent
 effort: medium
 user-invocable: false
