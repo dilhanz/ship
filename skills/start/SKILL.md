@@ -1,5 +1,5 @@
 ---
-name: ship:start
+name: start
 description: Use when beginning new feature work, adding functionality, or fixing a bug — runs intensive brainstorming to capture requirements before planning
 effort: high
 allowed-tools: Read, Write, WebSearch, WebFetch, Glob, Bash

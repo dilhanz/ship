@@ -1,5 +1,5 @@
 ---
-name: ship:pm
+name: pm
 description: Use when asking project-level questions or doing project-level work — what to work on next, what can run in parallel, milestone status, blockers, why something was decided, plus reconstructing status, grooming the backlog, auditing whether a shipped feature was verified, and handing over a session
 effort: medium
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent

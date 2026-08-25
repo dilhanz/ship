@@ -1,5 +1,5 @@
 ---
-name: ship:pm-sync
+name: pm-sync
 description: Use when setting up or updating the project manager — bootstraps the five .project-manager/ state files (ROADMAP.md, STATUS.md, DECISIONS.md, CONVENTIONS.md, dashboard.html) on first run, thereafter reconciles them with repo reality and grows a legacy directory into the enriched shape
 effort: high
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion

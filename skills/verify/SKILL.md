@@ -1,5 +1,5 @@
 ---
-name: ship:verify
+name: verify
 description: Use when a feature build is complete and needs verification against acceptance criteria and adversarial testing
 effort: high
 allowed-tools: Read, Agent, Glob, Edit, Bash
