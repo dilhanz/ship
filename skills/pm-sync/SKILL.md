@@ -10,7 +10,7 @@ Set up or update the project-manager state in `.project-manager/`.
 
 ## Setup
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` first — it defines the five state-file formats (ROADMAP.md, STATUS.md, DECISIONS.md, CONVENTIONS.md, dashboard.html), the `decisions/` spill-file convention, the status mapping table, and the hard rules. Everything below assumes those formats.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` first — it defines the state-file formats (ROADMAP.md, STATUS.md, DECISIONS.md, CONVENTIONS.md, dashboard.html, plus the mechanically-harvested LEDGER.md), the `decisions/` spill-file convention, the status mapping table, and the hard rules. Everything below assumes those formats. **`LEDGER.md` is never authored here** — `ship/pm-update.cjs` creates and appends it, and this skill's only relationship to it is running that script.
 
 2. **Resolve the state root:** `.project-manager/` may live at the main worktree root rather than the cwd. Resolve it with:
 
@@ -40,13 +40,14 @@ Set up or update the project-manager state in `.project-manager/`.
    - Present the draft milestones and backlog; confirm, rename, add, or drop.
    - Confirm priorities (P0/P1/P2/P3) for each item.
    - Capture dependencies between items (Depends on column).
+   - For each item, ask **blast radius** (who feels it if this stays undone: users / contributors / internal) and **confidence** (is the problem `proven` — demonstrated by evidence you can point at — or `suspected`). Both are optional; `—` is a legitimate answer and is what you record when the user is unsure. Never infer confidence from the shape of the `Source` cell: a precise `file:line` is not proof the problem is real.
    - Ask about work currently **in flight** — what is started but not shipped, and at what stage (for STATUS.md).
    - Ask about current blockers **with their reasoning** — what is blocked, on what, and what would unblock it (items to mark `blocked`, plus STATUS.md's `## Blocked` section).
    - Ask whether any decisions are worth recording (what was decided and why).
    - Ask whether any project conventions are worth writing down — rules a fresh session should follow (for CONVENTIONS.md).
 
 4. **Write state** (all inside `.project-manager/` at the resolved state root) — five files:
-   - `ROADMAP.md` per the pm-state format, with `project`, today's date as `updated`, and the 8-column backlog table (new `Lane` cells initialize to `—` — the PM populates them from sweep data, never the user by hand).
+   - `ROADMAP.md` per the pm-state format, with `project`, today's date as `updated`, and the fully enriched 11-column backlog table (`| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane | Blast radius | Confidence | First seen |`). A fresh directory has no legacy shape to preserve, so it starts enriched. Initialize `Lane` and `First seen` to `—` — both are **derived**, populated by `ship/pm-update.cjs` and the sweep, never by the user or by you. `Blast radius` (`users | contributors | internal | —`) and `Confidence` (`proven | suspected | —`) are **authored**: fill them only from what the interview actually established, and leave `—` otherwise. An absent value reads as `unknown` and produces no priority promotion, which is the safe direction — never guess one to make a row look complete.
    - `STATUS.md` — all five sections, populated from the scan and the interview.
    - `DECISIONS.md` — seed with any decisions captured in the interview; otherwise just the `# Decisions` title.
    - `CONVENTIONS.md` — seed with the confirmed conventions; otherwise the `# Conventions` title plus a starter rule noting that conventions are appended here as they are discovered.
@@ -62,9 +63,13 @@ Set up or update the project-manager state in `.project-manager/`.
 
    STATUS.md's `## In flight`, `## Recently shipped`, and `## Repo hygiene` sections are also refreshed from reality — they are a snapshot, not user-authored judgment. Refresh `## Lanes` the same way, from `node "${CLAUDE_PLUGIN_ROOT}/ship/lane-sweep.cjs"` output (one line per worktree: branch, path, active feature + stage; "single lane" when only the main worktree exists) — snapshot data, same class as In flight / Repo hygiene. `## Blocked` and its reasoning are **never** auto-written: blockers are a PM judgment, confirmed in the interview.
 
-3. **Growth path (v5.3.0 → enriched):** if ROADMAP.md parses but carries the legacy 5-column header (`| Item | Status | Priority | Depends on | Ship feature |`) or the 7-column header (`| Item | Status | Priority | Size | Depends on | Source | Ship feature |`), or `STATUS.md` / `CONVENTIONS.md` are absent, this is a **legacy directory, not damage**. Report exactly what is missing, then ask once via AskUserQuestion whether to grow it.
-   - **On confirmation:** rewrite each backlog table to the 8-column header (`| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane |`), preserving every existing cell value; the `Lane` column arrives on this same confirmed reconcile that adds Size/Source — new `Lane` cells initialize to `—` (the PM populates them from sweep data, never the user by hand); set `Size` to `—` for every existing row lacking one; and fill `Source` per row from the interview. Never fabricate a Source — where the user cannot name one, mark the item for review in the wrap-up report rather than inventing provenance. Then create the missing files (`STATUS.md`, `CONVENTIONS.md`) per the Bootstrap write step.
-   - **On decline:** leave the directory untouched and continue the reconcile against the legacy shape, which stays fully supported.
+3. **Growth path (narrower → enriched):** every reader locates columns by header *name*, never by count, so a narrower table is **a legacy directory, not damage** — it stays fully supported indefinitely. Growth happens only here, and only on an explicit confirmation. Detect it when ROADMAP.md parses but carries fewer than the eleven enriched columns — the 5-column header (`| Item | Status | Priority | Depends on | Ship feature |`), the 7-column (`| Item | Status | Priority | Size | Depends on | Source | Ship feature |`), the 8-column (adding `Lane`), or the 10-column (adding `Blast radius` and `Confidence` but not `First seen`) — or when `STATUS.md` / `CONVENTIONS.md` are absent. Report exactly what is missing, then ask once via AskUserQuestion whether to grow it.
+   - **On confirmation:** rewrite each backlog table to the 11-column header (`| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane | Blast radius | Confidence | First seen |`), preserving every existing cell value byte-for-byte. Fill the new cells by their kind:
+     - **Derived — initialize to `—`, never author:** `Lane` (the PM populates it from sweep data) and `First seen` (`ship/pm-update.cjs` stamps it the first time it sees the row, and never rewrites it). Writing a date into `First seen` yourself would fabricate a history the script then refuses to correct.
+     - **Authored — from the interview only:** `Size` (`—` for every existing row lacking one), `Source` per row, `Blast radius`, and `Confidence`. Never fabricate any of them. Where the user cannot name a Source, mark the item for review in the wrap-up report rather than inventing provenance; where they are unsure of blast radius or confidence, record `—`, which reads as `unknown` and produces no priority promotion.
+     Then create the missing files (`STATUS.md`, `CONVENTIONS.md`) per the Bootstrap write step.
+   - **On decline:** leave the directory untouched and continue the reconcile against the legacy shape. A 5-, 7-, 8-, or 10-column table parses everywhere; the only cost of declining is that `node ship/pm-update.cjs --evidence` reports `needsEvidence: true` and proposes no promotions, which is correct rather than degraded.
+   - **This is the only path that widens a table.** `pm-update.cjs` never adds a column on its own — it stamps `First seen` into a cell that already exists and does nothing when it does not.
 
 4. **Interview only about genuine gaps** (AskUserQuestion, skip anything already settled):
    - New work visible in features/git that has no roadmap item — add it?
@@ -80,7 +85,7 @@ Set up or update the project-manager state in `.project-manager/`.
 
 If `ROADMAP.md` exists but is malformed (missing frontmatter, broken milestone headings, unparseable backlog table): say so, show what was parseable, and offer to rebuild it via the Bootstrap flow. Never silently overwrite user content without confirmation.
 
-A legacy 5-column table, or a missing `STATUS.md` / `CONVENTIONS.md` / `decisions/`, is **not** malformed — that is the Growth path, not error handling.
+A table narrower than the enriched eleven columns — 5, 7, 8, or 10 — or a missing `STATUS.md` / `CONVENTIONS.md` / `decisions/`, is **not** malformed; that is the Growth path, not error handling. Nor is a missing `LEDGER.md`: it appears the first time `ship/pm-update.cjs` sees a feature reach `done`, and a project that has shipped nothing correctly has none.
 
 ## Hard rules
 
