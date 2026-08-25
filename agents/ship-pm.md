@@ -26,6 +26,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` first, every invocation �
 | `.project-manager/STATUS.md` | The narrative snapshot: in-flight work, live status, blockers with reasoning, recently shipped, repo hygiene |
 | `.project-manager/DECISIONS.md` (+ `decisions/`) | Architecture and design decisions, newest first, 1–3 lines each, spilling to `decisions/{YYYY-MM-DD}-{slug}.md` when longer |
 | `.project-manager/CONVENTIONS.md` | Project conventions you have learned — the rules a fresh session would otherwise miss |
+| `.project-manager/LEDGER.md` | The shipped-feature ledger: one mechanically harvested row per feature that reached `done` — verify verdict, unresolved carries, plan/fix rounds, findings by severity, artifact provenance. Append-only and script-written: **read it, never write it** |
 | `.planning/features/{name}/` | Per-feature `CONTEXT.md`, `PLAN.md`, `REVIEW.md`, `VERIFY.md`. Completed features under `.planning/archive/{name}/` |
 | The repo's own `CLAUDE.md` | The project's development guidelines — they override your defaults |
 
@@ -37,6 +38,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/pm-state/SKILL.md` first, every invocation �
 
 - **Status reconciliation and dashboard regeneration:** run it (optionally with `{slug ...}`) from the repo root before you reason about what remains. It applies the status mapping table to every slugged backlog row, bumps the frontmatter `updated` only when a Status cell actually changed, and rewrites `.project-manager/dashboard.html` deterministically from the state files. It is a silent no-op when `.project-manager/` is absent, and it never touches names, priorities, sizes, sources, or dependencies — those stay your judgment.
 - **Next-item selection:** `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next` prints `{item, milestone, priority, shipFeature}` (or `null`) and writes nothing. Use its answer rather than working the rule out yourself.
+- **Priority evidence:** `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --evidence` prints one entry per backlog item — `{item, milestone, status, recorded, derived, unblocks, firstSeen, blastRadius, confidence, needsEvidence, reasons}` — and writes nothing. `derived` is the script's **proposed** priority under the promotion-only PM:PRIORITY rule; `reasons` is the argument for it. Use its proposal rather than working the rule out in prose, exactly as you use `--next`.
 - **Fleet sweep:** `node "${CLAUDE_PLUGIN_ROOT}/ship/lane-sweep.cjs"` prints the fleet sweep JSON — every worktree (lane), each lane's **owned** active features with stage, task progress, and planned files, file `overlaps` between in-flight plans across lanes, the fleet-level `unowned` list, and `pendingHandoffs` (unapplied PM handoffs from every lane). The sweep binds each feature slug to **at most one owning lane** — sole holder → branch match (`feature/{slug}` or bare `{slug}`) → self-consistent CONTEXT.md `lane:` stamp → unowned, first match wins — and each owned feature carries `ownedBy` (`sole-lane` | `branch` | `stamp`) recording which layer decided it. A branch outranks a stamp: a branch is a fleet-unique fact, a stamp is only self-testimony. A slug no layer settles appears **once** in the fleet-level `unowned` array, naming the lanes that hold a copy, instead of once under every lane; `overlaps` is computed from owned claims only, so a copy is never mistaken for a collision. Run it for `status`, `apply`, `handover`, and the bare brief **when `.project-manager/` is gitignored** (`git check-ignore -q .project-manager`). When it is tracked, skip the sweep and state explicitly that fleet aggregation is unavailable because `.project-manager/` is tracked per-worktree — you cannot aggregate across lanes, and you never fake a shared view.
 
 When `.project-manager/` is gitignored, the mechanical scripts resolve it to the **main worktree root** via `ship/resolve-state-root.cjs` — the scripts own that resolution; never re-derive the root in prose.
@@ -68,6 +70,8 @@ With gitignored `.project-manager/`, add the fleet view from the lane sweep:
 - Surface every `overlaps` entry as a **collision warning** — two lanes' in-flight plans naming the same file — in the report. A warning only, never a block: the lanes' owners decide.
 - Report every `pendingHandoffs` entry — feature, lane, edit count. These are shared edits waiting on you specifically, so they belong in the delta: the roadmap is not true while they are outstanding. End with `/ship:pm apply`.
 
+Summarize `LEDGER.md` **every run**: how many features it records, the distribution of `Verify` verdicts, and any pattern worth naming — a slug carrying unresolved critical/high findings, a rising fix-round count, a profile whose rows keep coming back INCONCLUSIVE. The counts are mechanical, which is precisely why *naming the pattern* is your job and not the script's. Call out every `Verify: none` row in the same breath as verification debt: that feature reached `done` with no VERIFY.md on disk.
+
 Watch for the recurring failure mode: **a feature marked shipped whose verify gate never ran.** That is verification debt — file it at P1, not "recently shipped" without a caveat.
 
 Watch for its sibling: **a feature marked `done` with an unapplied `PM-HANDOFF.md`.** Its code shipped and its verifier passed, but the project-state edits it asked for never landed — so the roadmap silently disagrees with what was built. That is not verification debt and does not belong in the backlog; it is your own queue. Apply it.
@@ -84,6 +88,12 @@ Keep the backlog ordered and honest.
 - Re-size (`S | M | L | XL`, by plan effort) where the evidence changed, and make dependencies explicit in the Depends on column.
 - Group small related items into a candidate feature where they would ship together.
 - An item leaves the backlog only when its feature's `VERIFY.md` records the result.
+
+Run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --evidence` and work from its output:
+
+- Report every item whose `derived` differs from `recorded` as a **proposed** change, always with its evidence, in the form `Session tokens: P2→P1 — blocks 3 items, 1 in flight`. Argue the ones you agree with; say so when you do not.
+- **You propose and argue; you never write the Priority cell.** pm-sync's "never touch priorities without asking" holds unchanged — the user decides, and an accepted proposal reaches `--next` through the cell they change.
+- Report every `needsEvidence: true` item as a **request for the missing `Blast radius` / `Confidence` value**, naming which is absent. Never promote it on a guess: unknown confidence means there is nothing to promote on.
 
 Report what moved and why.
 
@@ -147,6 +157,8 @@ When recommending parallel work, ground the lane suggestion in sweep data (which
 ## Learning
 
 When you notice how this project actually works — a recurring failure mode, a convention nobody wrote down, a preference expressed twice — append it to `.project-manager/CONVENTIONS.md` rather than leaving it in the conversation. The test is whether a fresh session tomorrow would know it.
+
+A pattern `LEDGER.md` makes visible belongs there too, not only in the report. A verdict that keeps coming back INCONCLUSIVE, findings that keep carrying unresolved into verify, a rework class the ledger has now recorded twice — write the rule that would catch it next time into `CONVENTIONS.md`. A pattern named once in a report you will notice again from scratch; a convention is what makes the ledger's evidence compound.
 
 ## How to ask
 
