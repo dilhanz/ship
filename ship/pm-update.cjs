@@ -22,10 +22,18 @@ const { resolveStateRoot } = require('./resolve-state-root.cjs');
 /**
  * Parse ROADMAP.md backlog tables into row records.
  *
- * Columns are located by header *name*, not position or count, so both the
- * legacy 5-column table (`| Item | Status | Priority | Depends on | Ship feature |`)
- * and the enriched 7-column one (which adds `Size` and `Source`) parse — including
- * two tables of different shapes in the same file, and columns in any order.
+ * Columns are located by header *name*, not position or count, so every shape the
+ * project has ever written parses — including two tables of different widths in the
+ * same file, and columns in any order:
+ *
+ *   5-column legacy:  `| Item | Status | Priority | Depends on | Ship feature |`
+ *   8-column current: adds `Size`, `Source`, `Lane`
+ *   10-column:        adds the optional `Blast radius` and `Confidence` evidence columns
+ *   11-column:        adds the script-stamped `First seen`
+ *
+ * A column the header does not carry is simply absent from the parsed row; callers
+ * read an absent evidence column as `unknown` (see derivePriority) rather than
+ * treating the narrow shape as a parse failure.
  *
  * A table row is any line that starts and ends with `|`. A row is a header when its
  * cells include `Item`, `Status`, and `Ship feature`; that header becomes the active
@@ -195,19 +203,54 @@ function applyStatusUpdates(content, cwd, slugs) {
 
   if (!changed) return { content, changed: false };
 
-  let result = lines.join('\n');
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-  // Bump frontmatter `updated` — within the leading --- block only, CRLF or LF.
-  const fmMatch = result.match(/^---\r?\n[\s\S]*?\r?\n---/);
-  if (fmMatch) {
-    const now = new Date();
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    // `.` excludes \r, so a CRLF line's terminator survives the replacement intact.
-    const bumped = fmMatch[0].replace(/^updated:.*$/m, `updated: "${today}"`);
-    result = bumped + result.slice(fmMatch[0].length);
+  return { content: bumpUpdated(lines.join('\n'), today), changed: true };
+}
+
+/**
+ * Stamp `today` into every empty `First seen` cell, recording when the script
+ * first saw the row.
+ *
+ * A row that already carries any non-empty, non-dash value is left untouched:
+ * the stamp is a first-sight record and is never rewritten. When the header
+ * has no `First seen` column nothing changes — `pm-update.cjs` never widens a
+ * table on its own, because a table grows into the enriched shape only
+ * through a confirmed `/ship:pm-sync` reconcile.
+ *
+ * Edits only the target segment of the raw line, so column padding elsewhere
+ * and CRLF terminators survive byte-identical. Does **not** bump the
+ * frontmatter `updated:` value — it stays a pure string transform, and the
+ * caller bumps once for all its passes.
+ *
+ * Never throws; a malformed row is skipped exactly as `parseRoadmap` skips it.
+ *
+ * @param {string} content - ROADMAP.md content
+ * @param {string} today - YYYY-MM-DD
+ * @returns {{ content: string, changed: boolean }}
+ */
+function stampFirstSeen(content, today) {
+  const lines = content.split('\n');
+  let changed = false;
+
+  for (const row of parseRoadmap(content)) {
+    const index = row.headers.indexOf('First seen');
+    if (index === -1) continue;
+
+    const current = row.cells['First seen'];
+    if (current && current !== '—' && current !== '-') continue;
+
+    // Segment 0 is whatever precedes the first `|`, so cell i lives at
+    // segment i + 1 — the same arithmetic applyStatusUpdates uses.
+    const segments = lines[row.lineIndex].split('|');
+    segments[index + 1] = ` ${today} `;
+    lines[row.lineIndex] = segments.join('|');
+    changed = true;
   }
 
-  return { content: result, changed: true };
+  if (!changed) return { content, changed: false };
+  return { content: lines.join('\n'), changed: true };
 }
 
 /**
@@ -265,6 +308,183 @@ function selectNext(rows) {
     milestone: best.milestone,
     priority: typeof priority === 'string' && /^P[0-3]$/.test(priority) ? priority : null,
     shipFeature: empty(best.cells['Ship feature']) ? null : best.cells['Ship feature']
+  };
+}
+
+/**
+ * Invert the Depends-on graph: for every item, how many rows are waiting on it.
+ *
+ * A row D depends on row R when D's `Depends on` cell, comma-split and
+ * trimmed, contains R's `Item` exactly — the same exact-name, case-sensitive
+ * convention `selectNext()` uses for dependency satisfaction, so a name that
+ * differs only in case is deliberately not a match. An empty, `—`, or `-`
+ * cell contributes nothing.
+ *
+ * `count` counts only dependents that are not `done` (case-insensitive):
+ * finishing an item cannot unblock work that is already finished.
+ * `inProgress` is true when at least one of those non-done dependents is
+ * `in-progress` — someone is waiting on this right now.
+ *
+ * Pure; never throws. Every row's Item gets an entry, so a lookup for a known
+ * item is never `undefined`.
+ *
+ * @param {ReturnType<typeof parseRoadmap>} rows
+ * @returns {Map<string, { count: number, inProgress: boolean }>}
+ */
+function computeUnblocks(rows) {
+  const unblocks = new Map();
+  if (!Array.isArray(rows)) return unblocks;
+
+  for (const row of rows) {
+    const item = row && row.cells ? row.cells.Item : null;
+    if (typeof item === 'string' && item !== '') {
+      if (!unblocks.has(item)) unblocks.set(item, { count: 0, inProgress: false });
+    }
+  }
+
+  for (const row of rows) {
+    if (!row || !row.cells) continue;
+    // A non-string cell is unreachable through `parseRoadmap` (which trims
+    // every cell to a string) but reachable for a direct module consumer
+    // building rows by hand — and the contract above promises never to throw.
+    const depends = row.cells['Depends on'];
+    if (typeof depends !== 'string') continue;
+    if (!depends || depends === '—' || depends === '-') continue;
+
+    const status = (row.recorded || '').toLowerCase();
+    if (status === 'done') continue; // a finished dependent is not waiting on anything
+
+    const names = depends.split(',').map(d => d.trim()).filter(d => d !== '');
+    for (const name of new Set(names)) { // a name listed twice counts once
+      const entry = unblocks.get(name) || { count: 0, inProgress: false };
+      entry.count += 1;
+      if (status === 'in-progress') entry.inProgress = true;
+      unblocks.set(name, entry);
+    }
+  }
+
+  return unblocks;
+}
+
+/**
+ * Normalise one authored evidence cell. Absent column, empty cell, `—`, and
+ * `-` all read as `unknown`; anything else is lowercased and trimmed.
+ *
+ * @param {string|undefined} value
+ * @returns {string}
+ */
+function evidenceCell(value) {
+  if (typeof value !== 'string') return 'unknown';
+  const normalised = value.trim().toLowerCase();
+  if (normalised === '' || normalised === '—' || normalised === '-') return 'unknown';
+  return normalised;
+}
+
+const BLAST_RADIUS_VALUES = new Set(['users', 'contributors', 'internal']);
+const CONFIDENCE_VALUES = new Set(['proven', 'suspected']);
+
+/**
+ * The priority derivation rule — the single home of the rule stated in
+ * skills/pm-state/SKILL.md (PM:PRIORITY). It proposes a priority from
+ * evidence; it never writes one, and `/ship:pm groom` relays the proposal
+ * for the user to accept or reject.
+ *
+ * The rule is **promotion-only**: the recorded rank is always among the
+ * candidates, so the proposal can never be a lower priority than the recorded
+ * value. Demotion is where a wrong rule quietly buries real work.
+ *
+ * 1. `confidence: unknown` is the evidence gate — no promotion at all, because
+ *    there is nothing to promote on.
+ * 2. Otherwise the candidates are the base rank plus:
+ *    - P0 for blast radius `users` with confidence `proven`
+ *    - P1 for blast radius `users` with confidence `suspected`
+ *    - P1 for blast radius `contributors` with confidence `proven`
+ *    - one level up, floored at P1, when 2+ non-done items depend on this one
+ *      or one of them is in progress. This clause is structural — it reads the
+ *      dependency graph, so an unknown blast radius does not block it.
+ * 3. `derived` is the strongest (lowest-rank) candidate.
+ * 4. `needsEvidence` is true when either authored column is `unknown`.
+ * 5. `reasons` is what groom argues with, one short string per clause that
+ *    fired — contract, not debug output.
+ *
+ * `recorded` is the recorded **Priority** (`P0`–`P3` or null), never the
+ * recorded Status — `parseRoadmap` uses the name `recorded` for status
+ * internally and the two must not be confused. The returned `unblocks` is the
+ * numeric count; `inProgress` surfaces through `reasons`.
+ *
+ * Pure; never throws — a missing cell reads as `unknown`.
+ *
+ * @param {ReturnType<typeof parseRoadmap>[number]} row
+ * @param {{ count: number, inProgress: boolean }|undefined} unblocks
+ * @returns {{ recorded: string|null, derived: string, unblocks: number,
+ *             firstSeen: string, blastRadius: string, confidence: string,
+ *             needsEvidence: boolean, reasons: string[] }}
+ */
+function derivePriority(row, unblocks) {
+  const cells = (row && row.cells) || {};
+
+  const priority = cells.Priority;
+  const recorded = typeof priority === 'string' && /^P[0-3]$/.test(priority.trim())
+    ? priority.trim()
+    : null;
+
+  let blastRadius = evidenceCell(cells['Blast radius']);
+  if (!BLAST_RADIUS_VALUES.has(blastRadius)) blastRadius = 'unknown';
+  let confidence = evidenceCell(cells.Confidence);
+  if (!CONFIDENCE_VALUES.has(confidence)) confidence = 'unknown';
+  const firstSeen = evidenceCell(cells['First seen']);
+
+  const count = unblocks && Number.isFinite(unblocks.count) ? unblocks.count : 0;
+  const inProgress = !!(unblocks && unblocks.inProgress);
+
+  const baseRank = recorded ? Number(recorded[1]) : 3;
+  const needsEvidence = confidence === 'unknown' || blastRadius === 'unknown';
+  const reasons = [];
+
+  let derivedRank = baseRank;
+
+  if (confidence === 'unknown') {
+    reasons.push('confidence unknown → no promotion');
+  } else {
+    const candidates = [baseRank];
+
+    if (blastRadius === 'users' && confidence === 'proven') {
+      candidates.push(0);
+      reasons.push('blast radius users + confidence proven → P0');
+    }
+    if (blastRadius === 'users' && confidence === 'suspected') {
+      candidates.push(1);
+      reasons.push('blast radius users + confidence suspected → P1');
+    }
+    if (blastRadius === 'contributors' && confidence === 'proven') {
+      candidates.push(1);
+      reasons.push('blast radius contributors + confidence proven → P1');
+    }
+    if (count >= 2 || inProgress) {
+      candidates.push(Math.max(baseRank - 1, 1));
+      reasons.push(
+        `unblocks ${count} non-done item${count === 1 ? '' : 's'}${inProgress ? ', 1 in flight' : ''} → promote one level (floor P1)`
+      );
+    }
+
+    derivedRank = Math.min(...candidates);
+    if (reasons.length === 0) reasons.push('no clause fired → unchanged');
+  }
+
+  // Promotion-only, asserted rather than inferred from the arithmetic: the
+  // base rank is always a candidate today, which is exactly what makes this
+  // easy to break by "simplifying" the candidate list later.
+  if (derivedRank > baseRank) derivedRank = baseRank;
+
+  return {
+    recorded,
+    derived: `P${derivedRank}`,
+    unblocks: count,
+    firstSeen,
+    blastRadius,
+    confidence,
+    needsEvidence,
+    reasons
   };
 }
 
@@ -398,6 +618,30 @@ function readOptional(filePath) {
     return fs.readFileSync(filePath, 'utf8');
   } catch (e) {
     return null;
+  }
+}
+
+/**
+ * Read a file the way `readOptional` does, but distinguish *absent* from
+ * *present and unreadable*. The ledger's provenance contract promises a row is
+ * never ambiguous between a clean run and a missing record; reporting a
+ * permission problem as `no VERIFY.md` breaks that promise in the one
+ * direction that matters, since it reads as verification debt when the
+ * evidence is actually sitting right there. Never throws.
+ *
+ * `ENOENT` and `ENOTDIR` (a path component that is not a directory) mean the
+ * artifact genuinely is not there. Anything else — `EACCES`, `EISDIR`, `EIO` —
+ * means something is there that could not be read.
+ *
+ * @param {string} filePath
+ * @returns {{ content: string|null, unreadable: boolean }}
+ */
+function readArtifact(filePath) {
+  try {
+    return { content: fs.readFileSync(filePath, 'utf8'), unreadable: false };
+  } catch (e) {
+    const absent = !e || e.code === 'ENOENT' || e.code === 'ENOTDIR';
+    return { content: null, unreadable: !absent };
   }
 }
 
@@ -615,20 +859,468 @@ function generateDashboard(root, laneData) {
     .replace('<!-- PM:DECISIONS -->', () => decisionsHtml);
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, selectNext, generateDashboard, writeFileAtomic, stampLane };
+/**
+ * Harvest one feature's on-disk artifacts into a ledger record.
+ *
+ * Reads `{cwd}/.planning/archive/{slug}/` when that directory exists, else
+ * `{cwd}/.planning/features/{slug}/`. The archive wins because a feature that
+ * has been archived is the finished record of itself.
+ *
+ * Never throws. Every artifact is optional and every parse degrades toward
+ * "absent" rather than toward a guess: an unreadable file is treated exactly
+ * as a missing one, and a file whose format has drifted yields `unknown`
+ * plus an explicit qualifier in `artifacts` rather than an exception.
+ *
+ * Fields:
+ * - `slug` — the feature slug, as given.
+ * - `shipped` — VERIFY.md's `**Verified:**` date, else `today`.
+ * - `profile` — CONTEXT.md frontmatter `profile:`, else `unknown`.
+ * - `verify` — VERIFY.md's `**Overall Status:**` uppercased; `in-progress`
+ *   for a report still in flight; `unknown` when the file has neither line;
+ *   `none` when the file is absent (a feature that reached `done` with no
+ *   verify gate — recorded, never suppressed).
+ * - `unresolvedCarried` — critical/high REVIEW.md findings still marked
+ *   unresolved; exactly the set the verifier must carry into Stage 2b.
+ * - `planRounds` — plan-revision rounds, from PLAN.md's `**Rounds:**` line.
+ * - `fixRounds` — REVIEW.md phase headings at round 2 or later.
+ * - `findings` — per-severity REVIEW.md finding counts.
+ * - `phases` — distinct REVIEW.md phase ids.
+ * - `artifacts` — exactly four provenance tokens, always in CONTEXT, PLAN,
+ *   REVIEW, VERIFY order: the filename, the filename plus a missing-field
+ *   qualifier, `no {filename}` when the file is absent, or
+ *   `unreadable {filename}` when it exists but could not be read. The array is
+ *   never short and never `—`, so a reader can always tell a clean run from a
+ *   missing record — and a permission problem from verification debt.
+ *
+ * `today` is injected (never `new Date()` here) so a harvest is deterministic
+ * and testable.
+ *
+ * @param {string} cwd - the lane whose .planning/ holds the feature
+ * @param {string} slug
+ * @param {string} today - YYYY-MM-DD
+ * @returns {{ slug: string, shipped: string, profile: string, verify: string,
+ *             unresolvedCarried: number, planRounds: number|string,
+ *             fixRounds: number,
+ *             findings: { critical: number, high: number, medium: number, low: number },
+ *             phases: number, artifacts: string[] }|null}
+ */
+function harvestFeature(cwd, slug, today) {
+  try {
+    if (!isValidSlug(slug)) return null; // never let it reach path.join
+
+    let dir = path.join(cwd, '.planning', 'archive', slug);
+    if (!fs.existsSync(dir)) {
+      dir = path.join(cwd, '.planning', 'features', slug);
+      if (!fs.existsSync(dir)) return null;
+    }
+
+    const read = name => readArtifact(path.join(dir, name));
+    // The provenance token for an artifact that yielded no content: `no X`
+    // when it is absent, `unreadable X` when it exists but could not be read.
+    const absentToken = (state, name) => (state.unreadable ? `unreadable ${name}` : `no ${name}`);
+
+    // --- CONTEXT.md — the profile the run was executed under
+    const contextRead = read('CONTEXT.md');
+    const context = contextRead.content;
+    let profile = 'unknown';
+    let contextToken = absentToken(contextRead, 'CONTEXT.md');
+    if (context !== null) {
+      const fm = frontmatter(context); // frontmatter block only — a body `profile:` is prose
+      const match = fm === null ? null : fm.match(/^profile:\s*(.+)$/m);
+      const value = match ? match[1].trim() : '';
+      if (value !== '') {
+        profile = value;
+        contextToken = 'CONTEXT.md';
+      } else {
+        contextToken = 'CONTEXT.md (no profile)';
+      }
+    }
+
+    // --- PLAN.md — plan-revision rounds
+    const planRead = read('PLAN.md');
+    const plan = planRead.content;
+    let planRounds = 'unknown';
+    let planToken = absentToken(planRead, 'PLAN.md');
+    if (plan !== null) {
+      const stated = plan.match(/^\*\*Rounds:\*\*\s*(\d+)/m);
+      if (stated) {
+        planRounds = Number(stated[1]);
+      } else {
+        // `**Rounds:** N` is authoritative; counting `### Round n` subsections
+        // is the fallback, and a plan can state rounds while carrying none.
+        const headings = plan.match(/^### Round \d+/gm);
+        if (headings && headings.length > 0) planRounds = headings.length;
+      }
+      planToken = planRounds === 'unknown' ? 'PLAN.md (no rounds)' : 'PLAN.md';
+    }
+
+    // --- REVIEW.md — phases, fix rounds, findings, unresolved carries
+    const reviewRead = read('REVIEW.md');
+    const review = reviewRead.content;
+    const findings = { critical: 0, high: 0, medium: 0, low: 0 };
+    let phases = 0;
+    let fixRounds = 0;
+    let unresolvedCarried = 0;
+    let reviewToken = absentToken(reviewRead, 'REVIEW.md');
+    if (review !== null) {
+      const phaseIds = new Set();
+      const headingRe = /^## Phase (.+?) — (.*?) \(round (\d+)\)\s*$/gm;
+      let m;
+      while ((m = headingRe.exec(review)) !== null) {
+        phaseIds.add(m[1]);
+        if (Number(m[3]) >= 2) fixRounds++;
+      }
+      phases = phaseIds.size;
+
+      const findingRe = /^- \[(critical|high|medium|low)\].*$/gm;
+      let f;
+      while ((f = findingRe.exec(review)) !== null) {
+        findings[f[1]]++;
+        // `new (round n)` is the label the go and build skills give a
+        // critical/high finding the fix round *introduced*, and
+        // go.workflow.js hands those to the verifier as a subset of
+        // `unresolved` — so the cell must count them too.
+        if (
+          (f[1] === 'critical' || f[1] === 'high') &&
+          /—\s*(?:unresolved|new \(round \d+\))\s*$/.test(f[0])
+        ) {
+          unresolvedCarried++;
+        }
+      }
+
+      const hasEvidence = /^Verify: \d+ re-run/m.test(review);
+      reviewToken = phases > 0 && !hasEvidence ? 'REVIEW.md (no evidence lines)' : 'REVIEW.md';
+    }
+
+    // --- VERIFY.md — the verdict
+    const verifyRead = read('VERIFY.md');
+    const verifyDoc = verifyRead.content;
+    let verify = 'none';
+    let shipped = today;
+    let verifyToken = absentToken(verifyRead, 'VERIFY.md');
+    if (verifyDoc !== null) {
+      const overall = verifyDoc.match(/^\*\*Overall Status:\*\*\s*(.+)$/m);
+      if (overall) {
+        verify = overall[1].trim().toUpperCase();
+        // `\b`, not `\s*$`: the verifier's Stage-1 flush line is
+        // `**Status:** IN PROGRESS — Stage 1 only`, which an end-anchor rejects.
+      } else if (/^\*\*Status:\*\*\s*IN PROGRESS\b/m.test(verifyDoc)) {
+        verify = 'in-progress';
+      } else {
+        verify = 'unknown';
+      }
+      const verified = verifyDoc.match(/^\*\*Verified:\*\*\s*(.+)$/m);
+      if (verified && verified[1].trim() !== '') shipped = verified[1].trim();
+      verifyToken = /^\*\*Head:\*\*/m.test(verifyDoc) ? 'VERIFY.md' : 'VERIFY.md (no head)';
+    }
+
+    return {
+      slug,
+      shipped,
+      profile,
+      verify,
+      unresolvedCarried,
+      planRounds,
+      fixRounds,
+      findings,
+      phases,
+      artifacts: [contextToken, planToken, reviewToken, verifyToken]
+    };
+  } catch (e) {
+    return null; // an unreadable feature is an absent one, never a crash
+  }
+}
+
+/** LEDGER.md's column set, in render order. The header is located by name. */
+const LEDGER_COLUMNS = [
+  'Feature',
+  'Shipped',
+  'Profile',
+  'Verify',
+  'Unresolved carried',
+  'Plan rounds',
+  'Fix rounds',
+  'Findings (C/H/M/L)',
+  'Phases',
+  'Artifacts'
+];
+
+/**
+ * Is this LEDGER.md body anchored by a parseable header row?
+ *
+ * `ledgerSlugs` keys the append-only contract off the header, so a body with
+ * none yields an empty slug set and every recorded feature re-harvests. The
+ * append branch would then write those rows again on every invocation, with
+ * no header ever restored. `appendLedger` uses this to rebuild instead.
+ *
+ * Header detection matches `ledgerSlugs` exactly — a table row whose cells
+ * include `Feature`, `Shipped`, and `Verify`. Pure; never throws.
+ *
+ * @param {string} content
+ * @returns {boolean}
+ */
+function hasLedgerHeader(content) {
+  try {
+    if (typeof content !== 'string') return false;
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) continue;
+      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+      if (cells.includes('Feature') && cells.includes('Shipped') && cells.includes('Verify')) {
+        return true;
+      }
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * The `Feature` values already recorded in a LEDGER.md string.
+ *
+ * The header row is located by name exactly as parseRoadmap does — the row
+ * whose cells include `Feature`, `Shipped`, and `Verify` — so a reordered or
+ * widened ledger still yields its slugs. Separator rows and rows whose cell
+ * count differs from the header's contribute nothing. An empty or
+ * unparseable string yields an empty Set; never throws.
+ *
+ * @param {string} content
+ * @returns {Set<string>}
+ */
+function ledgerSlugs(content) {
+  const slugs = new Set();
+  try {
+    if (typeof content !== 'string') return slugs;
+    let ctx = null;
+
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) {
+        if (trimmed !== '') ctx = null; // a non-table line ends the table
+        continue;
+      }
+
+      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+      const featureIdx = cells.indexOf('Feature');
+      if (featureIdx !== -1 && cells.includes('Shipped') && cells.includes('Verify')) {
+        ctx = { columnCount: cells.length, featureIdx };
+        continue;
+      }
+
+      if (!ctx) continue;
+      if (cells.every(c => /^:?-+:?$/.test(c))) continue; // separator row
+      if (cells.length !== ctx.columnCount) continue; // malformed row
+
+      const value = cells[ctx.featureIdx];
+      if (value) slugs.add(value);
+    }
+  } catch (e) {
+    // an unparseable ledger records nothing — the harvest re-appends instead
+  }
+  return slugs;
+}
+
+/**
+ * Sanitize one harvested value for a table cell.
+ *
+ * Every ledger value comes from a file on disk, so a newline would break the
+ * row and a `|` would invent a column. Newlines become spaces and pipes
+ * become slashes; an empty result reads as `unknown`, never as a blank cell
+ * that could be mistaken for an authored `—`.
+ *
+ * @param {*} value
+ * @returns {string}
+ */
+function ledgerCell(value) {
+  const text = String(value == null ? '' : value)
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\|/g, '/')
+    .trim();
+  return text === '' ? 'unknown' : text;
+}
+
+/**
+ * Render one harvestFeature record as a LEDGER.md table row.
+ *
+ * Cells are emitted in LEDGER_COLUMNS order; `Findings (C/H/M/L)` renders as
+ * `critical/high/medium/low` and `Artifacts` as the four provenance tokens
+ * joined with `; `. Every cell passes through ledgerCell, so no harvested
+ * value can break the table.
+ *
+ * @param {ReturnType<typeof harvestFeature>} record
+ * @returns {string}
+ */
+function renderLedgerRow(record) {
+  const r = record || {};
+  const f = r.findings || {};
+  const findings = `${f.critical || 0}/${f.high || 0}/${f.medium || 0}/${f.low || 0}`;
+  const artifacts = Array.isArray(r.artifacts) ? r.artifacts.join('; ') : '';
+
+  const cells = [
+    r.slug,
+    r.shipped,
+    r.profile,
+    r.verify,
+    r.unresolvedCarried,
+    r.planRounds,
+    r.fixRounds,
+    findings,
+    r.phases,
+    artifacts
+  ].map(ledgerCell);
+
+  return `| ${cells.join(' | ')} |`;
+}
+
+/**
+ * Append ledger rows to `{root}/.project-manager/LEDGER.md`.
+ *
+ * Creates the file with its frontmatter, heading, provenance note, header
+ * row, and separator when absent. When it exists, rows are appended after
+ * the last non-empty line and the frontmatter `updated:` value is bumped —
+ * existing rows are never re-read, re-rendered, or rewritten, which is what
+ * makes the ledger append-only rather than merely idempotent. The table is
+ * therefore assumed to be the last content in the file; the file is
+ * generated and never hand-edited, so an authored footer would be a bug.
+ *
+ * An empty `records` writes nothing at all — no mtime churn on the common
+ * path where every slug is already recorded.
+ *
+ * Never throws: any failure returns 0 silently, because a harvest failure
+ * must never break the status transition that triggered it.
+ *
+ * @param {string} root - the resolved state root holding .project-manager/
+ * @param {ReturnType<typeof harvestFeature>[]} records
+ * @param {string} today - YYYY-MM-DD
+ * @returns {number} rows appended
+ */
+function appendLedger(root, records, today) {
+  try {
+    if (!Array.isArray(records) || records.length === 0) return 0;
+
+    const ledgerPath = path.join(root, '.project-manager', 'LEDGER.md');
+    const rows = records.map(renderLedgerRow).join('\n');
+    const header = `| ${LEDGER_COLUMNS.join(' | ')} |`;
+    const separator = `|${LEDGER_COLUMNS.map(() => '---').join('|')}|`;
+
+    const existing = readOptional(ledgerPath);
+    // A body with no header row holds no rows `ledgerSlugs` can key on, so
+    // appending to it would duplicate every record on every run and never
+    // restore the header. Nothing parseable is lost by rebuilding: without a
+    // header the column order is unknowable, so the bytes below it are not
+    // ledger data. This is the only path that does not append.
+    const rebuild = existing === null || !hasLedgerHeader(existing);
+    let content;
+    if (rebuild) {
+      content =
+        `---\nupdated: "${today}"\n---\n\n# Ledger\n\n` +
+        'Mechanically harvested by `ship/pm-update.cjs` when a feature reaches `done` — one row per feature, keyed on slug.\n' +
+        'Append-only: a recorded row is never rewritten, and this file is never hand-edited.\n\n' +
+        `${header}\n${separator}\n${rows}\n`;
+    } else {
+      content = `${existing.trimEnd()}\n${rows}\n`;
+      content = bumpUpdated(content, today);
+    }
+
+    writeFileAtomic(ledgerPath, content);
+    return records.length;
+  } catch (e) {
+    return 0; // silent by contract
+  }
+}
+
+/**
+ * Bump a leading frontmatter block's `updated:` value to `today` (quoted
+ * form), leaving every other byte — including CRLF terminators — intact.
+ * Content with no frontmatter block, or none carrying `updated:`, is
+ * returned unchanged.
+ *
+ * @param {string} content
+ * @param {string} today - YYYY-MM-DD
+ * @returns {string}
+ */
+function bumpUpdated(content, today) {
+  const fmMatch = content.match(/^---\r?\n[\s\S]*?\r?\n---/);
+  if (!fmMatch) return content;
+  // `.` excludes \r, so a CRLF line's terminator survives the replacement intact.
+  const bumped = fmMatch[0].replace(/^updated:.*$/m, `updated: "${today}"`);
+  return bumped + content.slice(fmMatch[0].length);
+}
+
+/**
+ * Harvest every not-yet-recorded feature into the ledger.
+ *
+ * Candidates are every directory under `{cwd}/.planning/archive/` plus every
+ * named slug the status mapping already calls `done`. Slugs already present
+ * in LEDGER.md are dropped **before any feature artifact is read**, so the
+ * archive is not re-parsed on every status transition — only the first
+ * backfill walks it.
+ *
+ * Gated on the `.project-manager/` *directory*, not on ROADMAP.md: the
+ * ledger is independent evidence, and a damaged roadmap must not silently
+ * disable it.
+ *
+ * Never throws; returns the number of rows appended.
+ *
+ * @param {string} cwd - the lane whose .planning/ holds the features
+ * @param {string} root - the resolved state root holding .project-manager/
+ * @param {string[]} slugs - slugs named on the command line
+ * @param {string} today - YYYY-MM-DD
+ * @returns {number}
+ */
+function runHarvest(cwd, root, slugs, today) {
+  try {
+    if (!fs.existsSync(path.join(root, '.project-manager'))) return 0;
+
+    const candidates = new Set();
+
+    try {
+      const archiveDir = path.join(cwd, '.planning', 'archive');
+      for (const entry of fs.readdirSync(archiveDir, { withFileTypes: true })) {
+        if (entry.isDirectory()) candidates.add(entry.name);
+      }
+    } catch (e) {
+      // no archive yet — forward appends still apply
+    }
+
+    for (const slug of slugs || []) {
+      if (mappedStatus(cwd, slug, '') === 'done') candidates.add(slug);
+    }
+
+    if (candidates.size === 0) return 0;
+
+    const recorded = ledgerSlugs(readOptional(path.join(root, '.project-manager', 'LEDGER.md')) || '');
+    const pending = [...candidates].filter(slug => !recorded.has(slug)).sort();
+    if (pending.length === 0) return 0;
+
+    const records = pending.map(slug => harvestFeature(cwd, slug, today)).filter(r => r !== null);
+    return appendLedger(root, records, today);
+  } catch (e) {
+    return 0; // silent by contract
+  }
+}
+
+module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, stampFirstSeen, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
 
 if (require.main === module) {
   try {
     const args = process.argv.slice(2);
     const wantNext = args.includes('--next');
-    const slugs = args.filter(a => a !== '--next');
+    const wantEvidence = args.includes('--evidence');
+    const slugs = args.filter(a => a !== '--next' && a !== '--evidence');
     const cwd = process.cwd();
+
+    // One date for every stamp this run makes, so a ledger row and a
+    // frontmatter bump written together can never disagree.
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
     // Lane stamp — best effort, and deliberately BEFORE the .project-manager/
     // early-exit: the stamp records which lane owns the feature and must not
-    // become conditional on a PM directory existing. `--next` means "write
-    // nothing", so it suppresses this too.
-    if (!wantNext) {
+    // become conditional on a PM directory existing. `--next` and `--evidence`
+    // both mean "write nothing", so they suppress this too.
+    if (!wantNext && !wantEvidence) {
       for (const slug of slugs) {
         try {
           stampLane(cwd, slug);
@@ -642,6 +1334,19 @@ if (require.main === module) {
     // lane-local, so applyStatusUpdates below keeps cwd by design.
     const { root } = resolveStateRoot(cwd);
 
+    // Ledger harvest — deliberately BEFORE the roadmap early-exit below: the
+    // ledger gates on the .project-manager/ directory, not on ROADMAP.md, so a
+    // damaged or missing roadmap cannot silently disable it. Query modes write
+    // nothing, so they suppress it. A harvest failure never reaches stderr and
+    // never changes the exit code — the status transition is the caller's job.
+    if (!wantNext && !wantEvidence) {
+      try {
+        runHarvest(cwd, root, slugs, today);
+      } catch (e) {
+        // silent by contract
+      }
+    }
+
     const roadmapPath = path.join(root, '.project-manager', 'ROADMAP.md');
     // Absent .project-manager/ (or just no roadmap): silent success, so
     // lifecycle skills can invoke unconditionally.
@@ -654,8 +1359,28 @@ if (require.main === module) {
       process.exit(0);
     }
 
+    if (wantEvidence) {
+      // Query only — the priority evidence behind PM:PRIORITY, in document
+      // order, one entry per backlog row including slugless ones. Writes
+      // nothing: no roadmap edit, no stamp, no dashboard, no ledger.
+      const rows = parseRoadmap(fs.readFileSync(roadmapPath, 'utf8'));
+      const unblocks = computeUnblocks(rows);
+      const out = rows.map(row => Object.assign(
+        { item: row.cells.Item },
+        derivePriority(row, unblocks.get(row.cells.Item)),
+        { milestone: row.milestone || null, status: row.recorded }
+      ));
+      console.log(JSON.stringify(out, null, 2));
+      process.exit(0);
+    }
+
     const original = fs.readFileSync(roadmapPath, 'utf8');
-    const { content, changed } = applyStatusUpdates(original, cwd, slugs);
+    const updated = applyStatusUpdates(original, cwd, slugs);
+    // First-sight stamp runs on the status pass's output, so both edits land
+    // in one atomic write and one `updated:` bump.
+    const stamped = stampFirstSeen(updated.content, today);
+    const changed = updated.changed || stamped.changed;
+    const content = changed ? bumpUpdated(stamped.content, today) : stamped.content;
     if (changed) {
       try {
         writeFileAtomic(roadmapPath, content);
