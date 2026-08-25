@@ -1,5 +1,5 @@
 ---
-name: ship:status
+name: status
 description: Use when checking feature progress or wanting to see what features exist and their current status
 effort: low
 allowed-tools: Read, Glob

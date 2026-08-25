@@ -35,7 +35,10 @@ describe('pm wiring — skill files', () => {
   it('pm and pm-sync carry name, Use-when description, and allowed-tools', () => {
     for (const rel of [PM_SKILLS.pm, PM_SKILLS.pmSync]) {
       const c = readSrc(rel);
-      assert.ok(/^name:\s*ship:/m.test(c), `${rel} has a name: line`);
+      const name = frontmatterField(c, 'name');
+      assert.ok(name, `${rel} has a name: line`);
+      assert.ok(!name.startsWith('ship:'), `${rel} name is unprefixed — the plugin system namespaces it`);
+      assert.equal(name, path.basename(path.dirname(rel)), `${rel} name matches its directory`);
       const description = frontmatterField(c, 'description');
       assert.ok(description && description.includes('Use when'), `${rel} description uses "Use when" trigger format`);
       assert.ok(/^allowed-tools:\s*.+$/m.test(c), `${rel} has an allowed-tools: line`);
