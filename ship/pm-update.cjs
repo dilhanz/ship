@@ -1645,9 +1645,15 @@ function renderLedgerRow(record, headers) {
     Artifacts: Array.isArray(r.artifacts) ? r.artifacts.join('; ') : ''
   };
 
-  const cells = columns.map(name =>
-    ledgerCell(Object.prototype.hasOwnProperty.call(byColumn, name) ? byColumn[name] : '')
-  );
+  // `Verify note` is the one column whose empty case is not ignorance: a
+  // verdict that carried no qualifier has nothing to say, which `ledgerCell`
+  // would otherwise record as `unknown` — the exact confusion between "clean
+  // run" and "no record" this ledger exists to prevent.
+  const cells = columns.map(name => {
+    const raw = Object.prototype.hasOwnProperty.call(byColumn, name) ? byColumn[name] : '';
+    if (name === 'Verify note' && !String(raw == null ? '' : raw).trim()) return 'none';
+    return ledgerCell(raw);
+  });
 
   return `| ${cells.join(' | ')} |`;
 }
@@ -1776,11 +1782,18 @@ function repairLedgerRow(row, record) {
     .map(c => c.trim());
 
   const cells = headers.map((name, index) => {
-    if (REHARVEST_COLUMNS.has(name)) return fresh[index];
-    const recorded = row.cells && Object.prototype.hasOwnProperty.call(row.cells, name)
+    const raw = row.cells && Object.prototype.hasOwnProperty.call(row.cells, name)
       ? row.cells[name]
       : '';
-    return String(recorded == null ? '' : recorded);
+    const recorded = String(raw == null ? '' : raw);
+    if (!REHARVEST_COLUMNS.has(name)) return recorded;
+    // `unknown` was the older spelling of "this verdict carried no qualifier",
+    // which now renders `none`. They are the same claim, so replacing one with
+    // the other is churn rather than repair — and would rewrite and re-date
+    // every legacy row on the first run after the rename, breaking the no-op
+    // guarantee that is the whole point of the narrow re-admission.
+    if (name === 'Verify note' && fresh[index] === 'none' && recorded === 'unknown') return recorded;
+    return fresh[index];
   });
 
   return `| ${cells.join(' | ')} |`;
