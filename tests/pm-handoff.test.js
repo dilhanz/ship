@@ -117,6 +117,49 @@ describe('pm-handoff — parseHandoff', () => {
     assert.deepEqual(parsed.summaries, ['Row']);
   });
 
+  it('never lets a field value cross its own line', () => {
+    // `\s` matches `\n`: with `\s*` the empty `feature:` swallowed the next
+    // line and the sweep reported an invented feature name — `applied: no` —
+    // as a cleanly parsed handoff.
+    assert.equal(
+      parseHandoff('---\nfeature:\napplied: no\n---\n'),
+      null,
+      'an empty feature: is not a handoff, whatever follows it'
+    );
+
+    const pending = parseHandoff('---\nfeature: alpha\napplied:\nlane: x\n---\n');
+    assert.ok(pending, 'the rest of the frontmatter still parses');
+    assert.equal(pending.applied, false, 'an empty applied: is pending, never applied');
+    assert.equal(pending.lane, 'x', 'the swallowed line is still its own field');
+
+    const head = parseHandoff('---\nfeature: alpha\nhead:\nraised: 2026-08-15\n---\n');
+    assert.equal(head.head, '', 'an empty head: stays empty');
+    assert.equal(head.raised, '2026-08-15');
+  });
+
+  it('agrees with handoffFailureReason on every fixture', () => {
+    const fixtures = [
+      '',
+      '# Just a heading\n',
+      '---\napplied: no\n---\n',
+      '---\nfeature:\napplied: no\n---\n',
+      '---\nfeature: \n---\n',
+      '---\nfeature: ""\n---\n',
+      '---\nfeature: alpha\napplied: yes\n---\n',
+      '---\r\nfeature: "alpha"\r\napplied: \'no\'\r\n---\r\n',
+      handoffDoc({ feature: 'alpha' })
+    ];
+    for (const doc of fixtures) {
+      const parsed = parseHandoff(doc);
+      const reason = handoffFailureReason(doc);
+      assert.equal(
+        parsed !== null,
+        reason === null,
+        `the two functions disagree about ${JSON.stringify(doc)}`
+      );
+    }
+  });
+
   it('ignores headings that are not numbered edit blocks', () => {
     const doc =
       '---\nfeature: alpha\napplied: no\n---\n\n' +
