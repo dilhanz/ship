@@ -216,7 +216,7 @@ agent-authored, never hand-edited — the counts are always true and cost zero t
 Frontmatter carries `updated: "{YYYY-MM-DD}"`, bumped on every append. The table header is exactly:
 
 ```
-| Feature | Shipped | Profile | Verify | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |
+| Feature | Shipped | Profile | Outcome | Verify | Verify note | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |
 ```
 
 Cell vocabulary:
@@ -266,11 +266,11 @@ updated: "2026-08-25"
 Mechanically harvested by `ship/pm-update.cjs` when a feature reaches `done` — one row per feature, keyed on slug.
 Append-only: a recorded row is never rewritten, and this file is never hand-edited.
 
-| Feature | Shipped | Profile | Verify | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |
-|---|---|---|---|---|---|---|---|---|---|
-| go-path-reliability | 2026-08-22 | thorough | PASS | 0 | 2 | 0 | 0/1/5/9 | 4 | CONTEXT.md; PLAN.md; REVIEW.md; VERIFY.md |
-| lane-ownership | 2026-08-23 | thorough | PASS | 0 | 1 | 0 | 0/0/1/2 | 3 | CONTEXT.md; PLAN.md; REVIEW.md; VERIFY.md |
-| pm-capability-uplift | 2026-08-11 | unknown | INCONCLUSIVE | 0 | 2 | 0 | 0/0/4/10 | 3 | CONTEXT.md (no profile); PLAN.md; REVIEW.md (no evidence lines); VERIFY.md (no head) |
+| Feature | Shipped | Profile | Outcome | Verify | Verify note | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| go-path-reliability | 2026-08-22 | thorough | shipped | PASS | all 9 criteria proven | 0 | 2 | 0 | 0/1/5/9 | 4 | CONTEXT.md; PLAN.md; REVIEW.md; VERIFY.md |
+| lane-ownership | 2026-08-23 | thorough | shipped | PASS | unknown | 0 | 1 | 0 | 0/0/1/2 | 3 | CONTEXT.md; PLAN.md; REVIEW.md; VERIFY.md |
+| pm-capability-uplift | 2026-08-11 | unknown | unknown | INCONCLUSIVE | 2 criteria unproven | 0 | 2 | 0 | 0/0/4/10 | 3 | CONTEXT.md (no profile); PLAN.md; REVIEW.md (no evidence lines); VERIFY.md (no head) |
 ```
 
 ## dashboard.html regeneration procedure

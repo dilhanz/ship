@@ -47,6 +47,14 @@ const ENRICHED_HEADER =
   '| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane | Blast radius | Confidence | First seen |';
 
 const LEDGER_HEADER =
+  '| Feature | Shipped | Profile | Outcome | Verify | Verify note | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |';
+
+// The committed fixture is a *recorded* file, and no recorded row is ever
+// rewritten to widen it — rows render to the file's own header. Pinning the
+// fixture to the current default would assert the opposite of that contract,
+// so the two headers deliberately differ: LEDGER_HEADER is what a rebuilt or
+// brand-new ledger gets, FIXTURE_LEDGER_HEADER is what a ten-column file keeps.
+const FIXTURE_LEDGER_HEADER =
   '| Feature | Shipped | Profile | Verify | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |';
 
 const VERIFY_VOCABULARY = ['PASS', 'FAIL', 'INCONCLUSIVE', 'DEFERRED', 'in-progress', 'unknown', 'none'];
@@ -266,7 +274,7 @@ describe('LEDGER.md — the committed fixture obeys the harvested format', () =>
     assert.match(content, /^---\nupdated: "\d{4}-\d{2}-\d{2}"\n---/, 'updated frontmatter');
     assert.match(content, /^# Ledger$/m, 'title');
     assert.match(content, /never hand-edited/, 'the append-only note travels with the file');
-    assert.ok(content.includes(LEDGER_HEADER), 'exact documented ten-column header');
+    assert.ok(content.includes(FIXTURE_LEDGER_HEADER), 'exact recorded ten-column header');
     assert.ok(rows.length >= 3, 'the fixture exercises several verdicts');
   });
 
@@ -329,7 +337,9 @@ describe('LEDGER.md — the committed fixture obeys the harvested format', () =>
       slug: 'Feature',
       shipped: 'Shipped',
       profile: 'Profile',
+      outcome: 'Outcome',
       verify: 'Verify',
+      verifyNote: 'Verify note',
       unresolvedCarried: 'Unresolved carried',
       planRounds: 'Plan rounds',
       fixRounds: 'Fix rounds',
