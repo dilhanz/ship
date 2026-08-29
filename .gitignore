@@ -38,3 +38,6 @@ dist/
 # Ship planning state (local, per-repo)
 .planning/
 .project-manager/
+
+# Local Claude Code state (not shipped in the repo)
+.claude/
