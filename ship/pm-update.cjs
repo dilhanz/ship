@@ -308,8 +308,14 @@ function archiveMergeStatus(cwd, slug) {
  * Never invents a status.
  *
  * An archived slug resolves through archiveMergeStatus, so a feature whose
- * stamped head has not reached the base branch records `awaiting-merge`
- * instead of `done`. A stamp-less archive still records `done`.
+ * stamped head has not reached the base branch — and whose branch a live
+ * remote still holds — records `awaiting-merge` instead of `done`. A
+ * stamp-less archive still records `done`.
+ *
+ * The merge test may never move a recorded `done` backwards: a downgrade
+ * would need positive evidence the work was *un*-shipped, which no test here
+ * produces. The rule is scoped to the archive branch alone — every other
+ * mapping keeps today's behaviour.
  *
  * @param {string} cwd
  * @param {string} slug
@@ -323,8 +329,12 @@ function mappedStatus(cwd, slug, recorded) {
     if (fs.existsSync(path.join(cwd, '.planning', 'archive', slug))) {
       // Archived is where the work went, not proof it merged — ask git.
       const merge = archiveMergeStatus(cwd, slug);
-      if (merge === 'awaiting-merge') return 'awaiting-merge';
       if (merge === 'inconclusive') return null; // unchanged; never invented
+      if (merge === 'awaiting-merge') {
+        // Never move a recorded `done` backwards — the merge test can only
+        // withhold `done`, never revoke one already recorded.
+        return (recorded || '').toLowerCase() === 'done' ? null : 'awaiting-merge';
+      }
       return 'done'; // 'done', and 'no-stamp' keeps today's answer byte-for-byte
     }
   } catch (e) {
