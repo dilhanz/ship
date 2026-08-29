@@ -1089,6 +1089,12 @@ function generateDashboard(root, laneData) {
 /** The verdict vocabulary the ledger's `Verify` cell may record verbatim. */
 const VERIFY_VERDICTS = new Set(['PASS', 'FAIL', 'INCONCLUSIVE', 'DEFERRED']);
 
+/**
+ * The two Verify cell values a recorded ledger row may be re-harvested from.
+ * Both mean "the harvest could not read a verdict", never a recorded outcome.
+ */
+const REHARVEST_VERDICTS = new Set(['unknown', 'in-progress']);
+
 /** The `outcome:` vocabulary `/ship:finish` stamps into an archived CONTEXT.md. */
 const ARCHIVE_OUTCOMES = new Set(['shipped', 'abandoned', 'superseded', 'umbrella']);
 
@@ -1451,6 +1457,59 @@ function ledgerSlugs(content) {
 }
 
 /**
+ * Every recorded LEDGER.md row, keyed by its own header.
+ *
+ * The same header-anchored walk as `ledgerSlugs`, returning full rows instead
+ * of slugs: `cells` is the header-keyed object `parseRoadmap` produces for the
+ * roadmap, `headers` is the header the row was written under (so a
+ * replacement renders to it), and `lineIndex` is the row's index in
+ * `content.split('\n')`, which is what makes a single-line replacement
+ * possible without re-rendering the file.
+ *
+ * Separator rows and rows whose cell count differs from their header's
+ * contribute nothing — the same two exclusions `ledgerSlugs` applies, so the
+ * two functions can never disagree about what is recorded. Never throws;
+ * returns `[]` for unparseable input.
+ *
+ * @param {string} content
+ * @returns {{ slug: string, cells: Object<string,string>, headers: string[], lineIndex: number }[]}
+ */
+function ledgerRows(content) {
+  const rows = [];
+  try {
+    if (typeof content !== 'string') return rows;
+    let ctx = null;
+    const lines = content.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
+      if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) {
+        if (trimmed !== '') ctx = null; // a non-table line ends the table
+        continue;
+      }
+
+      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+      const featureIdx = cells.indexOf('Feature');
+      if (featureIdx !== -1 && cells.includes('Shipped') && cells.includes('Verify')) {
+        ctx = { headers: cells, featureIdx };
+        continue;
+      }
+
+      if (!ctx) continue;
+      if (cells.every(c => /^:?-+:?$/.test(c))) continue; // separator row
+      if (cells.length !== ctx.headers.length) continue; // malformed row
+
+      const named = {};
+      ctx.headers.forEach((h, idx) => { named[h] = cells[idx]; });
+      rows.push({ slug: cells[ctx.featureIdx], cells: named, headers: ctx.headers, lineIndex: i });
+    }
+  } catch (e) {
+    // an unparseable ledger records nothing — never a crash
+  }
+  return rows;
+}
+
+/**
  * Sanitize one harvested value for a table cell.
  *
  * Every ledger value comes from a file on disk, so a newline would break the
@@ -1610,6 +1669,67 @@ function appendLedger(root, records, today) {
 }
 
 /**
+ * Rewrite already-recorded ledger rows in place, one line each.
+ *
+ * The single relaxation of the append-only contract, and deliberately a
+ * separate function from `appendLedger` so that function's guarantee stays
+ * readable: append-only exists to protect *history*, and a row whose Verify
+ * cell reads `unknown` or `in-progress` is not history but a parse failure —
+ * a wrong answer the ledger would otherwise keep forever. The caller
+ * (`runHarvest`) decides which rows qualify; this function rewrites whatever
+ * it is handed.
+ *
+ * Each record replaces the single line whose `Feature` cell equals its slug,
+ * rendered against that row's *own* header, and only when the rendered line
+ * differs from the recorded one. Every byte outside the replaced lines — the
+ * other rows, the frontmatter, the prose, the separator — survives untouched.
+ * When nothing changed, nothing is written at all: no `updated:` bump, no
+ * mtime churn, which is what makes a re-read that still finds no verdict
+ * idempotent.
+ *
+ * Never throws: any failure returns 0 silently, for the same reason
+ * `appendLedger` does.
+ *
+ * @param {string} root - the resolved state root holding .project-manager/
+ * @param {ReturnType<typeof harvestFeature>[]} records
+ * @param {string} today - YYYY-MM-DD
+ * @returns {number} rows rewritten
+ */
+function reharvestLedger(root, records, today) {
+  try {
+    if (!Array.isArray(records) || records.length === 0) return 0;
+
+    const ledgerPath = path.join(root, '.project-manager', 'LEDGER.md');
+    const existing = readOptional(ledgerPath);
+    if (existing === null) return 0;
+
+    const rowBySlug = new Map();
+    for (const row of ledgerRows(existing)) {
+      if (!rowBySlug.has(row.slug)) rowBySlug.set(row.slug, row);
+    }
+
+    const lines = existing.split('\n');
+    let rewritten = 0;
+    for (const record of records) {
+      if (!record || !record.slug) continue;
+      const row = rowBySlug.get(record.slug);
+      if (!row) continue;
+      const rendered = renderLedgerRow(record, row.headers);
+      if (lines[row.lineIndex] === rendered) continue;
+      lines[row.lineIndex] = rendered;
+      rewritten++;
+    }
+
+    if (rewritten === 0) return 0; // no write at all — the idempotent path
+
+    writeFileAtomic(ledgerPath, bumpUpdated(lines.join('\n'), today));
+    return rewritten;
+  } catch (e) {
+    return 0; // silent by contract
+  }
+}
+
+/**
  * Bump a leading frontmatter block's `updated:` value to `today` (quoted
  * form), leaving every other byte — including CRLF terminators — intact.
  * Content with no frontmatter block, or none carrying `updated:`, is
@@ -1635,6 +1755,12 @@ function bumpUpdated(content, today) {
  * in LEDGER.md are dropped **before any feature artifact is read**, so the
  * archive is not re-parsed on every status transition — only the first
  * backfill walks it.
+ *
+ * The one exception: a candidate whose recorded `Verify` cell is `unknown` or
+ * `in-progress` is re-admitted and re-harvested, because that cell records a
+ * parse failure rather than a verdict. Pending slugs are appended, re-admitted
+ * ones are rewritten in place by `reharvestLedger`, and the two sets cannot
+ * overlap (a re-admitted slug is by definition already recorded).
  *
  * Gated on the `.project-manager/` *directory*, not on ROADMAP.md: the
  * ledger is independent evidence, and a damaged roadmap must not silently
@@ -1669,18 +1795,30 @@ function runHarvest(cwd, root, slugs, today) {
 
     if (candidates.size === 0) return 0;
 
-    const recorded = ledgerSlugs(readOptional(path.join(root, '.project-manager', 'LEDGER.md')) || '');
+    const ledger = readOptional(path.join(root, '.project-manager', 'LEDGER.md')) || '';
+    const recorded = ledgerSlugs(ledger);
     const pending = [...candidates].filter(slug => !recorded.has(slug)).sort();
-    if (pending.length === 0) return 0;
 
-    const records = pending.map(slug => harvestFeature(cwd, slug, today)).filter(r => r !== null);
-    return appendLedger(root, records, today);
+    // The one re-admission: a row whose verdict could not be read is a parse
+    // failure, not history, so it may be re-read. Every other recorded row is
+    // still never touched — that is the optimisation the append-only contract
+    // buys, and it must survive this.
+    const stale = ledgerRows(ledger)
+      .filter(row => REHARVEST_VERDICTS.has(String(row.cells.Verify || '').trim().toLowerCase()))
+      .map(row => row.slug)
+      .filter(slug => candidates.has(slug))
+      .sort();
+
+    if (pending.length === 0 && stale.length === 0) return 0;
+
+    const harvest = list => list.map(slug => harvestFeature(cwd, slug, today)).filter(r => r !== null);
+    return appendLedger(root, harvest(pending), today) + reharvestLedger(root, harvest(stale), today);
   } catch (e) {
     return 0; // silent by contract
   }
 }
 
-module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, extractVerdict, harvestFeature, LEDGER_COLUMNS, ledgerSlugs, ledgerHeaders, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
+module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, extractVerdict, harvestFeature, LEDGER_COLUMNS, ledgerSlugs, ledgerRows, ledgerHeaders, hasLedgerHeader, renderLedgerRow, appendLedger, reharvestLedger, runHarvest };
 
 if (require.main === module) {
   try {
