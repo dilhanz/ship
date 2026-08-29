@@ -1,5 +1,19 @@
 # Changelog
 
+## 5.18.1
+
+Patch release — the three follow-ups 5.18.0 shipped with, plus a test that had been reporting the developer's own working tree as a failure.
+
+### Fixed
+
+- **`skills/pm-state/SKILL.md` prints the 12-column enriched shape.** 5.18.0 grew `/ship:pm-sync` to bootstrap and widen to a header including `Kind`, but pm-state — the reference the bootstrap reads — still printed 11 columns and stated that `Kind` "is not part of that fixed shape". The two documents contradicted each other about the canonical header, so an agent following pm-state would lay down a table that could not hold the `debt` row `--debt` proposes. The shape now carries `Kind`, and the sentence beside it says the thing that is actually true and load-bearing: every column is located by **name**, never by position or count.
+- **`skills/pm/SKILL.md` no longer re-derives the old PM:NEXT rule.** The sentence corrected in pm-state for 5.18.0 survived verbatim in a second file: "highest-priority non-done, non-blocked item whose Depends-on items are all `done`" — missing both the `awaiting-merge` eligibility exclusion and the `done | awaiting-merge` satisfaction rule that `selectNext` implements. `--next` remains the single home of the rule.
+- **An absent `Verify note` records `none`, not `unknown`.** A clean PASS carrying no qualifier had nothing to say, and saying "we don't know" about it is precisely the confusion between a clean run and no record that this ledger exists to prevent. `unknown` still means a genuine gap — an unstamped `Outcome`, an unreadable verdict — and a note whose text really is "unknown" is unaffected. Rows already recorded with `unknown` for an absent note are **not** rewritten: the two spellings are the same claim, so re-harvesting one into the other would be churn rather than repair, and would have re-dated every eligible legacy row on the first run after the rename.
+
+### Changed
+
+- **`tests/legacy-install-tree-adversarial.test.js` measures fossils against what `install.js` actually writes**, rather than an allowlist of directories permitted to exist under `.claude/`. The allowlist had to be edited every time a working tree grew a legitimate directory — a `.claude/worktrees/` lane or an agent-memory sibling — and had been reported as an environmental failure in two consecutive verification rounds, which is how a guard stops being read. The new form is stricter where it matters (a fifth install destination is caught the moment the installer grows one) and silent about entries the installer never writes.
+
 ## 5.18.0
 
 Minor release — nine seams in Ship's PM layer stop giving confidently wrong answers and start admitting what they do not know. A 2026-08-28 audit against nine months of real project state (101 ledger rows, 234 backlog rows, 60 archived features) found the mechanical arm *exact* — every slugged backlog row agreed with the filesystem — while the seams around it read as a clean bill of health rather than an unknown. Every new column and frontmatter field here is optional and additive, arriving only through a confirmed `/ship:pm-sync` reconcile, so an absent column reads as today's behaviour byte-for-byte.
