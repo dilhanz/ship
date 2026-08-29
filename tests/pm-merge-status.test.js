@@ -20,7 +20,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const SCRIPT_PATH = path.join(__dirname, '..', 'ship', 'pm-update.cjs');
-const { resolveBaseRef, archiveMergeStatus, mappedStatus, selectNext, parseRoadmap } = require(SCRIPT_PATH);
+const { resolveBaseRef, archiveMergeStatus, mappedStatus, selectNext, computeUnblocks, parseRoadmap } = require(SCRIPT_PATH);
 
 const gitAvailable = (() => {
   try {
@@ -237,5 +237,75 @@ describe('pm-merge-status: selectNext', () => {
 
     const next = selectNext(parseRoadmap(roadmap));
     assert.equal(next.item, 'Ship gadget', 'archived work cannot be worked on next');
+  });
+
+  it('still recommends a row whose only dependency is awaiting-merge', () => {
+    const roadmap = [
+      '## Milestone: Now',
+      '',
+      '| Item | Status | Priority | Depends on | Ship feature |',
+      '|---|---|---|---|---|',
+      '| Ship widget | awaiting-merge | P1 | — | widget |',
+      '| Ship gadget | pending | P0 | Ship widget | gadget |',
+      ''
+    ].join('\n');
+
+    const next = selectNext(parseRoadmap(roadmap));
+    assert.equal(
+      next && next.item,
+      'Ship gadget',
+      'awaiting-merge is finished work — it satisfies a dependency even though it cannot be selected'
+    );
+  });
+
+  it('still refuses a dependency that is merely pending', () => {
+    const roadmap = [
+      '## Milestone: Now',
+      '',
+      '| Item | Status | Priority | Depends on | Ship feature |',
+      '|---|---|---|---|---|',
+      '| Ship widget | pending | P1 | — | widget |',
+      '| Ship gadget | pending | P0 | Ship widget | gadget |',
+      ''
+    ].join('\n');
+
+    const next = selectNext(parseRoadmap(roadmap));
+    assert.equal(next.item, 'Ship widget', 'an unfinished dependency is still unmet');
+  });
+});
+
+describe('pm-merge-status: computeUnblocks', () => {
+  it('does not count an awaiting-merge dependent as waiting', () => {
+    const roadmap = [
+      '## Milestone: Now',
+      '',
+      '| Item | Status | Priority | Depends on | Ship feature |',
+      '|---|---|---|---|---|',
+      '| Ship widget | pending | P1 | — | widget |',
+      '| Ship gadget | awaiting-merge | P0 | Ship widget | gadget |',
+      ''
+    ].join('\n');
+
+    const unblocks = computeUnblocks(parseRoadmap(roadmap));
+    assert.equal(
+      unblocks.get('Ship widget').count,
+      0,
+      'finishing an item cannot unblock a dependent that is already finished'
+    );
+    assert.equal(unblocks.get('Ship widget').inProgress, false);
+  });
+
+  it('still counts a pending dependent', () => {
+    const roadmap = [
+      '## Milestone: Now',
+      '',
+      '| Item | Status | Priority | Depends on | Ship feature |',
+      '|---|---|---|---|---|',
+      '| Ship widget | pending | P1 | — | widget |',
+      '| Ship gadget | pending | P0 | Ship widget | gadget |',
+      ''
+    ].join('\n');
+
+    assert.equal(computeUnblocks(parseRoadmap(roadmap)).get('Ship widget').count, 1);
   });
 });

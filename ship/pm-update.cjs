@@ -458,12 +458,15 @@ function laneOwnershipMap(sweepResult) {
 /**
  * The "work on next" selection rule — the single home of the rule stated in
  * skills/pm-state/SKILL.md (PM:NEXT): the highest-priority non-done,
- * non-blocked, non-awaiting-merge item whose Depends-on items are all done.
+ * non-blocked, non-awaiting-merge item whose Depends-on items are all finished.
  *
  * - `—`/`-`/empty Depends on means independent; otherwise every comma-separated
  *   name must match some row's Item (exact, case-sensitive) whose Status is
- *   `done`. An unknown name counts as unmet — never recommend an item whose
- *   dependency cannot be verified.
+ *   `done` or `awaiting-merge`. An unknown name counts as unmet — never
+ *   recommend an item whose dependency cannot be verified.
+ * - `awaiting-merge` is finished work waiting on a PR, so it *satisfies* a
+ *   dependency even though it can never itself be selected. The two roles are
+ *   separate: eligibility is handled by the skip below, satisfaction here.
  * - Priority ranks P0 < P1 < P2 < P3; missing/invalid sorts after P3.
  *   Ties break by document order.
  *
@@ -471,9 +474,12 @@ function laneOwnershipMap(sweepResult) {
  * @returns {{ item: string, milestone: string|null, priority: string|null, shipFeature: string|null }|null}
  */
 function selectNext(rows) {
-  const doneItems = new Set(
+  const finishedItems = new Set(
     rows
-      .filter(r => (r.recorded || '').toLowerCase() === 'done')
+      .filter(r => {
+        const status = (r.recorded || '').toLowerCase();
+        return status === 'done' || status === 'awaiting-merge';
+      })
       .map(r => r.cells.Item)
   );
 
@@ -491,7 +497,7 @@ function selectNext(rows) {
     const depends = row.cells['Depends on'];
     if (!empty(depends)) {
       const names = depends.split(',').map(d => d.trim()).filter(d => d !== '');
-      if (!names.every(name => doneItems.has(name))) continue;
+      if (!names.every(name => finishedItems.has(name))) continue;
     }
 
     const priority = row.cells.Priority;
@@ -524,8 +530,10 @@ function selectNext(rows) {
  * differs only in case is deliberately not a match. An empty, `—`, or `-`
  * cell contributes nothing.
  *
- * `count` counts only dependents that are not `done` (case-insensitive):
- * finishing an item cannot unblock work that is already finished.
+ * `count` counts only dependents that are not finished (`done` or
+ * `awaiting-merge`, case-insensitive): finishing an item cannot unblock work
+ * that is already finished, and `awaiting-merge` is archived work waiting on a
+ * PR rather than work still waiting on a dependency.
  * `inProgress` is true when at least one of those non-done dependents is
  * `in-progress` — someone is waiting on this right now.
  *
@@ -556,7 +564,9 @@ function computeUnblocks(rows) {
     if (!depends || depends === '—' || depends === '-') continue;
 
     const status = (row.recorded || '').toLowerCase();
-    if (status === 'done') continue; // a finished dependent is not waiting on anything
+    // a finished dependent is not waiting on anything — and `awaiting-merge`
+    // is finished, just not yet merged
+    if (status === 'done' || status === 'awaiting-merge') continue;
 
     const names = depends.split(',').map(d => d.trim()).filter(d => d !== '');
     for (const name of new Set(names)) { // a name listed twice counts once
