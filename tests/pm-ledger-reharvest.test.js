@@ -69,7 +69,7 @@ function seedLedger(dir, rows, { header = WIDE_HEADER, separator = WIDE_SEPARATO
   const content =
     '---\nupdated: "2026-01-01"\n---\n\n# Ledger\n\n' +
     'Mechanically harvested by `ship/pm-update.cjs` when a feature reaches `done` — one row per feature, keyed on slug.\n' +
-    'Append-only: a recorded row is never rewritten, and this file is never hand-edited.\n\n' +
+    'Append-only apart from one case: a row whose `Verify` cell reads `unknown` or `in-progress` may be re-harvested in place. Every other recorded row is never rewritten, and this file is never hand-edited.\n\n' +
     `${header}\n${separator}\n${rows.join('\n')}\n`;
   fs.writeFileSync(ledgerPath(dir), content);
   return content;
