@@ -126,21 +126,23 @@ describe('squash-merge adversarial — carried review findings: the finish PR st
   beforeEach(() => { root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ship-sqadv-stamp-'))); });
   afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
-  it('writes a present-but-empty pr: field when the PR URL could not be obtained', () => {
-    // Phase 2 finding 1 (medium): acceptance criterion 7 says an impossible
-    // stamp leaves the field "simply absent". With both `gh pr create` and
-    // the `gh pr view` fallback producing nothing, PR_URL is empty and the
-    // program still exits 0, recording an empty value the skill's trailing
-    // `grep -n 'pr: '` then reports as a successful stamp.
+  it('leaves the pr: field absent when the PR URL could not be obtained', () => {
+    // Phase 2 finding 1 (medium), fixed in verify fix round 1: acceptance
+    // criterion 7 says an impossible stamp leaves the field "simply absent".
+    // With both `gh pr create` and the `gh pr view` fallback producing
+    // nothing, PR_URL is empty; the program now exits non-zero and writes
+    // nothing, so the skill's trailing `grep -n 'pr: '` never runs and the
+    // failure cannot read back as a successful stamp.
     const ctx = path.join(root, 'CONTEXT.md');
-    fs.writeFileSync(ctx, '---\nfeature: "widget"\nstatus: done\n---\n\nbody\n');
+    const before = '---\nfeature: "widget"\nstatus: done\n---\n\nbody\n';
+    fs.writeFileSync(ctx, before);
 
     const run = stamp(ctx, '');
-    assert.equal(run.status, 0, 'the impossible case reports success');
+    assert.notEqual(run.status, 0, 'the impossible case reports failure');
 
     const after = fs.readFileSync(ctx, 'utf8');
-    assert.match(after, /^pr: *$/m, 'an empty pr: field is written rather than left absent');
-    assert.ok(/pr: /.test(after), "the skill's grep gate matches the empty stamp");
+    assert.equal(after, before, 'the file is byte-identical — nothing recorded');
+    assert.ok(!/^pr:/m.test(after), 'the field is simply absent');
   });
 
   it('flips CRLF line endings to LF when stamping a CRLF file', () => {

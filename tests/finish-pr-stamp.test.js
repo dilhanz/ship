@@ -198,6 +198,23 @@ describe('finish PR stamp — executable behaviour', () => {
     );
   });
 
+  it('exits non-zero and writes no pr: line when the URL is empty', () => {
+    // The impossible case: neither `gh pr create` nor the `gh pr view`
+    // fallback produced a URL. A literal `pr: ` line with no value would be a
+    // false record — and the skill's trailing `grep -n 'pr: '` would match it,
+    // reading the failure back as a success. The field must simply be absent.
+    const before = '---\nfeature: "f"\nstatus: done\n---\n\nBody\n';
+    fs.writeFileSync(ctx, before);
+
+    const run = stamp('');
+    assert.notEqual(run.status, 0, 'an empty URL must report failure');
+    assert.equal(
+      fs.readFileSync(ctx, 'utf8'),
+      before,
+      'and must leave the file byte-identical, with no pr: field at all'
+    );
+  });
+
   it('parses CRLF frontmatter', () => {
     fs.writeFileSync(ctx, '---\r\nfeature: "f"\r\nstatus: done\r\n---\r\n\r\nBody\r\n');
 
