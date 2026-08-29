@@ -308,3 +308,90 @@ describe('pm-sync-nudge hook — v8 Lane-bearing roadmap', () => {
     assert.match(msg, /pm-update\.cjs" auth-feature/, 'should pass the drifted slug to the script');
   });
 });
+
+describe('pm-sync-nudge hook — awaiting-merge is agreement, not drift', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-pm-nudge-awaiting-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('recorded awaiting-merge against an archived feature → no nudge at all', async () => {
+    createArchivedFeature(tmpDir, 'shipped-feature');
+    createRoadmap(tmpDir, [
+      { item: 'Shipped', status: 'awaiting-merge', slug: 'shipped-feature' },
+    ]);
+
+    const { code, output, raw } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.equal(raw.trim(), '', 'nudging here would recommend the script that wrote the value');
+    assert.equal(output, null);
+
+    // No drift was recorded either — the debounce file is only written when
+    // there is drift to remember (or stale drift to clear).
+    const statePath = path.join(tmpDir, '.project-manager', '.nudge-state.json');
+    if (fs.existsSync(statePath)) {
+      assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).lastDrift || '', '');
+    }
+  });
+
+  it('matches the status case-insensitively', async () => {
+    createArchivedFeature(tmpDir, 'shipped-feature');
+    createRoadmap(tmpDir, [
+      { item: 'Shipped', status: 'Awaiting-Merge', slug: 'shipped-feature' },
+    ]);
+
+    const { code, raw } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.equal(raw.trim(), '');
+  });
+
+  it('the exemption is narrow — pending and in-progress against that same archive still nudge', async () => {
+    for (const recorded of ['pending', 'in-progress']) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-pm-nudge-narrow-'));
+      try {
+        createArchivedFeature(dir, 'shipped-feature');
+        createRoadmap(dir, [{ item: 'Shipped', status: recorded, slug: 'shipped-feature' }]);
+
+        const { code, output } = await runHook(dir);
+        assert.equal(code, 0);
+        assert.ok(output, `recorded ${recorded} against an archive is still drift`);
+        assert.ok(output.hookSpecificOutput.additionalContext.includes('shipped-feature'));
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('recorded awaiting-merge on an active, unarchived feature → no nudge either', async () => {
+    createFeature(tmpDir, 'auth-feature', 'building');
+    createRoadmap(tmpDir, [
+      { item: 'Auth', status: 'awaiting-merge', slug: 'auth-feature' },
+    ]);
+
+    const { code, raw } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.equal(raw.trim(), '', 'awaiting-merge is not in the in-progress branch trigger set');
+  });
+
+  it('a mixed table nudges about the genuinely drifted slug only', async () => {
+    createArchivedFeature(tmpDir, 'shipped-feature');
+    createArchivedFeature(tmpDir, 'stale-feature');
+    createRoadmap(tmpDir, [
+      { item: 'Shipped', status: 'awaiting-merge', slug: 'shipped-feature' },
+      { item: 'Stale', status: 'pending', slug: 'stale-feature' },
+    ]);
+
+    const { code, output } = await runHook(tmpDir);
+    assert.equal(code, 0);
+    assert.ok(output, 'the real drift still nudges');
+    const msg = output.hookSpecificOutput.additionalContext;
+    assert.ok(msg.includes('stale-feature'), 'names the drifted slug');
+    assert.ok(!msg.includes('shipped-feature'), 'says nothing about the exempted row');
+    assert.match(msg, /pm-update\.cjs" stale-feature\b/, 'passes only the drifted slug to the script');
+  });
+});
