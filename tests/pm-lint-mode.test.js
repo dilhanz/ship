@@ -151,6 +151,20 @@ describe('lintState — narrative before the first section', () => {
     assert.equal(found[0].text.length, 120);
   });
 
+  it('a lone --- rule with no closing delimiter is not frontmatter', () => {
+    // The narrative scan starts from the same frontmatter() match the key scan
+    // uses, so an unterminated `---` cannot be read as a frontmatter block by
+    // one and as prose by the other — the preamble is reported exactly once.
+    const status = '---\n\n# Test — Status\n\nstray line\n\n## In flight\n';
+    const r = lintState(null, status);
+    assert.deepEqual(r.statusUndeclaredKeys, [], 'an unterminated block declares no keys');
+    assert.deepEqual(
+      r.statusNarrativeBeforeSections.map(e => [e.line, e.text]),
+      [[1, '---'], [5, 'stray line']],
+      'the rule and the prose below it are both preamble, each reported once'
+    );
+  });
+
   it('a file with no frontmatter still finds narrative above the first section', () => {
     const status = '# Test — Status\n\nstray line\n\n## In flight\n';
     const found = lintState(null, status).statusNarrativeBeforeSections;
