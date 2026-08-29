@@ -95,7 +95,7 @@ git rev-parse --verify main &>/dev/null && echo main || echo master
 # Get feature summary from CONTEXT.md for PR body
 # Push and create PR
 git push -u origin HEAD
-gh pr create --title "{type}: {feature-name}" --body "$(cat <<'EOF'
+PR_URL=$(gh pr create --title "{type}: {feature-name}" --body "$(cat <<'EOF'
 ## Summary
 {2-3 bullets from CONTEXT.md acceptance criteria}
 
@@ -104,10 +104,45 @@ gh pr create --title "{type}: {feature-name}" --body "$(cat <<'EOF'
 
 Built with [Ship](https://github.com/dilhanz/ship)
 EOF
-)"
+)")
+
+# `gh pr create` prints the URL on success. When its output is empty or is not
+# a URL (an existing PR, a warning-only run), ask for the URL directly.
+case "$PR_URL" in
+  https://*) ;;
+  *) PR_URL=$(gh pr view --json url -q .url) ;;
+esac
 ```
 
-Report the PR URL to the user.
+Report the PR URL (`$PR_URL`) to the user, then stamp it into the feature record.
+
+### Stamp the PR URL
+
+Record the PR on the feature itself, so merge provenance is a lookup on disk rather than git archaeology later. The URL is written verbatim as `gh` printed it — the PR number stays derivable from it rather than stored twice.
+
+Stamp it **before** the archive move, while the directory is still at `.planning/features/{feature-name}/`. Stamping after the `mv` would target a path that no longer exists — in a worktree-isolated session it would silently do nothing. This is the same ordering rule the `outcome:` stamp follows, and for the same reason.
+
+This skill has no Write or Edit tool, so the stamp goes through Bash. Replace an existing `pr:` line if there is one, otherwise insert one directly after the `status:` line inside the leading frontmatter block, and leave every other byte alone:
+
+```bash
+CTX=".planning/features/{feature-name}/CONTEXT.md"
+node -e '
+  const fs = require("fs"), [p, v] = process.argv.slice(1);
+  const s = fs.readFileSync(p, "utf8");
+  const m = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) process.exit(1);
+  let fm = m[1];
+  fm = /^pr:/m.test(fm)
+    ? fm.replace(/^pr:.*$/m, "pr: " + v)
+    : fm.replace(/^(status:.*)$/m, "$1\npr: " + v);
+  if (!/^pr:/m.test(fm)) fm += "\npr: " + v;
+  fs.writeFileSync(p, s.slice(0, m.index) + "---\n" + fm + "\n---" + s.slice(m.index + m[0].length));
+' "$CTX" "$PR_URL" && grep -n 'pr: ' "$CTX"
+```
+
+A failed or impossible stamp is **not fatal** — report the failure, leave the field absent, and let the archive proceed. A CONTEXT.md with no leading frontmatter block exits non-zero and is left byte-identical; that is a recorded gap, not a reason to block finishing.
+
+Option 2 and Option 3 open no PR and stamp nothing.
 
 ### Option 2: Merge Locally
 
