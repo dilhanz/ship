@@ -14,6 +14,12 @@
 // pm-update.cjs's parseRoadmap: both locate columns by header name, so the
 // 5-column legacy, 8-column current, and enriched 10-/11-column tables
 // (`Blast radius`, `Confidence`, `First seen`) all parse unchanged.
+//
+// One status value is exempt from the drift rule: a row recorded
+// `awaiting-merge` against an archived feature is agreement, not drift. That
+// status means "archived, but the stamped head has not reached the base
+// branch" — a distinction only pm-update.cjs can draw, since it costs a git
+// call, and this hook runs on every Write and Edit. See the drift loop below.
 
 const fs = require('fs');
 const path = require('path');
@@ -132,7 +138,15 @@ process.stdin.on('end', () => {
       const actual = actualStatus(cwd, slug, activeSlugs);
       if (actual === 'unknown') continue;
       const recordedLower = recorded.toLowerCase();
-      if (actual === 'done' && recordedLower !== 'done') {
+      // recorded 'awaiting-merge' is agreement, not drift: it is pm-update.cjs's
+      // finer reading of the same archived-on-disk fact this hook reads coarsely
+      // as 'done', and only that script (which shells out to git) can tell the
+      // two apart. Nudging here would tell the user to run the very script that
+      // just wrote the value — a self-perpetuating false positive. This hook
+      // stays fs-only and simply declines to contradict the reconciler.
+      if (actual === 'done' && recordedLower === 'awaiting-merge') {
+        // agreement — no drift entry
+      } else if (actual === 'done' && recordedLower !== 'done') {
         drifted.push({ slug, recorded, actual });
       } else if (actual === 'in-progress' && (recordedLower === 'pending' || recordedLower === 'done')) {
         drifted.push({ slug, recorded, actual });

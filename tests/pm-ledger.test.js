@@ -37,6 +37,10 @@ const KNOWN_ARCHIVED = [
 ];
 
 const LEDGER_HEADER =
+  '| Feature | Shipped | Profile | Outcome | Verify | Verify note | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |';
+
+/** The ten-column shape ~100 already-recorded rows carry. Never rewritten. */
+const LEGACY_LEDGER_HEADER =
   '| Feature | Shipped | Profile | Verify | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |';
 
 /** Spawn the CLI in a given cwd, return { status, stdout, stderr }. */
@@ -137,7 +141,7 @@ describe('pm ledger — real-archive backfill', () => {
     assert.equal(r.stderr, '');
 
     const content = readLedger(dir);
-    assert.ok(content.includes(LEDGER_HEADER), 'ten-column header verbatim');
+    assert.ok(content.includes(LEDGER_HEADER), 'twelve-column header verbatim');
 
     const rows = ledgerRows(content);
     // One row per archived feature, derived from the staged archive rather
@@ -149,6 +153,42 @@ describe('pm ledger — real-archive backfill', () => {
     );
     for (const known of KNOWN_ARCHIVED) {
       assert.ok(rows.some((row) => row.Feature === known), `${known} is recorded`);
+    }
+  });
+
+  it('keeps a recorded ten-column ledger at ten columns when it appends', () => {
+    // Header-aware rendering, asserted where it is easiest to regress: the
+    // ledger a real project already holds predates `Outcome`/`Verify note`,
+    // and rendering the widened shape into it would shift every value right.
+    const dir = tmpRepo();
+    const slugs = stageRealArchive(dir);
+    writeRoadmap(dir);
+
+    fs.mkdirSync(path.join(dir, '.project-manager'), { recursive: true });
+    fs.writeFileSync(
+      ledgerPath(dir),
+      '---\nupdated: "2026-01-01"\n---\n\n# Ledger\n\n' +
+        `${LEGACY_LEDGER_HEADER}\n|---|---|---|---|---|---|---|---|---|---|\n`
+    );
+
+    assert.equal(runCli(dir).status, 0);
+
+    const content = readLedger(dir);
+    assert.ok(content.includes(LEGACY_LEDGER_HEADER), 'the recorded header survives verbatim');
+    assert.ok(!content.includes(LEDGER_HEADER), 'no widened header is written into a recorded file');
+
+    const rows = content
+      .split('\n')
+      .filter((l) => l.trim().startsWith('|'))
+      .slice(2); // header + separator
+    assert.equal(rows.length, slugs.length);
+    for (const row of rows) {
+      const cells = row.trim().slice(1, -1).split('|');
+      assert.equal(cells.length, 10, `appended row has the file's own width: ${row}`);
+    }
+    for (const row of ledgerRows(content)) {
+      assert.ok(row.Verify, `${row.Feature} still records a verdict under its own header`);
+      assert.equal(row.Outcome, undefined, 'a ten-column file gains no Outcome cell');
     }
   });
 
