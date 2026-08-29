@@ -284,20 +284,25 @@ describe('pm-handoff — laneHandoffs', () => {
     const file = writeRaw('features', 'locked', '---\nfeature: locked\n---\n');
     fs.chmodSync(file, 0o000);
     try {
-      fs.readFileSync(file, 'utf8');
-      // Running as root (or on a filesystem that ignores the mode): the
-      // failure this asserts cannot be produced here.
-      t.skip('this process can still read a chmod-000 file');
-      return;
-    } catch (e) {
-      // expected — the sweep must report it rather than drop it
+      try {
+        fs.readFileSync(file, 'utf8');
+        // Running as root (or on a filesystem that ignores the mode): the
+        // failure this asserts cannot be produced here.
+        t.skip('this process can still read a chmod-000 file');
+        return;
+      } catch (e) {
+        // expected — the sweep must report it rather than drop it
+      }
+      const found = laneHandoffs(dir);
+      assert.equal(found.length, 1);
+      assert.equal(found[0].unparseable, true);
+      assert.ok(/^unreadable: /.test(found[0].reason), `reason names the read failure: ${found[0].reason}`);
+      assert.equal(found[0].applied, false);
+    } finally {
+      // Restore the mode even when an assertion above throws: a 0o000 file left
+      // behind survives the temp-dir cleanup and poisons every later run.
+      fs.chmodSync(file, 0o600);
     }
-    const found = laneHandoffs(dir);
-    assert.equal(found.length, 1);
-    assert.equal(found[0].unparseable, true);
-    assert.ok(/^unreadable: /.test(found[0].reason), `reason names the read failure: ${found[0].reason}`);
-    assert.equal(found[0].applied, false);
-    fs.chmodSync(file, 0o600);
   });
 
   it('a well-formed handoff is unchanged and carries unparseable: false', () => {

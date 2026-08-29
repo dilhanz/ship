@@ -235,6 +235,8 @@ function cachedBaseRef(cwd) {
  * @returns {'done'|'awaiting-merge'|'inconclusive'|'no-stamp'}
  */
 function archiveMergeStatus(cwd, slug) {
+  if (!isValidSlug(slug)) return 'no-stamp'; // not a slug — never let it reach path.join
+
   try {
     const { content } = readArtifact(path.join(cwd, '.planning', 'archive', slug, 'VERIFY.md'));
     if (content === null) return 'no-stamp'; // absent OR unreadable
@@ -2035,12 +2037,11 @@ function lintState(roadmapContent, statusContent) {
       }
 
       const lines = statusContent.split('\n');
-      let start = 0;
-      if (/^---\r?\n/.test(statusContent)) {
-        for (let i = 1; i < lines.length; i++) {
-          if (lines[i].trim() === '---') { start = i + 1; break; }
-        }
-      }
+      // Derived from the *same* frontmatter() match the key scan above used,
+      // never from a second delimiter walk: a lone `---` rule with no closing
+      // delimiter is not frontmatter, and two walks that disagree about that
+      // would report the preamble twice over or not at all.
+      const start = block === null ? 0 : block.split('\n').length + 2;
       for (let i = start; i < lines.length; i++) {
         const trimmed = lines[i].trim();
         if (trimmed.startsWith('## ')) break; // the first declared section ends the preamble
