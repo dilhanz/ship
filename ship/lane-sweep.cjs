@@ -113,7 +113,11 @@ function parseHandoff(content) {
   if (!match) return null;
 
   const field = (name) => {
-    const m = match[1].match(new RegExp(`^${name}:\\s*(.*)$`, 'm'));
+    // `[ \t]*`, never `\s*`: `\s` matches `\n`, so a key with an empty value
+    // would swallow the following line — `feature:\napplied: no` parsing as
+    // feature `"applied: no"`, an invented feature name reported as a clean
+    // handoff. A field value can never leave its own line.
+    const m = match[1].match(new RegExp(`^${name}:[ \\t]*(.*)$`, 'm'));
     return m ? m[1].trim().replace(/^["']|["']$/g, '') : null;
   };
 
@@ -151,7 +155,7 @@ function parseHandoff(content) {
 function handoffFailureReason(content) {
   const match = String(content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return 'no frontmatter block';
-  const feature = match[1].match(/^feature:\s*(.*)$/m);
+  const feature = match[1].match(/^feature:[ \t]*(.*)$/m); // same line-bound rule as parseHandoff
   const value = feature ? feature[1].trim().replace(/^["']|["']$/g, '') : '';
   if (!value) return 'frontmatter missing feature:';
   return null;
