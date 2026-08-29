@@ -1086,6 +1086,91 @@ function generateDashboard(root, laneData) {
     .replace('<!-- PM:DECISIONS -->', () => decisionsHtml);
 }
 
+/** The verdict vocabulary the ledger's `Verify` cell may record verbatim. */
+const VERIFY_VERDICTS = new Set(['PASS', 'FAIL', 'INCONCLUSIVE', 'DEFERRED']);
+
+/**
+ * Extract a verification verdict from a VERIFY.md body.
+ *
+ * Ship's agents write four verdict shapes, not one: the template's
+ * `**Overall Status:** X`, a bare `**Status:** X`, `**Verdict:** X` (and its
+ * `**Verdict: X**` variant), and a `## Verdict` section. Reading only the
+ * first recorded `unknown` for the other three, which is a confidently wrong
+ * answer wearing an admitted gap's clothes.
+ *
+ * Precedence, first match wins: Overall Status, the Stage-1 `IN PROGRESS`
+ * flush marker, a bare Status line, a Verdict line, a `## Verdict` section.
+ * The flush marker deliberately outranks the bare Status match (it *is* a
+ * Status line) but loses to Overall Status, so a report that has since been
+ * completed reads as complete.
+ *
+ * The captured text normalises to the documented enum by its leading token;
+ * the qualifier after it becomes `note`. An unrecognised verdict yields
+ * `unknown` with the whole raw text as the note — the unrecognised string is
+ * preserved rather than discarded, so the gap shows what was on disk.
+ *
+ * Pure; never throws. A null, empty, or non-string argument yields
+ * `{ verify: 'unknown', note: '' }`.
+ *
+ * @param {string} verifyContent
+ * @returns {{ verify: string, note: string }}
+ */
+function extractVerdict(verifyContent) {
+  const unknown = { verify: 'unknown', note: '' };
+  try {
+    if (typeof verifyContent !== 'string' || verifyContent === '') return unknown;
+
+    // `\b`, not `\s*$`: the verifier's Stage-1 flush line is
+    // `**Status:** IN PROGRESS — Stage 1 only`, which an end-anchor rejects.
+    const shapes = [
+      /^\*\*Overall Status:\*\*\s*(.+)$/m,
+      /^\*\*Status:\*\*\s*(IN PROGRESS\b.*)$/m,
+      /^\*\*Status:\*\*\s*(.+)$/m,
+      /^\*\*Verdict:\*{0,2}\s*(.+)$/m
+    ];
+
+    let raw = null;
+    for (const shape of shapes) {
+      const match = verifyContent.match(shape);
+      if (match) {
+        raw = match[1];
+        break;
+      }
+    }
+
+    if (raw === null) {
+      // `## Verdict` section — its first non-empty, non-heading line.
+      for (const line of sectionBody(verifyContent, 'Verdict').split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed === '' || trimmed.startsWith('#')) continue;
+        raw = trimmed;
+        break;
+      }
+    }
+
+    if (raw === null) return unknown;
+
+    // Surrounding emphasis and code markers are decoration, never verdict.
+    const text = String(raw).replace(/^[\s*`]+/, '').replace(/[\s*`]+$/, '').trim();
+    if (text === '') return unknown;
+
+    /** Strip an em dash / hyphen / colon separator off the front of a qualifier. */
+    const qualifier = rest => rest.replace(/^[\s–—:-]+/, '').trim();
+
+    if (/^IN[\s-]*PROGRESS\b/i.test(text)) {
+      return { verify: 'in-progress', note: qualifier(text.replace(/^IN[\s-]*PROGRESS\b/i, '')) };
+    }
+
+    const parts = text.match(/^(\S+)([\s\S]*)$/);
+    const token = parts[1].replace(/[.,:;]+$/, '').toUpperCase();
+    if (!VERIFY_VERDICTS.has(token)) return { verify: 'unknown', note: text };
+
+    return { verify: token, note: qualifier(parts[2]) };
+  } catch (e) {
+    return unknown; // an unparseable report is an unknown one, never a crash
+  }
+}
+
 /**
  * Harvest one feature's on-disk artifacts into a ledger record.
  *
@@ -1102,10 +1187,13 @@ function generateDashboard(root, laneData) {
  * - `slug` — the feature slug, as given.
  * - `shipped` — VERIFY.md's `**Verified:**` date, else `today`.
  * - `profile` — CONTEXT.md frontmatter `profile:`, else `unknown`.
- * - `verify` — VERIFY.md's `**Overall Status:**` uppercased; `in-progress`
- *   for a report still in flight; `unknown` when the file has neither line;
- *   `none` when the file is absent (a feature that reached `done` with no
- *   verify gate — recorded, never suppressed).
+ * - `verify` — the verdict `extractVerdict` reads from VERIFY.md, normalised
+ *   to `PASS | FAIL | INCONCLUSIVE | DEFERRED | in-progress`; `unknown` when
+ *   the file carries no recognisable verdict; `none` when the file is absent
+ *   (a feature that reached `done` with no verify gate — recorded, never
+ *   suppressed).
+ * - `verifyNote` — the qualifier trailing the verdict (`''` when there is
+ *   none), so the counted cell stays an enum without discarding the prose.
  * - `unresolvedCarried` — critical/high REVIEW.md findings still marked
  *   unresolved; exactly the set the verifier must carry into Stage 2b.
  * - `planRounds` — plan-revision rounds, from PLAN.md's `**Rounds:**` line.
@@ -1126,6 +1214,7 @@ function generateDashboard(root, laneData) {
  * @param {string} slug
  * @param {string} today - YYYY-MM-DD
  * @returns {{ slug: string, shipped: string, profile: string, verify: string,
+ *             verifyNote: string,
  *             unresolvedCarried: number, planRounds: number|string,
  *             fixRounds: number,
  *             findings: { critical: number, high: number, medium: number, low: number },
@@ -1224,18 +1313,12 @@ function harvestFeature(cwd, slug, today) {
     const verifyDoc = verifyRead.content;
     let verify = 'none';
     let shipped = today;
+    let verifyNote = '';
     let verifyToken = absentToken(verifyRead, 'VERIFY.md');
     if (verifyDoc !== null) {
-      const overall = verifyDoc.match(/^\*\*Overall Status:\*\*\s*(.+)$/m);
-      if (overall) {
-        verify = overall[1].trim().toUpperCase();
-        // `\b`, not `\s*$`: the verifier's Stage-1 flush line is
-        // `**Status:** IN PROGRESS — Stage 1 only`, which an end-anchor rejects.
-      } else if (/^\*\*Status:\*\*\s*IN PROGRESS\b/m.test(verifyDoc)) {
-        verify = 'in-progress';
-      } else {
-        verify = 'unknown';
-      }
+      const verdict = extractVerdict(verifyDoc);
+      verify = verdict.verify;
+      verifyNote = verdict.note;
       const verified = verifyDoc.match(/^\*\*Verified:\*\*\s*(.+)$/m);
       if (verified && verified[1].trim() !== '') shipped = verified[1].trim();
       verifyToken = /^\*\*Head:\*\*/m.test(verifyDoc) ? 'VERIFY.md' : 'VERIFY.md (no head)';
@@ -1246,6 +1329,7 @@ function harvestFeature(cwd, slug, today) {
       shipped,
       profile,
       verify,
+      verifyNote,
       unresolvedCarried,
       planRounds,
       fixRounds,
@@ -1528,7 +1612,7 @@ function runHarvest(cwd, root, slugs, today) {
   }
 }
 
-module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
+module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, extractVerdict, harvestFeature, LEDGER_COLUMNS, ledgerSlugs, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
 
 if (require.main === module) {
   try {
