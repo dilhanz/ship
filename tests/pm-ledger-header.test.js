@@ -249,15 +249,29 @@ describe('appendLedger — the append path renders to the file\'s own header', (
     assert.equal(named['Verify note'], 'criterion 3 / criterion 4 unproven');
   });
 
-  it('renders an absent note and an absent outcome as `unknown`', () => {
+  // The two absent cases are deliberately NOT the same word. A verdict with no
+  // qualifier has nothing to say (`none`); an archive with no outcome stamp is
+  // a genuine gap (`unknown`). Collapsing them would reintroduce the exact
+  // "clean run vs. no record" ambiguity this ledger is built to avoid.
+  it('renders an absent note as `none` and an absent outcome as `unknown`', () => {
     const root = tmpRoot();
     fs.mkdirSync(path.join(root, '.project-manager'), { recursive: true });
 
     appendLedger(root, [record({ verifyNote: '', outcome: 'unknown' })], '2026-02-02');
 
     const { named } = lastRow(readLedger(root));
-    assert.equal(named['Verify note'], 'unknown');
+    assert.equal(named['Verify note'], 'none');
     assert.equal(named.Outcome, 'unknown');
+  });
+
+  it('keeps a real note that happens to read `unknown` distinguishable from an absent one', () => {
+    const root = tmpRoot();
+    fs.mkdirSync(path.join(root, '.project-manager'), { recursive: true });
+
+    appendLedger(root, [record({ verifyNote: 'unknown' })], '2026-02-02');
+
+    const { named } = lastRow(readLedger(root));
+    assert.equal(named['Verify note'], 'unknown');
   });
 });
 

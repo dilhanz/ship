@@ -351,4 +351,33 @@ describe('runHarvest — narrow re-admission of unreadable verdicts', () => {
     assert.equal(r.stderr, '');
     assert.equal(fs.existsSync(path.join(dir, '.project-manager')), false);
   });
+
+  // The `Verify note` vocabulary changed after rows were already on disk:
+  // an absent qualifier used to render `unknown` and now renders `none`. Both
+  // are the same claim, so a legacy row must not be rewritten (and re-dated)
+  // just to restate it — otherwise the first run after the rename would churn
+  // every eligible row in every project's ledger.
+  it('does not rewrite a legacy row whose Verify note reads `unknown` for an absent note', () => {
+    const root = tmpRepo();
+    fs.mkdirSync(path.join(root, '.project-manager'), { recursive: true });
+    const archive = path.join(root, '.planning', 'archive', 'legacy-note');
+    fs.mkdirSync(archive, { recursive: true });
+    fs.writeFileSync(path.join(archive, 'VERIFY.md'), '# nothing recognisable\n');
+
+    const headers = [
+      'Feature', 'Shipped', 'Profile', 'Outcome', 'Verify', 'Verify note',
+      'Unresolved carried', 'Plan rounds', 'Fix rounds', 'Findings (C/H/M/L)', 'Phases', 'Artifacts',
+    ];
+    const ledger = path.join(root, '.project-manager', 'LEDGER.md');
+    fs.writeFileSync(
+      ledger,
+      `---\nupdated: "2026-01-01"\n---\n\n# Ledger\n\nn\n\n| ${headers.join(' | ')} |\n` +
+        `|${headers.map(() => '---').join('|')}|\n` +
+        '| legacy-note | 2026-01-01 | standard | unknown | unknown | unknown | 0 | 1 | 0 | 0/0/0/0 | 1 | VERIFY.md |\n',
+    );
+
+    const before = fs.readFileSync(ledger, 'utf8');
+    runHarvest(root, root, [], '2026-09-09');
+    assert.equal(fs.readFileSync(ledger, 'utf8'), before, 'a note-vocabulary difference alone rewrote the row');
+  });
 });
