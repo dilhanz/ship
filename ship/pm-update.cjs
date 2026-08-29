@@ -130,10 +130,97 @@ function frontmatter(content) {
 }
 
 /**
+ * Resolve the base branch ref a merge is measured against, the way
+ * `/ship:finish` picks it: `main` when it exists, else `master`, else null.
+ * The remote is preferred when it resolves (`origin/{base}`), because a lane's
+ * local base can be arbitrarily stale — and a stale local base can only ever
+ * produce `awaiting-merge`, never a false `done`.
+ *
+ * Every git call is a captured `spawnSync`, so nothing reaches stdout or
+ * stderr and the caller's exit code is never touched. Never throws: a null
+ * result, a non-zero status, an absent git binary, or any exception means the
+ * ref did not resolve.
+ *
+ * @param {string} cwd
+ * @returns {string|null} the base ref, or null when there is none
+ */
+function resolveBaseRef(cwd) {
+  try {
+    const resolves = ref => {
+      const run = spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], { cwd, encoding: 'utf8' });
+      return !!run && run.status === 0;
+    };
+
+    let base = null;
+    if (resolves('refs/heads/main')) base = 'main';
+    else if (resolves('refs/heads/master')) base = 'master';
+    if (base === null) return null;
+
+    return resolves(`refs/remotes/origin/${base}`) ? `origin/${base}` : base;
+  } catch (e) {
+    return null; // silent by contract
+  }
+}
+
+/**
+ * Test whether an archived feature's work actually reached the base branch,
+ * anchored on the `**Head:**` commit the verifier stamps into VERIFY.md.
+ *
+ * Archiving is a directory move, not a merge: `/ship:finish` Option 1 opens a
+ * PR and the session ends, so nothing comes back later to record the merge.
+ * Git ancestry self-heals instead — the answer flips to `done` on the first
+ * run after the PR lands, and the stamp survives branch deletion, which a
+ * branch-name lookup would not.
+ *
+ * Returns one of four values rather than a nullable status, so the gating
+ * decision is testable in isolation from mappedStatus's other branches:
+ *
+ * - `'no-stamp'`   — no VERIFY.md, unreadable, or no `**Head:**` line. Not
+ *                    evidence *against* a merge (~60 archives predate the
+ *                    stamp), so the caller keeps today's `done`.
+ * - `'done'`       — the stamped head is an ancestor of the base.
+ * - `'awaiting-merge'` — it is not.
+ * - `'inconclusive'` — no base ref, an unresolvable commit, or any git
+ *                    failure. The caller leaves the row unchanged; the safe
+ *                    direction is never to claim `done`.
+ *
+ * Silent on both streams; never throws.
+ *
+ * @param {string} cwd
+ * @param {string} slug
+ * @returns {'done'|'awaiting-merge'|'inconclusive'|'no-stamp'}
+ */
+function archiveMergeStatus(cwd, slug) {
+  try {
+    const { content } = readArtifact(path.join(cwd, '.planning', 'archive', slug, 'VERIFY.md'));
+    if (content === null) return 'no-stamp'; // absent OR unreadable
+
+    const stamp = content.match(/^\*\*Head:\*\*\s*([0-9a-fA-F]{7,40})\b/m);
+    if (!stamp) return 'no-stamp';
+
+    const base = resolveBaseRef(cwd);
+    if (base === null) return 'inconclusive';
+
+    const run = spawnSync('git', ['merge-base', '--is-ancestor', stamp[1], base], { cwd, encoding: 'utf8' });
+    if (!run) return 'inconclusive';
+    if (run.status === 0) return 'done';
+    if (run.status === 1) return 'awaiting-merge';
+    return 'inconclusive'; // 128 for an unresolvable commit, null for a missing binary
+  } catch (e) {
+    return 'inconclusive'; // silent by contract
+  }
+}
+
+/**
  * The pm-state status mapping table, mechanically applied.
  * Returns the status the row should record, or null for "unchanged"
- * (recorded `blocked` on an active feature, slug found nowhere, or a slug
- * that is not a usable path segment). Never invents a status.
+ * (recorded `blocked` on an active feature, slug found nowhere, a slug that is
+ * not a usable path segment, or an archive whose merge test was inconclusive).
+ * Never invents a status.
+ *
+ * An archived slug resolves through archiveMergeStatus, so a feature whose
+ * stamped head has not reached the base branch records `awaiting-merge`
+ * instead of `done`. A stamp-less archive still records `done`.
  *
  * @param {string} cwd
  * @param {string} slug
@@ -144,7 +231,13 @@ function mappedStatus(cwd, slug, recorded) {
   if (!isValidSlug(slug)) return null; // not a slug — never let it reach path.join
 
   try {
-    if (fs.existsSync(path.join(cwd, '.planning', 'archive', slug))) return 'done';
+    if (fs.existsSync(path.join(cwd, '.planning', 'archive', slug))) {
+      // Archived is where the work went, not proof it merged — ask git.
+      const merge = archiveMergeStatus(cwd, slug);
+      if (merge === 'awaiting-merge') return 'awaiting-merge';
+      if (merge === 'inconclusive') return null; // unchanged; never invented
+      return 'done'; // 'done', and 'no-stamp' keeps today's answer byte-for-byte
+    }
   } catch (e) {
     // treat an unreadable archive as absent
   }
@@ -256,7 +349,7 @@ function stampFirstSeen(content, today) {
 /**
  * The "work on next" selection rule — the single home of the rule stated in
  * skills/pm-state/SKILL.md (PM:NEXT): the highest-priority non-done,
- * non-blocked item whose Depends-on items are all done.
+ * non-blocked, non-awaiting-merge item whose Depends-on items are all done.
  *
  * - `—`/`-`/empty Depends on means independent; otherwise every comma-separated
  *   name must match some row's Item (exact, case-sensitive) whose Status is
@@ -282,7 +375,9 @@ function selectNext(rows) {
 
   for (const row of rows) {
     const status = (row.recorded || '').toLowerCase();
-    if (status === 'done' || status === 'blocked') continue;
+    // `awaiting-merge` is archived work waiting on a PR — finished, so it can
+    // no more be "worked on next" than `done` can.
+    if (status === 'done' || status === 'blocked' || status === 'awaiting-merge') continue;
 
     const depends = row.cells['Depends on'];
     if (!empty(depends)) {
@@ -1301,7 +1396,7 @@ function runHarvest(cwd, root, slugs, today) {
   }
 }
 
-module.exports = { parseRoadmap, mappedStatus, applyStatusUpdates, stampFirstSeen, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
+module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
 
 if (require.main === module) {
   try {
