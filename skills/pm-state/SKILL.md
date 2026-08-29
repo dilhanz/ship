@@ -27,7 +27,7 @@ This document is the single source of truth for their formats. `/ship:pm`, `/shi
 YAML frontmatter with exactly two fields (`project`, `updated`), then a `## Milestones` section. Each milestone is a `### M{n} — {Name} (status: ...)` heading followed by a one-line `Goal:` and a backlog table.
 
 - Milestone status ∈ `active | pending | done`
-- Item **Status** ∈ `pending | in-progress | awaiting-merge | blocked | done`. `awaiting-merge` sits between `in-progress` and `done`: the feature is archived, but its VERIFY.md `**Head:**` commit is not yet an ancestor of the base branch — built and verified, not yet on `main`. It is written only by `pm-update.cjs`, never by hand, and it self-heals: the next reconcile after the merge flips it to `done`.
+- Item **Status** ∈ `pending | in-progress | awaiting-merge | blocked | done`. `awaiting-merge` sits between `in-progress` and `done` and means git can **positively prove** the work has not landed: the feature is archived, its VERIFY.md `**Head:**` commit is not an ancestor of the base branch, **and** a live remote branch still contains that commit. It is written only by `pm-update.cjs`, never by hand. It self-heals wherever the stamped commit survives the merge — merge commits, fast-forwards, and rebases that keep it reachable all flip the row to `done` on the next reconcile. A **squash merge replaces the commit**, so the stamped head never becomes an ancestor; that case reads as *unchanged*, not as `awaiting-merge`, because a non-ancestor result alone is not evidence the work is unmerged.
 - **Priority** ∈ `P0 | P1 | P2 | P3`. The key: **P0** live / customer-facing risk · **P1** blocks confidence in shipped work · **P2** strategic feature work · **P3** nice to have.
 - **Size** ∈ `S | M | L | XL` by plan effort, or `—` when unsized. Never omit the cell — a row whose cell count differs from the header is dropped by the nudge hook.
 - **Depends on** — comma-separated item names from any milestone, or `—` when independent
@@ -428,7 +428,9 @@ How Ship reality maps onto a backlog item's recorded Status. `ship/pm-update.cjs
 |--------------|---------------------|
 | Feature in `.planning/archive/{slug}/` with **no** VERIFY.md `**Head:**` stamp, or CONTEXT.md status `done` | `done` |
 | Feature archived and its VERIFY.md `**Head:**` commit **is** an ancestor of the base branch | `done` |
-| Feature archived and its VERIFY.md `**Head:**` commit is **not** an ancestor of the base branch | `awaiting-merge` |
+| Row is recorded `done` and its feature is archived | unchanged — the merge test never moves a `done` backwards |
+| Feature archived, `**Head:**` **not** an ancestor, and a live remote branch still contains that commit | `awaiting-merge` |
+| Feature archived, `**Head:**` **not** an ancestor, and no remote branch corroborates it | unchanged — never invented |
 | Feature archived, stamp present, but the base ref is unresolvable or git is unavailable | unchanged — never invented |
 | Feature exists with any other status (`brainstormed` … `built`) | `in-progress` |
 | Recorded status is `blocked` and feature is active | unchanged — `blocked` is a PM judgment, never auto-overridden |
@@ -440,3 +442,9 @@ the stamp reconciles exactly as it did before: a stamp-less archive is not evide
 merge test is gated on the stamp. The base branch is resolved the way `/ship:finish` resolves it — `main` if
 it exists, else `master`, preferring `origin/{base}` when that ref resolves — so a stale local base can only
 produce `awaiting-merge`, never a false `done`.
+
+The merge test can only ever **withhold** a `done` — it never invents one, and it never revokes one. A row already
+recorded `done` is left alone whatever git answers, because a downgrade would need positive evidence the work was
+*un*-shipped, which nothing here produces. The non-merge probe is local (`git branch -r --contains {head}`, filtered
+to remote branches that are not the base itself): no network call, no fetch. A clone that has never fetched, a repo
+with no remotes, or a missing git binary simply answers "unchanged".
