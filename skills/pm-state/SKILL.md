@@ -317,7 +317,7 @@ Never hand-edited.
 2. Replace each placeholder comment — `<!-- PM:PROJECT -->`, `<!-- PM:UPDATED -->`, `<!-- PM:NEXT -->`, `<!-- PM:INFLIGHT -->`, `<!-- PM:MILESTONES -->`, `<!-- PM:BLOCKERS -->`, `<!-- PM:DECISIONS -->` — with HTML generated **only** from the state files:
    - **PM:PROJECT** — the `project` frontmatter value.
    - **PM:UPDATED** — "Last synced {updated}".
-   - **PM:NEXT** — the recommended next item: highest-priority non-done, non-blocked item whose Depends-on items are all done; include its milestone and priority. `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next` prints the same selection as JSON and is the single home of this rule.
+   - **PM:NEXT** — the recommended next item: highest-priority non-done, non-blocked, non-`awaiting-merge` item whose Depends-on items are all finished (`done` or `awaiting-merge`); include its milestone and priority. `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --next` prints the same selection as JSON and is the single home of this rule.
    - **PM:INFLIGHT** — STATUS.md's `## In flight` entries. "No in-flight work recorded" when STATUS.md is absent or the section is empty.
    - **PM:MILESTONES** — one card per milestone: name, status badge, goal, done/total item count with a progress bar (inline styles or template CSS classes only), and the item rows, which now render Size and Source cells too.
    - **PM:BLOCKERS** — every item with Status `blocked` (item name, milestone), plus its reasoning from STATUS.md's `## Blocked` section when a matching entry exists. "No blockers" when none.
@@ -343,7 +343,7 @@ is not. The shape of it:
   without evidence there is nothing to promote on. `unknown` blast radius also sets `needsEvidence`, but
   only gates the blast-radius clauses.
 - **Blast-radius clauses.** `users` + `proven` → P0; `users` + `suspected` → P1; `contributors` + `proven` → P1.
-- **Unblocks clause.** Two or more non-done items depend on this one, or one such dependent is
+- **Unblocks clause.** Two or more unfinished items depend on this one, or one such dependent is
   `in-progress` → promote one level, floored at P1. `Unblocks` is computed at read time by inverting the
   `Depends on` graph (exact-name, case-sensitive — the same convention PM:NEXT uses) and is stored nowhere.
 - **`derived` is the best (lowest-numbered) clause that fired**, and the recorded priority is always a

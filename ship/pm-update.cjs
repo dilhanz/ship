@@ -660,7 +660,7 @@ const CONFIDENCE_VALUES = new Set(['proven', 'suspected']);
  *    - P0 for blast radius `users` with confidence `proven`
  *    - P1 for blast radius `users` with confidence `suspected`
  *    - P1 for blast radius `contributors` with confidence `proven`
- *    - one level up, floored at P1, when 2+ non-done items depend on this one
+ *    - one level up, floored at P1, when 2+ unfinished items depend on this one
  *      or one of them is in progress. This clause is structural — it reads the
  *      dependency graph, so an unknown blast radius does not block it.
  * 3. `derived` is the strongest (lowest-rank) candidate.
@@ -724,7 +724,7 @@ function derivePriority(row, unblocks) {
     if (count >= 2 || inProgress) {
       candidates.push(Math.max(baseRank - 1, 1));
       reasons.push(
-        `unblocks ${count} non-done item${count === 1 ? '' : 's'}${inProgress ? ', 1 in flight' : ''} → promote one level (floor P1)`
+        `unblocks ${count} unfinished item${count === 1 ? '' : 's'}${inProgress ? ', 1 in flight' : ''} → promote one level (floor P1)`
       );
     }
 
@@ -1701,7 +1701,7 @@ function appendLedger(root, records, today) {
       content =
         `---\nupdated: "${today}"\n---\n\n# Ledger\n\n` +
         'Mechanically harvested by `ship/pm-update.cjs` when a feature reaches `done` — one row per feature, keyed on slug.\n' +
-        'Append-only: a recorded row is never rewritten, and this file is never hand-edited.\n\n' +
+        'Append-only apart from one case: a row whose `Verify` cell reads `unknown` or `in-progress` may be re-harvested in place. Every other recorded row is never rewritten, and this file is never hand-edited.\n\n' +
         `${header}\n${separator}\n${rows}\n`;
     } else {
       content = `${existing.trimEnd()}\n${rows}\n`;
