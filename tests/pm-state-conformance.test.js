@@ -153,7 +153,7 @@ describe('pm-state format — the committed fixture conforms', () => {
       const label = cells[0];
       assert.equal(cells.length, header.length, `row "${label}" has header-width cells`);
       const at = (name) => cells[header.indexOf(name)];
-      assert.match(at('Status'), /^(pending|in-progress|blocked|done)$/, `row "${label}" status enum`);
+      assert.match(at('Status'), /^(pending|in-progress|awaiting-merge|blocked|done)$/, `row "${label}" status enum`);
       assert.match(at('Priority'), /^P[0-3]$/, `row "${label}" priority is P0–P3`);
       assert.match(at('Size'), /^(S|M|L|XL|—)$/, `row "${label}" size is S/M/L/XL or em dash`);
       const source = at('Source');
