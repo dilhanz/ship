@@ -284,6 +284,11 @@ function mappedStatus(cwd, slug, recorded) {
  * every other byte of every row stays identical. When at least one cell
  * changed, the frontmatter `updated` value is bumped to today (quoted form).
  *
+ * A row whose `Kind` cell is `debt` is skipped entirely: verification debt
+ * closes when a human says it did, not when the feature it is about lands in
+ * the archive. `work`, an empty cell, and a table with no `Kind` column all
+ * reconcile exactly as they do today.
+ *
  * @param {string} content - ROADMAP.md content
  * @param {string} cwd
  * @param {string[]} slugs - restrict to these slugs; empty means all slugged rows
@@ -296,6 +301,13 @@ function applyStatusUpdates(content, cwd, slugs) {
   for (const row of parseRoadmap(content)) {
     if (row.slugless) continue;
     if (slugs && slugs.length > 0 && !slugs.includes(row.slug)) continue;
+    // A `debt` row keeps its slug for traceability but is never reconciled off
+    // that feature's archive — the archive is what the debt is *about*, so
+    // mapping it would auto-close the row it exists to keep open. Checked
+    // before mappedStatus so a debt row costs no filesystem work. An absent
+    // Kind column (or an empty cell) means every row is `work`, which is
+    // today's behaviour byte-for-byte.
+    if ((row.cells.Kind || '').trim().toLowerCase() === 'debt') continue;
 
     const next = mappedStatus(cwd, row.slug, row.recorded);
     if (next === null) continue;
@@ -359,6 +371,88 @@ function stampFirstSeen(content, today) {
 
   if (!changed) return { content, changed: false };
   return { content: lines.join('\n'), changed: true };
+}
+
+/**
+ * Write each backlog row's `Lane` cell from fleet-sweep ownership.
+ *
+ * The spec has always called `Lane` derived; until now nothing wrote it, and
+ * the drift was corrected by hand. `laneByName` maps a slug to the owning
+ * lane's label; a slug the map does not hold — unowned, or a finished feature
+ * the sweep no longer scans — renders `—`.
+ *
+ * Mirrors stampFirstSeen exactly: the column is located by header *name*, a
+ * table without it is never widened, only the target segment of the raw line
+ * is replaced (so padding elsewhere and CRLF terminators survive), an
+ * already-correct cell is left alone to avoid mtime churn, and the frontmatter
+ * `updated:` value is not bumped — the caller bumps once for all its passes.
+ *
+ * Never throws.
+ *
+ * @param {string} content - ROADMAP.md content
+ * @param {Map<string, string|null>} laneByName
+ * @returns {{ content: string, changed: boolean }}
+ */
+function applyLaneColumn(content, laneByName) {
+  const lines = content.split('\n');
+  const map = laneByName instanceof Map ? laneByName : new Map();
+  let changed = false;
+
+  for (const row of parseRoadmap(content)) {
+    const index = row.headers.indexOf('Lane');
+    if (index === -1) continue; // never widen a table
+    if (row.slugless) continue;
+
+    const owner = map.get(row.slug);
+    const value = typeof owner === 'string' && owner !== '' ? owner : '—';
+    if ((row.cells.Lane || '') === value) continue; // already correct
+
+    const segments = lines[row.lineIndex].split('|');
+    segments[index + 1] = ` ${value} `;
+    lines[row.lineIndex] = segments.join('|');
+    changed = true;
+  }
+
+  if (!changed) return { content, changed: false };
+  return { content: lines.join('\n'), changed: true };
+}
+
+/**
+ * Turn a fleet sweep into the slug → lane-label map applyLaneColumn consumes.
+ *
+ * `sweep()` has already bound each slug to at most one lane, so every feature
+ * still listed under a lane is owned by it. Slugs in `sweepResult.unowned` are
+ * deliberately absent from the map: an ambiguous claim renders `—`, never a
+ * guess at which lane it belongs to.
+ *
+ * The label is the identical `{branch} @ {path}` form stampLane writes and
+ * skills/pm-state/SKILL.md documents, so the two surfaces are comparable
+ * byte-for-byte. Never throws; a null or malformed argument yields an empty
+ * map.
+ *
+ * @param {object|null} sweepResult
+ * @returns {Map<string, string>}
+ */
+function laneOwnershipMap(sweepResult) {
+  const map = new Map();
+  try {
+    const lanes = sweepResult && Array.isArray(sweepResult.lanes) ? sweepResult.lanes : [];
+    for (const lane of lanes) {
+      if (!lane) continue;
+      let branch = typeof lane.branch === 'string' ? lane.branch.trim() : '';
+      if (branch === '' || branch === 'HEAD') branch = 'detached';
+      const lanePath = typeof lane.path === 'string' ? lane.path.replace(/\\/g, '/') : '';
+      const features = Array.isArray(lane.features) ? lane.features : [];
+      for (const feature of features) {
+        const name = feature && feature.name;
+        if (typeof name !== 'string' || name === '') continue;
+        map.set(name, `${branch} @ ${lanePath}`);
+      }
+    }
+  } catch (e) {
+    return map; // never throws
+  }
+  return map;
 }
 
 /**
@@ -1424,7 +1518,7 @@ function runHarvest(cwd, root, slugs, today) {
   }
 }
 
-module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
+module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, harvestFeature, ledgerSlugs, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
 
 if (require.main === module) {
   try {
@@ -1497,13 +1591,29 @@ if (require.main === module) {
       process.exit(0);
     }
 
+    // Fleet sweep — best effort, never fatal, and run once for both readers:
+    // the derived Lane column below and the dashboard's Lanes panel.
+    let laneData = null;
+    try {
+      laneData = require('./lane-sweep.cjs').sweep(cwd);
+    } catch (e) {
+      laneData = null; // absent module or sweep crash → panel degrades
+    }
+
     const original = fs.readFileSync(roadmapPath, 'utf8');
     const updated = applyStatusUpdates(original, cwd, slugs);
     // First-sight stamp runs on the status pass's output, so both edits land
     // in one atomic write and one `updated:` bump.
     const stamped = stampFirstSeen(updated.content, today);
-    const changed = updated.changed || stamped.changed;
-    const content = changed ? bumpUpdated(stamped.content, today) : stamped.content;
+    // Derived Lane column. Skipped entirely when the sweep is unavailable or
+    // errored: writing `—` from a failed sweep would be inventing "unowned",
+    // which is the exact failure class this is here to close.
+    const sweepUsable = laneData !== null && !laneData.error;
+    const laned = sweepUsable
+      ? applyLaneColumn(stamped.content, laneOwnershipMap(laneData))
+      : { content: stamped.content, changed: false };
+    const changed = updated.changed || stamped.changed || laned.changed;
+    const content = changed ? bumpUpdated(laned.content, today) : laned.content;
     if (changed) {
       try {
         writeFileAtomic(roadmapPath, content);
@@ -1511,14 +1621,6 @@ if (require.main === module) {
         process.stderr.write(`pm-update: failed to write ROADMAP.md: ${e.message}\n`);
         process.exit(1);
       }
-    }
-
-    // Fleet sweep for the dashboard's Lanes panel — best effort, never fatal.
-    let laneData = null;
-    try {
-      laneData = require('./lane-sweep.cjs').sweep(cwd);
-    } catch (e) {
-      laneData = null; // absent module or sweep crash → panel degrades
     }
 
     // Always regenerate, even when no row changed, so a stale dashboard heals.
