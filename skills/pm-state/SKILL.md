@@ -446,5 +446,6 @@ produce `awaiting-merge`, never a false `done`.
 The merge test can only ever **withhold** a `done` — it never invents one, and it never revokes one. A row already
 recorded `done` is left alone whatever git answers, because a downgrade would need positive evidence the work was
 *un*-shipped, which nothing here produces. The non-merge probe is local (`git branch -r --contains {head}`, filtered
-to remote branches that are not the base itself): no network call, no fetch. A clone that has never fetched, a repo
+to remote branches that are not the base branch under any remote — a fork's `upstream/main` holding the merged
+commit is the base, not unlanded work): no network call, no fetch. A clone that has never fetched, a repo
 with no remotes, or a missing git binary simply answers "unchanged".

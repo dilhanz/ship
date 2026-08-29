@@ -216,8 +216,12 @@ function cachedBaseRef(cwd) {
  * the work is still sitting on a branch, unlanded.
  *
  * Local-only (`git branch -r --contains` reads `refs/remotes/`, no network).
- * The base itself is excluded in both spellings (`main` and `origin/main`),
- * and symbolic entries (`origin/HEAD -> origin/main`) never count.
+ * The base itself is excluded in both spellings (`main` and `origin/main`)
+ * and under *any* remote: the remote prefix is stripped from each listed ref
+ * and a ref whose branch part equals the base branch is skipped, so a fork's
+ * `upstream/main` — which legitimately contains the merged commit — is never
+ * read as a live branch still holding unlanded work. Symbolic entries
+ * (`origin/HEAD -> origin/main`) never count either.
  *
  * Every other outcome — no run, non-zero status, empty stdout, an absent git
  * binary, any exception — is `false`, so this can only ever *withhold* `done`,
@@ -234,10 +238,18 @@ function remoteBranchStillHolds(cwd, head, base) {
     if (!run || run.status !== 0 || typeof run.stdout !== 'string') return false;
 
     const excluded = new Set([base, `origin/${base}`]);
+    // `main` for a base of either `main` or `origin/main`.
+    const baseBranch = String(base || '').replace(/^[^/]+\//, '');
+    const branchPart = name => name.replace(/^[^/]+\//, '');
     return run.stdout
       .split('\n')
       .map(line => line.replace(/^[*+\s]+/, '').trim())
-      .some(name => name !== '' && !name.includes('->') && !excluded.has(name));
+      .some(name =>
+        name !== '' &&
+        !name.includes('->') &&
+        !excluded.has(name) &&
+        !(baseBranch !== '' && branchPart(name) === baseBranch)
+      );
   } catch (e) {
     return false; // silent by contract
   }
