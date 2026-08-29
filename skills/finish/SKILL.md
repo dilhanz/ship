@@ -128,6 +128,7 @@ This skill has no Write or Edit tool, so the stamp goes through Bash. Replace an
 CTX=".planning/features/{feature-name}/CONTEXT.md"
 node -e '
   const fs = require("fs"), [p, v] = process.argv.slice(1);
+  if (!v) process.exit(1);
   const s = fs.readFileSync(p, "utf8");
   const m = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!m) process.exit(1);
@@ -140,7 +141,7 @@ node -e '
 ' "$CTX" "$PR_URL" && grep -n 'pr: ' "$CTX"
 ```
 
-A failed or impossible stamp is **not fatal** — report the failure, leave the field absent, and let the archive proceed. A CONTEXT.md with no leading frontmatter block exits non-zero and is left byte-identical; that is a recorded gap, not a reason to block finishing.
+A failed or impossible stamp is **not fatal** — report the failure, leave the field absent, and let the archive proceed. An empty or unavailable URL (neither `gh pr create` nor the `gh pr view` fallback produced one) exits non-zero and writes nothing: an absent field is a recorded gap, whereas a literal `pr: ` line with no value would be a false record that the trailing `grep` would read back as success. A CONTEXT.md with no leading frontmatter block behaves the same way — exits non-zero, left byte-identical.
 
 Option 2 and Option 3 open no PR and stamp nothing.
 
