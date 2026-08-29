@@ -137,9 +137,25 @@ describe('legacy install-tree guard vs. the installer it guards against', () => 
     );
   });
 
-  it('the real repo tree carries no .claude entry other than the preserved memory', () => {
-    const entries = fs.readdirSync(path.join(ROOT, '.claude'));
-    const unexpected = entries.filter((e) => !PRESERVED.has(e) && e !== 'settings.local.json');
-    assert.deepEqual(unexpected, [], `.claude/ holds unexpected entries: ${unexpected.join(', ')}`);
+  // Measured against what install.js actually wrote in the sandbox rather than
+  // a hardcoded allowlist. That is both stricter and looser in the right
+  // directions: a fifth install destination is caught the moment the installer
+  // grows one (failure mode 1 above), while a developer-local entry the
+  // installer never writes — `.claude/worktrees/` from a Ship lane, the
+  // harness's `settings.local.json` — is not a fossil and must not red the
+  // suite. An allowlist had to be edited every time the working tree grew a
+  // legitimate directory, which is how this assertion came to be reported as
+  // an environmental failure two verification rounds running.
+  it('the real repo tree carries no .claude entry that install.js writes', () => {
+    const installed = fs
+      .readdirSync(path.join(sandbox, '.claude'))
+      .filter((e) => !PRESERVED.has(e));
+    const present = new Set(fs.readdirSync(path.join(ROOT, '.claude')));
+    const fossils = installed.filter((e) => present.has(e));
+    assert.deepEqual(
+      fossils,
+      [],
+      `.claude/ holds legacy install fossils: .claude/${fossils.join(', .claude/')}`,
+    );
   });
 });
