@@ -103,7 +103,7 @@ Run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" --evidence` and work from i
 
 Then run `--debt` and `--lint`, which is where grooming gets its new material:
 
-- Each `--debt` entry is a proposed `Kind: debt` backlog row. Check it against the backlog first — the debt may already be recorded, or the feature may since have been re-verified. Propose the survivors with their ledger-row `Source`; write only the ones the user accepts. A `debt` row is skipped by reconciliation entirely, so it closes only when a human sets the cell — that is the point, and it is why it must never be created on your own initiative.
+- Each `--debt` entry is a proposed `Kind: debt` backlog row. **Never append one to a backlog table that has no `Kind` column** — a row with an extra cell is dropped by every reader on width mismatch, and one without the cell reconciles as `work` and auto-closes off the archive of the very feature meant to discharge it. Accepting a debt proposal against a narrower table requires growing it through `/ship:pm-sync` first; say so and stop there. Check it against the backlog first — the debt may already be recorded, or the feature may since have been re-verified. Propose the survivors with their ledger-row `Source`; write only the ones the user accepts. A `debt` row is skipped by reconciliation entirely, so it closes only when a human sets the cell — that is the point, and it is why it must never be created on your own initiative.
 - Each `--lint` finding is a repair proposal: spill an over-cap `Source` to a DECISIONS.md entry or a `file:line` that holds the detail, move stranded narrative into the section it belongs to, and remove or justify an undeclared STATUS.md frontmatter key. Never truncate a cell silently.
 
 Report what moved and why.
