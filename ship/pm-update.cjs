@@ -1875,7 +1875,99 @@ function debtProposals(ledgerContent) {
   return proposals;
 }
 
-module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, extractVerdict, harvestFeature, LEDGER_COLUMNS, ledgerSlugs, ledgerRows, ledgerHeaders, hasLedgerHeader, renderLedgerRow, appendLedger, reharvestLedger, runHarvest, debtProposals };
+/**
+ * The `Source` soft cap, in characters.
+ *
+ * Fixed rather than configurable: measured against this repo's own roadmap the
+ * longest citation is 115 characters and nothing is over cap, so a longer cell
+ * is a citation that should point at a DECISIONS.md entry or a `file:line`
+ * instead of inlining the detail.
+ */
+const SOURCE_CAP = 240;
+
+/** STATUS.md's declared frontmatter keys — the spec declares exactly one. */
+const STATUS_DECLARED_KEYS = new Set(['updated']);
+
+/**
+ * Lint the two PM state files that decay silently.
+ *
+ * Three axes, each an array so an empty one reads as "checked, nothing found"
+ * rather than as an absent answer:
+ *
+ * - `sourceOverCap` — backlog `Source` cells longer than {@link SOURCE_CAP}.
+ *   A table with no `Source` column contributes nothing.
+ * - `statusUndeclaredKeys` — top-level STATUS.md frontmatter keys other than
+ *   `updated`, the one key the spec declares.
+ * - `statusNarrativeBeforeSections` — non-blank lines between the frontmatter
+ *   and the first `## ` section. The `# {project} — Status` H1 is required by
+ *   the spec and is never narrative, so it is excluded.
+ *
+ * Pure and never throws: a null, absent or non-string argument contributes an
+ * empty array for its own axis and nothing else.
+ *
+ * @param {string} roadmapContent
+ * @param {string} statusContent
+ * @returns {{ sourceOverCap: Object[], statusUndeclaredKeys: Object[], statusNarrativeBeforeSections: Object[] }}
+ */
+function lintState(roadmapContent, statusContent) {
+  const result = { sourceOverCap: [], statusUndeclaredKeys: [], statusNarrativeBeforeSections: [] };
+
+  try {
+    if (typeof roadmapContent === 'string') {
+      for (const row of parseRoadmap(roadmapContent)) {
+        if (!row.headers.includes('Source')) continue; // no column, nothing to lint
+        const source = String(row.cells.Source || '');
+        if (source.length <= SOURCE_CAP) continue;
+        result.sourceOverCap.push({
+          item: row.cells.Item || null,
+          milestone: row.milestone || null,
+          length: source.length,
+          source
+        });
+      }
+    }
+  } catch (e) {
+    // a damaged roadmap lints as clean on this axis — never a crash
+  }
+
+  try {
+    if (typeof statusContent === 'string') {
+      const block = frontmatter(statusContent);
+      if (block !== null) {
+        for (const line of block.split('\n')) {
+          if (/^\s*$/.test(line)) continue; // blank
+          if (/^\s*#/.test(line)) continue; // comment
+          if (/^\s/.test(line)) continue; // indented continuation of the key above
+          const match = line.match(/^([A-Za-z0-9_-]+):/);
+          if (!match) continue;
+          if (STATUS_DECLARED_KEYS.has(match[1])) continue;
+          result.statusUndeclaredKeys.push({ key: match[1] });
+        }
+      }
+
+      const lines = statusContent.split('\n');
+      let start = 0;
+      if (/^---\r?\n/.test(statusContent)) {
+        for (let i = 1; i < lines.length; i++) {
+          if (lines[i].trim() === '---') { start = i + 1; break; }
+        }
+      }
+      for (let i = start; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.startsWith('## ')) break; // the first declared section ends the preamble
+        if (trimmed === '') continue;
+        if (/^#\s/.test(trimmed)) continue; // the `# {project} — Status` H1 is required, never narrative
+        result.statusNarrativeBeforeSections.push({ line: i + 1, text: trimmed.slice(0, 120) });
+      }
+    }
+  } catch (e) {
+    // an unreadable STATUS.md lints as clean on its two axes — never a crash
+  }
+
+  return result;
+}
+
+module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, extractVerdict, harvestFeature, LEDGER_COLUMNS, ledgerSlugs, ledgerRows, ledgerHeaders, hasLedgerHeader, renderLedgerRow, appendLedger, reharvestLedger, runHarvest, debtProposals, lintState, SOURCE_CAP };
 
 if (require.main === module) {
   try {
@@ -1883,7 +1975,8 @@ if (require.main === module) {
     const wantNext = args.includes('--next');
     const wantEvidence = args.includes('--evidence');
     const wantDebt = args.includes('--debt');
-    const slugs = args.filter(a => a !== '--next' && a !== '--evidence' && a !== '--debt');
+    const wantLint = args.includes('--lint');
+    const slugs = args.filter(a => a !== '--next' && a !== '--evidence' && a !== '--debt' && a !== '--lint');
     const cwd = process.cwd();
 
     // One date for every stamp this run makes, so a ledger row and a
@@ -1894,8 +1987,9 @@ if (require.main === module) {
     // Lane stamp — best effort, and deliberately BEFORE the .project-manager/
     // early-exit: the stamp records which lane owns the feature and must not
     // become conditional on a PM directory existing. `--next` and `--evidence`
-    // both mean "write nothing", so they suppress this too — as does --debt.
-    if (!wantNext && !wantEvidence && !wantDebt) {
+    // both mean "write nothing", so they suppress this too — as do --debt
+    // and --lint.
+    if (!wantNext && !wantEvidence && !wantDebt && !wantLint) {
       for (const slug of slugs) {
         try {
           stampLane(cwd, slug);
@@ -1914,7 +2008,7 @@ if (require.main === module) {
     // damaged or missing roadmap cannot silently disable it. Query modes write
     // nothing, so they suppress it. A harvest failure never reaches stderr and
     // never changes the exit code — the status transition is the caller's job.
-    if (!wantNext && !wantEvidence && !wantDebt) {
+    if (!wantNext && !wantEvidence && !wantDebt && !wantLint) {
       try {
         runHarvest(cwd, root, slugs, today);
       } catch (e) {
@@ -1931,6 +2025,17 @@ if (require.main === module) {
       // print [] and exit 0 — never an error, never a non-zero exit.
       const ledger = readOptional(path.join(root, '.project-manager', 'LEDGER.md')) || '';
       console.log(JSON.stringify(debtProposals(ledger), null, 2));
+      process.exit(0);
+    }
+
+    if (wantLint) {
+      // Query only — state-file decay, printed as JSON and never written
+      // anywhere. Handled BEFORE the roadmap early-exit for the same reason
+      // --debt is: a directory carrying a STATUS.md but no ROADMAP.md must
+      // still lint. An absent file yields empty arrays for its own axis.
+      const lintRoadmap = readOptional(path.join(root, '.project-manager', 'ROADMAP.md'));
+      const lintStatus = readOptional(path.join(root, '.project-manager', 'STATUS.md'));
+      console.log(JSON.stringify(lintState(lintRoadmap, lintStatus), null, 2));
       process.exit(0);
     }
 
