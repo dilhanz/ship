@@ -53,14 +53,15 @@ An absent column and a `—` cell are the same thing: **`unknown`**, which produ
 (see PM:PRIORITY below). `pm-update.cjs` never widens a table on its own — a table grows into the
 enriched shape only through a confirmed `/ship:pm-sync` reconcile.
 
-The fully enriched shape — the mandatory core, then `Blast radius`, `Confidence`, and `First seen` — is:
+The fully enriched shape — the mandatory core, then `Blast radius`, `Confidence`, `First seen`, and `Kind` — is:
 
 ```
-| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane | Blast radius | Confidence | First seen |
+| Item | Status | Priority | Size | Depends on | Source | Ship feature | Lane | Blast radius | Confidence | First seen | Kind |
 ```
 
-`Kind` is located by name like every other column, so a table that carries it may place it anywhere — it is
-not part of that fixed shape.
+This is the header `/ship:pm-sync` bootstraps and grows to. Every column is nonetheless located by **name**,
+never by position or count, so a table that orders them differently reads correctly and a narrower table stays
+fully supported.
 
 ### Detail sections
 
@@ -259,8 +260,9 @@ Cell vocabulary:
   line outranks both — a flushed Stage-1 report that later gained a real verdict reads as the verdict.
   The cell records the **leading token only**, normalised to this enum; anything unrecognised is `unknown`.
 - **Verify note** — the qualifier that used to be smuggled into the Verify cell: everything after the
-  leading verdict token (`all 11 criteria proven`, `2 criteria unproven`, `Stage 1 only`), or `unknown` when
-  there is none. When the verdict itself is unrecognised the whole raw text lands here, so the string that
+  leading verdict token (`all 11 criteria proven`, `2 criteria unproven`, `Stage 1 only`), or `none` when the
+  verdict carried no qualifier — `none` because there was nothing to say, which is not the same claim as
+  `unknown`. When the verdict itself is unrecognised the whole raw text lands here, so the string that
   was on disk is preserved rather than discarded. The qualifiers are genuinely valuable — they just cannot
   live in the column that gets counted.
 - **Unresolved carried** — REVIEW.md findings at `critical` or `high` severity whose line ends `— unresolved`
