@@ -93,11 +93,12 @@ describe('squash-merge adversarial — carried review finding: multi-remote proo
   beforeEach(() => { root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ship-sqadv-fork-'))); });
   afterEach(() => { fs.rmSync(root, { recursive: true, force: true }); });
 
-  it('reads a fork remote holding the merged head as proof of non-merge', () => {
-    // Phase 1 finding 1 (low): remoteBranchStillHolds excludes only the base
-    // in its two spellings, so on a fork checkout `upstream/main` — which
-    // legitimately contains the merged commit — counts as a live branch still
-    // holding unlanded work.
+  it('never reads a fork remote holding the merged head as proof of non-merge', () => {
+    // Phase 1 finding 1 (low), fixed in verify fix round 1: the exclusion used
+    // to cover only the base in its two spellings, so on a fork checkout
+    // `upstream/main` — which legitimately contains the merged commit —
+    // counted as a live branch still holding unlanded work. The remote prefix
+    // is now stripped, so any remote's copy of the base branch is excluded.
     const repo = path.join(root, 'repo');
     initRepo(repo);
     git(repo, 'checkout', '-b', 'feature/widget');
@@ -112,12 +113,17 @@ describe('squash-merge adversarial — carried review finding: multi-remote proo
     git(repo, 'update-ref', 'refs/remotes/upstream/main', git(repo, 'rev-parse', 'main').trim());
     archive(repo, 'widget', verifyMd(head));
 
-    // Documents current behaviour: the answer is awaiting-merge even though
-    // the work is merged. Direction-safe — it withholds `done`, never invents
-    // one, and a recorded `done` is still left alone.
+    // The work is merged, so no ref here proves otherwise: `upstream/main` is
+    // the base branch under another remote, not a branch still holding the
+    // work. The undecidable answer is "unchanged", never `awaiting-merge`.
+    assert.equal(archiveMergeStatus(repo, 'widget'), 'inconclusive');
+    assert.equal(mappedStatus(repo, 'widget', 'in-progress'), null);
+    assert.equal(mappedStatus(repo, 'widget', 'done'), null, 'the never-downgrade gate still holds');
+
+    // A genuine side branch under a non-base remote is still positive proof.
+    git(repo, 'update-ref', 'refs/remotes/upstream/feature/widget', head);
     assert.equal(archiveMergeStatus(repo, 'widget'), 'awaiting-merge');
     assert.equal(mappedStatus(repo, 'widget', 'in-progress'), 'awaiting-merge');
-    assert.equal(mappedStatus(repo, 'widget', 'done'), null, 'the never-downgrade gate still holds');
   });
 });
 
