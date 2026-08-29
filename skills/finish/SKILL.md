@@ -128,7 +128,43 @@ Do NOT archive the feature directory for this option.
 
 ## Archive Feature
 
-After Option 1 or Option 2 completes successfully, move the feature directory to the **main worktree's** archive. Resolve the main worktree root first:
+After Option 1 or Option 2 completes successfully, archive the feature — first stamp the outcome, then move the directory.
+
+### Stamp the archive outcome
+
+Ask the user, with AskUserQuestion, which outcome this archive records:
+
+- **shipped** (default) — the feature was built and verified, and this archive records working work.
+- **abandoned** — the work stopped and is not coming back.
+- **superseded** — another feature replaced it.
+- **umbrella** — a container for other features rather than shippable work of its own.
+
+Stamp the answer into the feature's CONTEXT.md frontmatter **before** the move, while the directory is still at `.planning/features/{feature-name}/`. Stamping after the `mv` would target a path that no longer exists — in a worktree-isolated session it would silently do nothing.
+
+This skill has `allowed-tools: Read, Bash, Glob, AskUserQuestion` and **no Write or Edit**, so the stamp goes through Bash. Replace an existing `outcome:` line if there is one, otherwise insert one directly after the `status:` line inside the leading frontmatter block, and leave every other byte alone:
+
+```bash
+CTX=".planning/features/{feature-name}/CONTEXT.md"
+OUTCOME={shipped|abandoned|superseded|umbrella}
+node -e '
+  const fs = require("fs"), [p, v] = process.argv.slice(1);
+  const s = fs.readFileSync(p, "utf8");
+  const m = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) process.exit(1);
+  let fm = m[1];
+  fm = /^outcome:/m.test(fm)
+    ? fm.replace(/^outcome:.*$/m, "outcome: " + v)
+    : fm.replace(/^(status:.*)$/m, "$1\noutcome: " + v);
+  if (!/^outcome:/m.test(fm)) fm += "\noutcome: " + v;
+  fs.writeFileSync(p, s.slice(0, m.index) + "---\n" + fm + "\n---" + s.slice(m.index + m[0].length));
+' "$CTX" "$OUTCOME" && grep -n '^outcome:' "$CTX"
+```
+
+A failed stamp is **not fatal** — the archive still proceeds. The ledger then records `outcome: unknown`, which is a recorded gap rather than a false `shipped`. Report the failure and move on; never block the archive on it.
+
+### Move the directory
+
+Move the feature directory to the **main worktree's** archive. Resolve the main worktree root first:
 
 ```bash
 MAIN_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")

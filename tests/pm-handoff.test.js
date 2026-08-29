@@ -24,7 +24,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const { parseHandoff, laneHandoffs, sweep } = require(path.join(ROOT, 'ship', 'lane-sweep.cjs'));
+const { parseHandoff, handoffFailureReason, laneHandoffs, sweep } = require(path.join(ROOT, 'ship', 'lane-sweep.cjs'));
 
 // Normalize CRLF so line-based assertions hold on Windows checkouts.
 const readSrc = (rel) =>
@@ -117,6 +117,49 @@ describe('pm-handoff — parseHandoff', () => {
     assert.deepEqual(parsed.summaries, ['Row']);
   });
 
+  it('never lets a field value cross its own line', () => {
+    // `\s` matches `\n`: with `\s*` the empty `feature:` swallowed the next
+    // line and the sweep reported an invented feature name — `applied: no` —
+    // as a cleanly parsed handoff.
+    assert.equal(
+      parseHandoff('---\nfeature:\napplied: no\n---\n'),
+      null,
+      'an empty feature: is not a handoff, whatever follows it'
+    );
+
+    const pending = parseHandoff('---\nfeature: alpha\napplied:\nlane: x\n---\n');
+    assert.ok(pending, 'the rest of the frontmatter still parses');
+    assert.equal(pending.applied, false, 'an empty applied: is pending, never applied');
+    assert.equal(pending.lane, 'x', 'the swallowed line is still its own field');
+
+    const head = parseHandoff('---\nfeature: alpha\nhead:\nraised: 2026-08-15\n---\n');
+    assert.equal(head.head, '', 'an empty head: stays empty');
+    assert.equal(head.raised, '2026-08-15');
+  });
+
+  it('agrees with handoffFailureReason on every fixture', () => {
+    const fixtures = [
+      '',
+      '# Just a heading\n',
+      '---\napplied: no\n---\n',
+      '---\nfeature:\napplied: no\n---\n',
+      '---\nfeature: \n---\n',
+      '---\nfeature: ""\n---\n',
+      '---\nfeature: alpha\napplied: yes\n---\n',
+      '---\r\nfeature: "alpha"\r\napplied: \'no\'\r\n---\r\n',
+      handoffDoc({ feature: 'alpha' })
+    ];
+    for (const doc of fixtures) {
+      const parsed = parseHandoff(doc);
+      const reason = handoffFailureReason(doc);
+      assert.equal(
+        parsed !== null,
+        reason === null,
+        `the two functions disagree about ${JSON.stringify(doc)}`
+      );
+    }
+  });
+
   it('ignores headings that are not numbered edit blocks', () => {
     const doc =
       '---\nfeature: alpha\napplied: no\n---\n\n' +
@@ -174,11 +217,16 @@ describe('pm-handoff — laneHandoffs', () => {
     assert.deepEqual(laneHandoffs(dir).map((h) => h.feature), ['alpha']);
   });
 
-  it('skips a PM-HANDOFF.md that does not parse rather than throwing', () => {
+  it('reports a PM-HANDOFF.md that does not parse rather than throwing', () => {
+    // Detection is by filename, so a malformed handoff is reported with a
+    // reason instead of travelling the same path as "no handoff at all".
     const featureDir = path.join(dir, '.planning', 'features', 'broken');
     fs.mkdirSync(featureDir, { recursive: true });
     fs.writeFileSync(path.join(featureDir, 'PM-HANDOFF.md'), 'not a handoff at all\n');
-    assert.deepEqual(laneHandoffs(dir), []);
+    const found = laneHandoffs(dir);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].unparseable, true);
+    assert.equal(found[0].reason, 'no frontmatter block');
   });
 
   it('reports forward-slash paths', () => {
@@ -187,6 +235,132 @@ describe('pm-handoff — laneHandoffs', () => {
       laneHandoffs(dir)[0].path.includes('/.planning/features/alpha/PM-HANDOFF.md'),
       'paths are normalized to forward slashes'
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Detection by filename: a malformed handoff is reported, never dropped
+  // -------------------------------------------------------------------------
+
+  /** Write raw bytes as a feature's PM-HANDOFF.md and return its path. */
+  const writeRaw = (kind, feature, content) => {
+    const featureDir = path.join(dir, '.planning', kind, feature);
+    fs.mkdirSync(featureDir, { recursive: true });
+    const file = path.join(featureDir, 'PM-HANDOFF.md');
+    fs.writeFileSync(file, content);
+    return file;
+  };
+
+  it('a handoff with no frontmatter is reported with its path and reason', () => {
+    writeRaw('features', 'broken', '# PM Handoff\n\n### 1. Do a thing\n');
+    const found = laneHandoffs(dir);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].unparseable, true);
+    assert.equal(found[0].reason, 'no frontmatter block');
+    assert.equal(found[0].feature, 'broken', 'the directory name stands in — the file names none');
+    assert.ok(found[0].path.endsWith('/.planning/features/broken/PM-HANDOFF.md'));
+    assert.equal(found[0].applied, false, 'an unparseable handoff is never applied');
+    assert.deepEqual(found[0].summaries, []);
+    assert.equal(found[0].raised, null);
+  });
+
+  it('a handoff whose frontmatter omits feature: is reported with that reason', () => {
+    writeRaw('features', 'nameless', '---\nraised: 2026-08-15\napplied: no\n---\n\n# PM Handoff\n');
+    const found = laneHandoffs(dir);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].unparseable, true);
+    assert.equal(found[0].reason, 'frontmatter missing feature:');
+    assert.equal(found[0].feature, 'nameless');
+  });
+
+  it('an empty feature: value is reported the same way', () => {
+    writeRaw('features', 'blank', '---\nfeature: ""\napplied: no\n---\n');
+    const found = laneHandoffs(dir);
+    assert.equal(found[0].unparseable, true);
+    assert.equal(found[0].reason, 'frontmatter missing feature:');
+    assert.equal(found[0].feature, 'blank');
+  });
+
+  it('an unreadable handoff is reported with an unreadable: reason', (t) => {
+    const file = writeRaw('features', 'locked', '---\nfeature: locked\n---\n');
+    fs.chmodSync(file, 0o000);
+    try {
+      try {
+        fs.readFileSync(file, 'utf8');
+        // Running as root (or on a filesystem that ignores the mode): the
+        // failure this asserts cannot be produced here.
+        t.skip('this process can still read a chmod-000 file');
+        return;
+      } catch (e) {
+        // expected — the sweep must report it rather than drop it
+      }
+      const found = laneHandoffs(dir);
+      assert.equal(found.length, 1);
+      assert.equal(found[0].unparseable, true);
+      assert.ok(/^unreadable: /.test(found[0].reason), `reason names the read failure: ${found[0].reason}`);
+      assert.equal(found[0].applied, false);
+    } finally {
+      // Restore the mode even when an assertion above throws: a 0o000 file left
+      // behind survives the temp-dir cleanup and poisons every later run.
+      fs.chmodSync(file, 0o600);
+    }
+  });
+
+  it('a well-formed handoff is unchanged and carries unparseable: false', () => {
+    writeHandoff('features', 'alpha', { edits: 2 });
+    const found = laneHandoffs(dir);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].unparseable, false);
+    assert.equal(found[0].feature, 'alpha');
+    assert.equal(found[0].summaries.length, 2);
+    assert.equal(found[0].raised, '2026-08-15');
+  });
+
+  it('an unparseable handoff in an archived directory is reported as archived', () => {
+    // The deferred-then-finished case: /ship:finish carries the handoff into
+    // .planning/archive/, where a malformed one must still be visible.
+    writeRaw('archive', 'shipped-but-broken', 'no frontmatter here\n');
+    const found = laneHandoffs(dir);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].archived, true);
+    assert.equal(found[0].unparseable, true);
+    assert.equal(found[0].reason, 'no frontmatter block');
+  });
+
+  it('a feature directory with no PM-HANDOFF.md is still the only thing that reports nothing', () => {
+    fs.mkdirSync(path.join(dir, '.planning', 'features', 'plain'), { recursive: true });
+    writeRaw('features', 'broken', 'junk\n');
+    assert.deepEqual(laneHandoffs(dir).map((h) => h.feature), ['broken']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handoffFailureReason
+// ---------------------------------------------------------------------------
+
+describe('pm-handoff — handoffFailureReason', () => {
+  it('names a missing frontmatter block', () => {
+    assert.equal(handoffFailureReason('# PM Handoff\n'), 'no frontmatter block');
+  });
+
+  it('names a frontmatter block with no feature key', () => {
+    assert.equal(handoffFailureReason('---\napplied: no\n---\n'), 'frontmatter missing feature:');
+  });
+
+  it('names a frontmatter block whose feature value is empty', () => {
+    assert.equal(handoffFailureReason('---\nfeature: \n---\n'), 'frontmatter missing feature:');
+    assert.equal(handoffFailureReason('---\nfeature: ""\n---\n'), 'frontmatter missing feature:');
+  });
+
+  it('returns null for content parseHandoff accepts', () => {
+    const doc = handoffDoc({ feature: 'alpha' });
+    assert.equal(handoffFailureReason(doc), null);
+    assert.ok(parseHandoff(doc), 'the two functions agree about what parses');
+  });
+
+  it('degrades on null, undefined and non-strings', () => {
+    assert.equal(handoffFailureReason(null), 'no frontmatter block');
+    assert.equal(handoffFailureReason(undefined), 'no frontmatter block');
+    assert.equal(handoffFailureReason(42), 'no frontmatter block');
   });
 });
 
@@ -279,6 +453,23 @@ describe('pm-handoff — sweep collects pendingHandoffs across lanes', { skip: !
 
     const features = sweep(main).pendingHandoffs.map((h) => h.feature).sort();
     assert.deepEqual(features, ['alpha', 'beta', 'gamma']);
+  });
+
+  it('surfaces an unparseable handoff through pendingHandoffs', () => {
+    // A malformed file cannot be fixed by any writer-side change, so it must
+    // reach the PM layer rather than travelling the "no handoff" path.
+    const featureDir = path.join(lane, '.planning', 'features', 'broken');
+    fs.mkdirSync(featureDir, { recursive: true });
+    fs.writeFileSync(path.join(featureDir, 'PM-HANDOFF.md'), 'not a handoff at all\n');
+
+    const result = sweep(main);
+    assert.equal(result.pendingHandoffs.length, 1);
+    const pending = result.pendingHandoffs[0];
+    assert.equal(pending.unparseable, true);
+    assert.equal(pending.reason, 'no frontmatter block');
+    assert.equal(pending.feature, 'broken');
+    assert.equal(pending.branch, 'feat/alpha', 'the lane holding the broken file is named');
+    assert.ok(pending.path.endsWith('/.planning/features/broken/PM-HANDOFF.md'));
   });
 
   it('degrades to an empty pendingHandoffs list outside a git repo', () => {

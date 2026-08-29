@@ -115,7 +115,7 @@ describe('PM:PRIORITY — derivation branches', () => {
     const r = deriveFor(body, 'A');
     assert.equal(r.unblocks, 2);
     assert.equal(r.derived, 'P2');
-    assert.ok(r.reasons.some(x => /unblocks 2 non-done items/.test(x)));
+    assert.ok(r.reasons.some(x => /unblocks 2 unfinished items/.test(x)));
   });
 
   it('a single in-progress dependent promotes one level', () => {
