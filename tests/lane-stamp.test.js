@@ -207,6 +207,101 @@ describe('lane-stamp: stampLane', { skip: !gitAvailable }, () => {
   });
 });
 
+describe('lane-stamp: terminal-status guard', { skip: !gitAvailable }, () => {
+  let root;
+
+  beforeEach(() => {
+    root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ship-lane-stamp-terminal-')));
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  /** CONTEXT.md with an arbitrary frontmatter status. */
+  const contextWith = status =>
+    `---\nfeature: "widget"\nstatus: ${status}\ncreated: "2026-08-23"\n---\n${BODY}`;
+
+  for (const status of ['done', 'superseded', 'abandoned', 'cancelled']) {
+    it(`writes no stamp and returns false for status: ${status}`, () => {
+      const repo = path.join(root, 'repo');
+      initRepo(repo);
+      const authored = contextWith(status);
+      const file = writeContext(repo, 'widget', authored);
+
+      assert.equal(stampLane(repo, 'widget'), false, 'a skipped stamp is not present');
+      assert.equal(fs.readFileSync(file, 'utf8'), authored, 'every byte of CONTEXT.md survives');
+    });
+  }
+
+  it('matches the terminal status case-insensitively', () => {
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    const authored = contextWith('Done');
+    const file = writeContext(repo, 'widget', authored);
+
+    assert.equal(stampLane(repo, 'widget'), false);
+    assert.equal(fs.readFileSync(file, 'utf8'), authored);
+  });
+
+  it('leaves an existing lane: line byte-identical once the feature reaches done', () => {
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    const file = writeContext(repo, 'widget', CONTEXT);
+
+    assert.equal(stampLane(repo, 'widget'), true);
+    const stamped = frontmatterOf(file).match(/^lane:.*$/m)[0];
+
+    // The feature finishes on a different branch — the guard must neither
+    // rewrite the stamp nor strip it.
+    git(repo, 'checkout', '-b', 'other');
+    const finished = fs.readFileSync(file, 'utf8').replace(/^status: building$/m, 'status: done');
+    fs.writeFileSync(file, finished);
+
+    assert.equal(stampLane(repo, 'widget'), false);
+    assert.equal(fs.readFileSync(file, 'utf8'), finished, 'the finished file is untouched');
+    assert.equal(frontmatterOf(file).match(/^lane:.*$/m)[0], stamped, 'the historical stamp survives');
+  });
+
+  for (const status of ['brainstormed', 'planned', 'plan-verified', 'building', 'built']) {
+    it(`still stamps a non-terminal feature: ${status}`, () => {
+      const repo = path.join(root, 'repo');
+      initRepo(repo);
+      const file = writeContext(repo, 'widget', contextWith(status));
+
+      assert.equal(stampLane(repo, 'widget'), true);
+      assert.equal(
+        frontmatterOf(file).match(/^lane:.*$/m)[0],
+        `lane: ${branchOf(repo)} @ ${toplevelOf(repo)}`
+      );
+      assert.match(frontmatterOf(file), new RegExp(`^status: ${status}$`, 'm'));
+    });
+  }
+
+  it('still stamps a frontmatter block carrying no status: line at all', () => {
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    const file = writeContext(repo, 'widget', `---\nfeature: "widget"\ncreated: "2026-08-23"\n---\n${BODY}`);
+
+    assert.equal(stampLane(repo, 'widget'), true, 'no status is not a terminal status');
+    assert.equal(
+      frontmatterOf(file).match(/^lane:.*$/m)[0],
+      `lane: ${branchOf(repo)} @ ${toplevelOf(repo)}`
+    );
+  });
+
+  it('reads status from the frontmatter only — a body `status: done` is prose', () => {
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    const authored =
+      `---\nfeature: "widget"\nstatus: building\n---\n\n## Problem\n\nDocs quote \`status: done\` as prose.\nstatus: done\n`;
+    const file = writeContext(repo, 'widget', authored);
+
+    assert.equal(stampLane(repo, 'widget'), true);
+    assert.match(frontmatterOf(file), /^lane: .+ @ .+$/m);
+  });
+});
+
 describe('lane-stamp: pm-update CLI wiring', { skip: !gitAvailable }, () => {
   let root;
 
