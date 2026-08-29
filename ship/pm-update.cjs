@@ -207,6 +207,43 @@ function cachedBaseRef(cwd) {
 }
 
 /**
+ * Positive proof that a stamped head has *not* merged: a remote branch other
+ * than the base still contains it.
+ *
+ * A non-ancestor result on its own proves nothing — under a squash merge the
+ * stamped commit is replaced, so merged work is a non-ancestor forever. What
+ * does carry evidence is a live remote branch that still holds the commit:
+ * the work is still sitting on a branch, unlanded.
+ *
+ * Local-only (`git branch -r --contains` reads `refs/remotes/`, no network).
+ * The base itself is excluded in both spellings (`main` and `origin/main`),
+ * and symbolic entries (`origin/HEAD -> origin/main`) never count.
+ *
+ * Every other outcome — no run, non-zero status, empty stdout, an absent git
+ * binary, any exception — is `false`, so this can only ever *withhold* `done`,
+ * never invent `awaiting-merge`. Silent on both streams; never throws.
+ *
+ * @param {string} cwd
+ * @param {string} head - the stamped commit
+ * @param {string} base - the resolved base ref
+ * @returns {boolean} true only on positive proof of non-merge
+ */
+function remoteBranchStillHolds(cwd, head, base) {
+  try {
+    const run = spawnSync('git', ['branch', '-r', '--contains', head], { cwd, encoding: 'utf8' });
+    if (!run || run.status !== 0 || typeof run.stdout !== 'string') return false;
+
+    const excluded = new Set([base, `origin/${base}`]);
+    return run.stdout
+      .split('\n')
+      .map(line => line.replace(/^[*+\s]+/, '').trim())
+      .some(name => name !== '' && !name.includes('->') && !excluded.has(name));
+  } catch (e) {
+    return false; // silent by contract
+  }
+}
+
+/**
  * Test whether an archived feature's work actually reached the base branch,
  * anchored on the `**Head:**` commit the verifier stamps into VERIFY.md.
  *
@@ -223,10 +260,14 @@ function cachedBaseRef(cwd) {
  *                    evidence *against* a merge (~60 archives predate the
  *                    stamp), so the caller keeps today's `done`.
  * - `'done'`       — the stamped head is an ancestor of the base.
- * - `'awaiting-merge'` — it is not.
- * - `'inconclusive'` — no base ref, an unresolvable commit, or any git
- *                    failure. The caller leaves the row unchanged; the safe
- *                    direction is never to claim `done`.
+ * - `'awaiting-merge'` — the head is not in the base **and** a live remote
+ *                    branch still contains it: positive proof the work has
+ *                    not landed.
+ * - `'inconclusive'` — no base ref, an unresolvable commit, any git failure,
+ *                    or a non-ancestor result that no remote branch
+ *                    corroborates — under a squash merge this is the expected
+ *                    shape of merged work. The caller leaves the row
+ *                    unchanged; the safe direction is never to claim `done`.
  *
  * Silent on both streams; never throws.
  *
@@ -250,7 +291,9 @@ function archiveMergeStatus(cwd, slug) {
     const run = spawnSync('git', ['merge-base', '--is-ancestor', stamp[1], base], { cwd, encoding: 'utf8' });
     if (!run) return 'inconclusive';
     if (run.status === 0) return 'done';
-    if (run.status === 1) return 'awaiting-merge';
+    // Not an ancestor. That alone is not evidence — a squash merge replaces
+    // the commit — so `awaiting-merge` needs a live remote branch to hold it.
+    if (run.status === 1) return remoteBranchStillHolds(cwd, stamp[1], base) ? 'awaiting-merge' : 'inconclusive';
     return 'inconclusive'; // 128 for an unresolvable commit, null for a missing binary
   } catch (e) {
     return 'inconclusive'; // silent by contract
