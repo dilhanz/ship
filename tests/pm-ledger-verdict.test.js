@@ -133,17 +133,19 @@ describe('extractVerdict — normalisation', () => {
   });
 });
 
-describe('LEDGER_COLUMNS is not widened by this task', () => {
-  // Task 5 owns the widening — `Outcome` and `Verify note` arrive there, in
-  // the same commit as header-aware rendering. A record field no renderer
-  // reads yet is inert; a widened column list would misalign every append to
-  // an existing ten-column ledger.
-  it('is still the ten documented columns', () => {
+describe('LEDGER_COLUMNS carries the verdict columns', () => {
+  // `Outcome` and `Verify note` arrived with header-aware rendering, in one
+  // commit: a widened column list without it would misalign every append to
+  // an existing ten-column ledger. tests/pm-ledger-header.test.js owns that
+  // guarantee; this is the column list the note the extractor produces lands in.
+  it('holds Verify note beside Verify', () => {
     assert.deepEqual(LEDGER_COLUMNS, [
       'Feature',
       'Shipped',
       'Profile',
+      'Outcome',
       'Verify',
+      'Verify note',
       'Unresolved carried',
       'Plan rounds',
       'Fix rounds',

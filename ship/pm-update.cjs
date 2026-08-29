@@ -1089,6 +1089,9 @@ function generateDashboard(root, laneData) {
 /** The verdict vocabulary the ledger's `Verify` cell may record verbatim. */
 const VERIFY_VERDICTS = new Set(['PASS', 'FAIL', 'INCONCLUSIVE', 'DEFERRED']);
 
+/** The `outcome:` vocabulary `/ship:finish` stamps into an archived CONTEXT.md. */
+const ARCHIVE_OUTCOMES = new Set(['shipped', 'abandoned', 'superseded', 'umbrella']);
+
 /**
  * Extract a verification verdict from a VERIFY.md body.
  *
@@ -1187,6 +1190,9 @@ function extractVerdict(verifyContent) {
  * - `slug` — the feature slug, as given.
  * - `shipped` — VERIFY.md's `**Verified:**` date, else `today`.
  * - `profile` — CONTEXT.md frontmatter `profile:`, else `unknown`.
+ * - `outcome` — CONTEXT.md frontmatter `outcome:` when it is one of
+ *   `shipped | abandoned | superseded | umbrella`, else `unknown`. An
+ *   archived directory is never silently reclassified as shipped.
  * - `verify` — the verdict `extractVerdict` reads from VERIFY.md, normalised
  *   to `PASS | FAIL | INCONCLUSIVE | DEFERRED | in-progress`; `unknown` when
  *   the file carries no recognisable verdict; `none` when the file is absent
@@ -1213,8 +1219,8 @@ function extractVerdict(verifyContent) {
  * @param {string} cwd - the lane whose .planning/ holds the feature
  * @param {string} slug
  * @param {string} today - YYYY-MM-DD
- * @returns {{ slug: string, shipped: string, profile: string, verify: string,
- *             verifyNote: string,
+ * @returns {{ slug: string, shipped: string, profile: string, outcome: string,
+ *             verify: string, verifyNote: string,
  *             unresolvedCarried: number, planRounds: number|string,
  *             fixRounds: number,
  *             findings: { critical: number, high: number, medium: number, low: number },
@@ -1239,6 +1245,7 @@ function harvestFeature(cwd, slug, today) {
     const contextRead = read('CONTEXT.md');
     const context = contextRead.content;
     let profile = 'unknown';
+    let outcome = 'unknown';
     let contextToken = absentToken(contextRead, 'CONTEXT.md');
     if (context !== null) {
       const fm = frontmatter(context); // frontmatter block only — a body `profile:` is prose
@@ -1250,6 +1257,14 @@ function harvestFeature(cwd, slug, today) {
       } else {
         contextToken = 'CONTEXT.md (no profile)';
       }
+
+      // The archive outcome — a separate axis from the profile, so it never
+      // touches the provenance token: an unstamped archive is expected (~60
+      // of them predate the stamp), not a defect. An unrecognised value is
+      // `unknown` rather than a guess.
+      const outcomeMatch = fm === null ? null : fm.match(/^outcome:\s*(.+)$/m);
+      const stamped = outcomeMatch ? outcomeMatch[1].trim().toLowerCase() : '';
+      if (ARCHIVE_OUTCOMES.has(stamped)) outcome = stamped;
     }
 
     // --- PLAN.md — plan-revision rounds
@@ -1328,6 +1343,7 @@ function harvestFeature(cwd, slug, today) {
       slug,
       shipped,
       profile,
+      outcome,
       verify,
       verifyNote,
       unresolvedCarried,
@@ -1347,7 +1363,9 @@ const LEDGER_COLUMNS = [
   'Feature',
   'Shipped',
   'Profile',
+  'Outcome',
   'Verify',
+  'Verify note',
   'Unresolved carried',
   'Plan rounds',
   'Fix rounds',
@@ -1452,34 +1470,76 @@ function ledgerCell(value) {
 }
 
 /**
+ * The column names of a LEDGER.md body's own header row.
+ *
+ * The header is located exactly as `ledgerSlugs` and `hasLedgerHeader` locate
+ * it — the table row whose cells include `Feature`, `Shipped`, and `Verify` —
+ * so a reordered or narrower ledger still reports its true shape. Returns
+ * `[]` when there is no such row. Pure; never throws.
+ *
+ * @param {string} content
+ * @returns {string[]}
+ */
+function ledgerHeaders(content) {
+  try {
+    if (typeof content !== 'string') return [];
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('|') || !trimmed.endsWith('|')) continue;
+      const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+      if (cells.includes('Feature') && cells.includes('Shipped') && cells.includes('Verify')) {
+        return cells;
+      }
+    }
+    return [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
  * Render one harvestFeature record as a LEDGER.md table row.
  *
- * Cells are emitted in LEDGER_COLUMNS order; `Findings (C/H/M/L)` renders as
- * `critical/high/medium/low` and `Artifacts` as the four provenance tokens
- * joined with `; `. Every cell passes through ledgerCell, so no harvested
- * value can break the table.
+ * Cells are emitted one per entry of `headers`, in that order, so a row is
+ * always rendered against the header it is being written under — a ten-column
+ * ledger keeps receiving ten-column rows and a reordered one still gets each
+ * value under its own name. `headers` defaults to LEDGER_COLUMNS, the shape a
+ * rebuilt or brand-new ledger gets.
+ *
+ * `Findings (C/H/M/L)` renders as `critical/high/medium/low` and `Artifacts`
+ * as the four provenance tokens joined with `; `. A header this renderer does
+ * not know renders `unknown` rather than a blank — an unrecognised column
+ * never shifts the others and never yields a cell mistakable for an authored
+ * `—`. Every cell passes through ledgerCell, so no harvested value can break
+ * the table, and the cell count always equals `headers.length`.
  *
  * @param {ReturnType<typeof harvestFeature>} record
+ * @param {string[]} [headers] - the header to render against
  * @returns {string}
  */
-function renderLedgerRow(record) {
+function renderLedgerRow(record, headers) {
   const r = record || {};
   const f = r.findings || {};
-  const findings = `${f.critical || 0}/${f.high || 0}/${f.medium || 0}/${f.low || 0}`;
-  const artifacts = Array.isArray(r.artifacts) ? r.artifacts.join('; ') : '';
+  const columns = Array.isArray(headers) && headers.length > 0 ? headers : LEDGER_COLUMNS;
 
-  const cells = [
-    r.slug,
-    r.shipped,
-    r.profile,
-    r.verify,
-    r.unresolvedCarried,
-    r.planRounds,
-    r.fixRounds,
-    findings,
-    r.phases,
-    artifacts
-  ].map(ledgerCell);
+  const byColumn = {
+    Feature: r.slug,
+    Shipped: r.shipped,
+    Profile: r.profile,
+    Outcome: r.outcome,
+    Verify: r.verify,
+    'Verify note': r.verifyNote,
+    'Unresolved carried': r.unresolvedCarried,
+    'Plan rounds': r.planRounds,
+    'Fix rounds': r.fixRounds,
+    'Findings (C/H/M/L)': `${f.critical || 0}/${f.high || 0}/${f.medium || 0}/${f.low || 0}`,
+    Phases: r.phases,
+    Artifacts: Array.isArray(r.artifacts) ? r.artifacts.join('; ') : ''
+  };
+
+  const cells = columns.map(name =>
+    ledgerCell(Object.prototype.hasOwnProperty.call(byColumn, name) ? byColumn[name] : '')
+  );
 
   return `| ${cells.join(' | ')} |`;
 }
@@ -1488,7 +1548,10 @@ function renderLedgerRow(record) {
  * Append ledger rows to `{root}/.project-manager/LEDGER.md`.
  *
  * Creates the file with its frontmatter, heading, provenance note, header
- * row, and separator when absent. When it exists, rows are appended after
+ * row, and separator when absent — the only path that gets the current
+ * LEDGER_COLUMNS shape. When the file exists, rows are rendered against its
+ * *own* header, so a narrower or reordered recorded ledger keeps its shape
+ * and no recorded row is ever rewritten to widen it. Rows are appended after
  * the last non-empty line and the frontmatter `updated:` value is bumped —
  * existing rows are never re-read, re-rendered, or rewritten, which is what
  * makes the ledger append-only rather than merely idempotent. The table is
@@ -1511,7 +1574,6 @@ function appendLedger(root, records, today) {
     if (!Array.isArray(records) || records.length === 0) return 0;
 
     const ledgerPath = path.join(root, '.project-manager', 'LEDGER.md');
-    const rows = records.map(renderLedgerRow).join('\n');
     const header = `| ${LEDGER_COLUMNS.join(' | ')} |`;
     const separator = `|${LEDGER_COLUMNS.map(() => '---').join('|')}|`;
 
@@ -1522,6 +1584,12 @@ function appendLedger(root, records, today) {
     // header the column order is unknowable, so the bytes below it are not
     // ledger data. This is the only path that does not append.
     const rebuild = existing === null || !hasLedgerHeader(existing);
+    // The append path renders to the file's own header, so widening
+    // LEDGER_COLUMNS never misaligns a recorded ten-column ledger; only a
+    // rebuilt or brand-new file gets the widened shape.
+    const rows = records
+      .map(r => renderLedgerRow(r, rebuild ? LEDGER_COLUMNS : ledgerHeaders(existing)))
+      .join('\n');
     let content;
     if (rebuild) {
       content =
@@ -1612,7 +1680,7 @@ function runHarvest(cwd, root, slugs, today) {
   }
 }
 
-module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, extractVerdict, harvestFeature, LEDGER_COLUMNS, ledgerSlugs, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
+module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, extractVerdict, harvestFeature, LEDGER_COLUMNS, ledgerSlugs, ledgerHeaders, hasLedgerHeader, renderLedgerRow, appendLedger, runHarvest };
 
 if (require.main === module) {
   try {

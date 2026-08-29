@@ -56,6 +56,26 @@ function ledgerRow(dir, slug) {
   return content.split('\n').find(l => l.startsWith(`| ${slug} `)) || null;
 }
 
+/**
+ * The ledger's own header, as a name -> index lookup. Keyed by name rather
+ * than position so the *next* column addition does not move these assertions
+ * either — the ledger renders to its file's header, so position is not a
+ * property worth pinning.
+ */
+function ledgerIndex(dir) {
+  const content = fs.readFileSync(path.join(dir, '.project-manager', 'LEDGER.md'), 'utf8');
+  const header = content
+    .split('\n')
+    .map(l => l.trim())
+    .find(l => l.startsWith('|') && l.endsWith('|') && l.includes('Feature') && l.includes('Verify'));
+  const names = cellsOf(header);
+  return name => {
+    const i = names.indexOf(name);
+    assert.notEqual(i, -1, `the ledger header carries a ${name} column`);
+    return i;
+  };
+}
+
 describe('ledger harvest — a hostile artifact cannot break the table', () => {
   it('sanitizes pipes and newlines out of every harvested cell', () => {
     const dir = tmpRepo();
@@ -73,10 +93,17 @@ describe('ledger harvest — a hostile artifact cannot break the table', () => {
     assert.ok(row, 'a row must be written for the hostile feature');
 
     const cells = cellsOf(row);
-    assert.equal(cells.length, 10, 'a `|` in an artifact must not invent a column');
-    assert.equal(cells[1], '2026-01-01 / 9999-99-99');
-    assert.equal(cells[2], 'quick / injected / cells / here');
-    assert.equal(cells[3], 'PASS / TOTALLY / FINE');
+    const idx = ledgerIndex(dir);
+    assert.equal(cells.length, 12, 'a `|` in an artifact must not invent a column');
+    assert.equal(cells[idx('Shipped')], '2026-01-01 / 9999-99-99');
+    assert.equal(cells[idx('Profile')], 'quick / injected / cells / here');
+    // The verdict normalises to its leading token, so the injected pipes ride
+    // in the note — which is exactly where the sanitizer must still catch them.
+    assert.equal(cells[idx('Verify')], 'PASS');
+    assert.equal(cells[idx('Verify note')], '/ totally / fine');
+    // The hostile feature stamps no outcome, so that cell must read `unknown`
+    // — never a blank mistakable for an authored `—`.
+    assert.equal(cells[idx('Outcome')], 'unknown');
     assert.ok(!row.includes('\n'), 'a row is always one line');
   });
 
@@ -84,7 +111,7 @@ describe('ledger harvest — a hostile artifact cannot break the table', () => {
     // A blank cell would be indistinguishable from an authored `—`; the
     // sanitizer's empty→unknown substitution is what prevents that.
     const cells = cellsOf(renderLedgerRow(undefined));
-    assert.equal(cells.length, 10);
+    assert.equal(cells.length, 12);
     assert.equal(cells.filter(c => c === '').length, 0);
   });
 
