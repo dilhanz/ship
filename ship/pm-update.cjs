@@ -178,6 +178,35 @@ function resolveBaseRef(cwd) {
 }
 
 /**
+ * `resolveBaseRef` memoised for the life of the process, keyed on cwd.
+ *
+ * The base ref cannot change during a run, but `archiveMergeStatus` is called
+ * once per archived row and used to re-resolve it every time: 60 stamped
+ * archived rows cost ~1.6s of `git rev-parse`, on a script that runs at
+ * `start`, `build`, `verify`, `finish` and `go`. The exported
+ * `resolveBaseRef` stays uncached so its own tests keep measuring the real
+ * thing.
+ *
+ * A cached `null` is still `null` — every degradation path is identical, and
+ * nothing reaches stdout or stderr.
+ *
+ * @param {string} cwd
+ * @returns {string|null}
+ */
+const baseRefCache = new Map();
+function cachedBaseRef(cwd) {
+  try {
+    const key = String(cwd);
+    if (baseRefCache.has(key)) return baseRefCache.get(key);
+    const base = resolveBaseRef(cwd);
+    baseRefCache.set(key, base);
+    return base;
+  } catch (e) {
+    return null; // silent by contract
+  }
+}
+
+/**
  * Test whether an archived feature's work actually reached the base branch,
  * anchored on the `**Head:**` commit the verifier stamps into VERIFY.md.
  *
@@ -213,7 +242,7 @@ function archiveMergeStatus(cwd, slug) {
     const stamp = content.match(/^\*\*Head:\*\*\s*([0-9a-fA-F]{7,40})\b/m);
     if (!stamp) return 'no-stamp';
 
-    const base = resolveBaseRef(cwd);
+    const base = cachedBaseRef(cwd);
     if (base === null) return 'inconclusive';
 
     const run = spawnSync('git', ['merge-base', '--is-ancestor', stamp[1], base], { cwd, encoding: 'utf8' });

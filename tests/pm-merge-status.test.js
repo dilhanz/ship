@@ -223,6 +223,93 @@ describe('pm-merge-status: resolveBaseRef', { skip: !gitAvailable }, () => {
   });
 });
 
+describe('pm-merge-status: base ref resolution is bounded', { skip: !gitAvailable }, () => {
+  let root;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-merge-cost-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  /** A roadmap whose backlog carries `count` archived, stamped rows. */
+  function seed(count, head) {
+    const rows = [];
+    for (let i = 0; i < count; i++) {
+      const slug = `feat-${i}`;
+      archive(root, slug, verifyMd(head));
+      rows.push(`| Ship ${slug} | pending | ${slug} |`);
+    }
+    fs.mkdirSync(path.join(root, '.project-manager'), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, '.project-manager', 'ROADMAP.md'),
+      [
+        '---',
+        'updated: "2026-08-01"',
+        '---',
+        '',
+        '### Now',
+        '',
+        '| Item | Status | Ship feature |',
+        '|---|---|---|',
+        ...rows,
+        ''
+      ].join('\n')
+    );
+  }
+
+  /** A PATH shim that counts every git invocation, delegating to the real one. */
+  function gitCountingEnv(dir) {
+    const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+    const bin = path.join(dir, 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const log = path.join(dir, 'git-calls.log');
+    fs.writeFileSync(
+      path.join(bin, 'git'),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nexec ${JSON.stringify(realGit)} "$@"\n`
+    );
+    fs.chmodSync(path.join(bin, 'git'), 0o755);
+    return {
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      revParses: () =>
+        fs.existsSync(log)
+          ? fs.readFileSync(log, 'utf8').split('\n').filter(l => l.includes('rev-parse --verify --quiet')).length
+          : 0
+    };
+  }
+
+  it('resolves the base ref a bounded number of times, whatever the row count', () => {
+    const head = initRepo(root);
+
+    const small = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-merge-shim-'));
+    seed(5, head);
+    const shimSmall = gitCountingEnv(small);
+    assert.equal(
+      spawnSync(process.execPath, [SCRIPT_PATH], { cwd: root, encoding: 'utf8', env: shimSmall.env }).status,
+      0
+    );
+    const few = shimSmall.revParses();
+    fs.rmSync(small, { recursive: true, force: true });
+
+    const big = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-merge-shim-'));
+    seed(40, head);
+    const shimBig = gitCountingEnv(big);
+    const started = Date.now();
+    assert.equal(
+      spawnSync(process.execPath, [SCRIPT_PATH], { cwd: root, encoding: 'utf8', env: shimBig.env }).status,
+      0
+    );
+    const elapsed = Date.now() - started;
+    const many = shimBig.revParses();
+    fs.rmSync(big, { recursive: true, force: true });
+
+    assert.equal(many, few, 'base ref resolution must not grow with the number of archived rows');
+    assert.ok(elapsed < 5000, `40 stamped archived rows reconciled in ${elapsed}ms`);
+  });
+});
+
 describe('pm-merge-status: selectNext', () => {
   it('never recommends an awaiting-merge row', () => {
     const roadmap = [
