@@ -138,6 +138,26 @@ function parseHandoff(content) {
 }
 
 /**
+ * Why `parseHandoff` rejected this content, or null when it parses.
+ *
+ * The two rejection branches of `parseHandoff` are indistinguishable from its
+ * null return, and a malformed handoff on disk cannot be fixed by any
+ * writer-side change — so the reason has to travel with the report. Pure;
+ * never throws.
+ *
+ * @param {string} content
+ * @returns {string|null} 'no frontmatter block' | 'frontmatter missing feature:' | null
+ */
+function handoffFailureReason(content) {
+  const match = String(content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return 'no frontmatter block';
+  const feature = match[1].match(/^feature:\s*(.*)$/m);
+  const value = feature ? feature[1].trim().replace(/^["']|["']$/g, '') : '';
+  if (!value) return 'frontmatter missing feature:';
+  return null;
+}
+
+/**
  * Every PM handoff recorded in one lane, from both `.planning/features/` and
  * `.planning/archive/`.
  *
@@ -146,9 +166,19 @@ function parseHandoff(content) {
  * its code work finished and only the PM-layer edits remain. Keying off it
  * would hide exactly the handoffs this exists to surface.
  *
+ * Detection is by **filename**: a file named `PM-HANDOFF.md` is a handoff,
+ * full stop, and parsing happens afterwards. A file that does not parse is
+ * reported with `unparseable: true` and a `reason` rather than being dropped
+ * — reporting a malformed handoff through the same code path as "no handoff
+ * at all" is the blind spot this closes, and no writer-side fix can reach the
+ * files already on disk. An unparseable entry is never `applied`, so it
+ * always reaches `pendingHandoffs`; `feature` falls back to the directory
+ * name, since the file itself does not name one.
+ *
  * @param {string} lanePath
  * @returns {{ feature: string, path: string, archived: boolean, applied: boolean,
- *             raised: string|null, summaries: string[] }[]}
+ *             raised: string|null, summaries: string[], unparseable: boolean,
+ *             reason?: string }[]}
  */
 function laneHandoffs(lanePath) {
   const handoffs = [];
@@ -165,18 +195,41 @@ function laneHandoffs(lanePath) {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const file = path.join(base, entry.name, 'PM-HANDOFF.md');
-      let parsed = null;
+      if (!fs.existsSync(file)) continue; // the only path that reports nothing
+
+      // An unparseable handoff is never applied: hard-coded false, so it
+      // always reaches pendingHandoffs and someone is told to fix the file.
+      const broken = (reason) => ({
+        feature: entry.name,
+        path: toForwardSlashes(file),
+        archived,
+        applied: false,
+        unparseable: true,
+        reason,
+        raised: null,
+        summaries: []
+      });
+
+      let content;
       try {
-        if (fs.existsSync(file)) parsed = parseHandoff(fs.readFileSync(file, 'utf8'));
+        content = fs.readFileSync(file, 'utf8');
       } catch (e) {
-        parsed = null; // unreadable handoff degrades to absent
+        handoffs.push(broken(`unreadable: ${e && e.code ? e.code : 'unknown'}`));
+        continue;
       }
-      if (!parsed) continue;
+
+      const parsed = parseHandoff(content);
+      if (!parsed) {
+        handoffs.push(broken(handoffFailureReason(content)));
+        continue;
+      }
+
       handoffs.push({
         feature: parsed.feature,
         path: toForwardSlashes(file),
         archived,
         applied: parsed.applied,
+        unparseable: false,
         raised: parsed.raised,
         summaries: parsed.summaries
       });
@@ -367,6 +420,9 @@ function resolveOwnership(lanes) {
  * Pending PM handoffs are collected across every lane into `pendingHandoffs`
  * — deferred PM-layer edits no lane may perform (see parseHandoff). They are
  * never ownership-gated: a lane that owns no feature still reports its handoff.
+ * An entry carrying `unparseable: true` and a `reason` is a file named
+ * `PM-HANDOFF.md` that could not be read or parsed; it is reported, never
+ * applied, and never silently counted as absent.
  *
  * @param {string} cwd
  * @returns {{ lanes: { path: string, branch: string|null, isMain: boolean,
@@ -437,7 +493,7 @@ function sweep(cwd) {
   }
 }
 
-module.exports = { parseWorktrees, planFiles, parseHandoff, laneHandoffs, findOverlaps, parseLaneStamp, resolveOwnership, sweep };
+module.exports = { parseWorktrees, planFiles, parseHandoff, handoffFailureReason, laneHandoffs, findOverlaps, parseLaneStamp, resolveOwnership, sweep };
 
 if (require.main === module) {
   process.stdout.write(JSON.stringify(sweep(process.cwd())) + '\n');
