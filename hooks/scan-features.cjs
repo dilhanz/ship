@@ -150,4 +150,4 @@ function formatFeatureState(snapshots, header) {
   return lines.join('\n');
 }
 
-module.exports = { scanFeatures, formatFeatureState };
+module.exports = { scanFeatures, formatFeatureState, TERMINAL_STATUSES };

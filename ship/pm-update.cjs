@@ -19,6 +19,21 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { resolveStateRoot } = require('./resolve-state-root.cjs');
 
+// The fixed tombstone set, owned by hooks/scan-features.cjs — imported rather
+// than re-declared so the two surfaces can never disagree about what
+// "finished" means. Resolved once at load, across the same ship/ -> hooks/
+// boundary lane-sweep.cjs already crosses; an absent or broken module
+// degrades to the same literal set, so stamping keeps working as today.
+const TERMINAL_STATUSES = (() => {
+  try {
+    const imported = require('../hooks/scan-features.cjs').TERMINAL_STATUSES;
+    if (imported && typeof imported.has === 'function') return imported;
+  } catch (e) {
+    // fall through to the local copy
+  }
+  return new Set(['done', 'superseded', 'abandoned', 'cancelled']);
+})();
+
 /**
  * Parse ROADMAP.md backlog tables into row records.
  *
@@ -631,10 +646,15 @@ function writeFileAtomic(filePath, content) {
  * untouched. A CONTEXT.md with no frontmatter block is left alone: inventing
  * structure is a bigger lie than an absent stamp.
  *
+ * A feature whose frontmatter status is terminal (`done`, `superseded`,
+ * `abandoned`, `cancelled` — the set hooks/scan-features.cjs owns) is skipped
+ * entirely: nothing is written, an existing `lane:` line is left byte-intact,
+ * and the call reports false, because the stamp it was asked for is not there.
+ *
  * @param {string} cwd - the lane the stamp speaks for
  * @param {string} slug
  * @returns {boolean} true when the stamp is present after the call (written,
- *          or already byte-identical), false on any failure
+ *          or already byte-identical), false on any failure or terminal skip
  */
 function stampLane(cwd, slug) {
   try {
@@ -662,6 +682,14 @@ function stampLane(cwd, slug) {
     const fm = content.match(/^---(\r?\n)([\s\S]*?)(\r?\n)---/);
     if (fm === null) return false;
     const [full, openEol, block, closeEol] = fm;
+
+    // A finished feature stops accumulating lane claims. Status is frontmatter
+    // state, so only the block is searched — a `status:` line in the body is
+    // prose, the same discipline mappedStatus uses. No `status:` at all is not
+    // terminal and still stamps. `false` is the honest return: the contract is
+    // "the stamp is present after the call", and a skipped stamp is not.
+    const statusMatch = block.match(/^status:\s*(.+)$/m);
+    if (statusMatch && TERMINAL_STATUSES.has(statusMatch[1].trim().toLowerCase())) return false;
 
     const line = `lane: ${branch} @ ${toplevel}`;
     const existing = block.match(/^lane:[^\r\n]*/m);
