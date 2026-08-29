@@ -1713,6 +1713,48 @@ function appendLedger(root, records, today) {
  * @param {string} today - YYYY-MM-DD
  * @returns {number} rows rewritten
  */
+/**
+ * The only cells the append-only relaxation exists to repair.
+ *
+ * Everything else in a recorded row is history: rewriting it from a fresh
+ * harvest would relabel `Shipped` with today's date every run whenever
+ * VERIFY.md carries no `**Verified:**` line, and would downgrade
+ * `Plan rounds`/`Phases`/`Artifacts` whenever an artifact has since been
+ * removed from the archive. Both are recorded history mutated to a wrong
+ * later value — the opposite of what this relaxation is for.
+ */
+const REHARVEST_COLUMNS = new Set(['Verify', 'Verify note', 'Outcome']);
+
+/**
+ * Render a recorded row with only its repairable cells refreshed.
+ *
+ * The recorded values win for every column outside REHARVEST_COLUMNS, so a
+ * re-read that still finds no verdict renders the line it already had — which
+ * is what makes the operation a true no-op rather than a daily rewrite.
+ *
+ * @param {{ cells: Object, headers: string[] }} row - the recorded row
+ * @param {ReturnType<typeof harvestFeature>} record - the fresh harvest
+ * @returns {string}
+ */
+function repairLedgerRow(row, record) {
+  const headers = Array.isArray(row.headers) && row.headers.length > 0 ? row.headers : LEDGER_COLUMNS;
+  const fresh = renderLedgerRow(record, headers)
+    .trim()
+    .slice(1, -1)
+    .split('|')
+    .map(c => c.trim());
+
+  const cells = headers.map((name, index) => {
+    if (REHARVEST_COLUMNS.has(name)) return fresh[index];
+    const recorded = row.cells && Object.prototype.hasOwnProperty.call(row.cells, name)
+      ? row.cells[name]
+      : '';
+    return String(recorded == null ? '' : recorded);
+  });
+
+  return `| ${cells.join(' | ')} |`;
+}
+
 function reharvestLedger(root, records, today) {
   try {
     if (!Array.isArray(records) || records.length === 0) return 0;
@@ -1732,7 +1774,7 @@ function reharvestLedger(root, records, today) {
       if (!record || !record.slug) continue;
       const row = rowBySlug.get(record.slug);
       if (!row) continue;
-      const rendered = renderLedgerRow(record, row.headers);
+      const rendered = repairLedgerRow(row, record);
       if (lines[row.lineIndex] === rendered) continue;
       lines[row.lineIndex] = rendered;
       rewritten++;

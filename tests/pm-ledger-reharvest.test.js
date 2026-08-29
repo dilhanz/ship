@@ -17,7 +17,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const SCRIPT_PATH = path.join(__dirname, '..', 'ship', 'pm-update.cjs');
-const { ledgerRows, reharvestLedger, harvestFeature } = require(SCRIPT_PATH);
+const { ledgerRows, reharvestLedger, harvestFeature, runHarvest } = require(SCRIPT_PATH);
 
 const WIDE_HEADER =
   '| Feature | Shipped | Profile | Outcome | Verify | Verify note | Unresolved carried | Plan rounds | Fix rounds | Findings (C/H/M/L) | Phases | Artifacts |';
@@ -222,7 +222,11 @@ describe('runHarvest — narrow re-admission of unreadable verdicts', () => {
 
     assert.equal(cellsByName(dir, 'beta').Verify, 'DEFERRED');
     assert.equal(cellsByName(dir, 'beta')['Verify note'], 'handed to the PM layer');
-    assert.equal(cellsByName(dir, 'beta').Profile, 'thorough');
+    assert.equal(
+      cellsByName(dir, 'beta').Profile,
+      'standard',
+      'recorded history outside Verify/Verify note/Outcome is never rewritten'
+    );
     assert.equal(rowFor(dir, 'alpha'), wideRow('alpha', 'PASS', 'proven'), 'a PASS row is untouched');
   });
 
@@ -237,6 +241,48 @@ describe('runHarvest — narrow re-admission of unreadable verdicts', () => {
 
     assert.equal(runCli(dir).status, 0);
     assert.equal(cellsByName(dir, 'beta').Verify, 'PASS');
+  });
+
+  it('leaves the file byte-identical when a re-read still finds no verdict on a later day', () => {
+    // The daily-rewrite regression: harvestFeature falls back to `today` for
+    // Shipped when VERIFY.md carries no `**Verified:**` line, so a row that
+    // stays unreadable used to be relabelled with a new ship date every run.
+    const dir = tmpRepo();
+    writeRoadmap(dir);
+    seedLedger(dir, [wideRow('delta', 'unknown')]);
+    archive(dir, 'delta', {
+      'CONTEXT.md': '---\nstatus: done\n---\n',
+      'VERIFY.md': '# nothing recognisable here\n'
+    });
+
+    const before = readLedger(dir);
+
+    runHarvest(dir, dir, [], '2026-06-06');
+    const first = readLedger(dir);
+    assert.equal(first, before, 'a re-harvest that still finds no verdict changes nothing');
+
+    runHarvest(dir, dir, [], '2026-07-07');
+    assert.equal(readLedger(dir), before, 'and is still a no-op on a third date');
+
+    assert.equal(cellsByName(dir, 'delta').Shipped, '2026-01-01', 'the recorded ship date survives');
+  });
+
+  it('repairs the Verify cells without downgrading provenance a removed artifact would', () => {
+    const dir = tmpRepo();
+    writeRoadmap(dir);
+    seedLedger(dir, [wideRow('delta', 'unknown')]);
+    // Only VERIFY.md remains: a whole-row re-render would rewrite Artifacts,
+    // Plan rounds and Phases down to what this thinner archive can prove.
+    archive(dir, 'delta', { 'VERIFY.md': '**Overall Status:** PASS\n' });
+
+    runHarvest(dir, dir, [], '2026-06-06');
+
+    const cells = cellsByName(dir, 'delta');
+    assert.equal(cells.Verify, 'PASS');
+    assert.equal(cells.Artifacts, 'CONTEXT.md; PLAN.md; REVIEW.md; VERIFY.md');
+    assert.equal(cells['Plan rounds'], '1');
+    assert.equal(cells.Phases, '1');
+    assert.equal(cells.Shipped, '2026-01-01');
   });
 
   it('never re-reads a row recorded with a real verdict', () => {
