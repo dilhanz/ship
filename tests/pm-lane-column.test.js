@@ -18,7 +18,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const SCRIPT_PATH = path.join(__dirname, '..', 'ship', 'pm-update.cjs');
-const { applyStatusUpdates, applyLaneColumn, laneOwnershipMap } = require(SCRIPT_PATH);
+const { parseRoadmap, applyStatusUpdates, applyLaneColumn, laneOwnershipMap } = require(SCRIPT_PATH);
 
 const gitAvailable = (() => {
   try {
@@ -238,6 +238,59 @@ describe('pm-lane-column: applyLaneColumn', () => {
       lines.find(l => l.startsWith('| Ship gadget')),
       '| Ship gadget   | in-progress   | — | gadget   |\r'
     );
+  });
+
+  it('sanitises a lane label carrying a | so the row survives the round trip', () => {
+    const before = parseRoadmap(LANE_ROADMAP).length;
+    const result = applyLaneColumn(
+      LANE_ROADMAP,
+      new Map([['widget', 'feat|evil @ /repos/wid|get']])
+    );
+
+    const rows = parseRoadmap(result.content);
+    assert.equal(rows.length, before, 'a | in the label must not delete the row from every parse');
+
+    const widget = rows.find(r => r.slug === 'widget');
+    assert.equal(widget.cells.Lane, 'feat/evil @ /repos/wid/get', 'pipes become slashes');
+
+    const line = result.content.split('\n').find(l => l.startsWith('| Ship widget'));
+    const header = LANE_ROADMAP.split('\n').find(l => l.startsWith('| Item'));
+    assert.equal(line.split('|').length, header.split('|').length,
+      'the cell count still equals the header\'s');
+  });
+
+  it('sanitises a lane label carrying a newline', () => {
+    const before = parseRoadmap(LANE_ROADMAP).length;
+    const result = applyLaneColumn(
+      LANE_ROADMAP,
+      new Map([['widget', 'feat\nevil @ /repos/widget']])
+    );
+
+    const rows = parseRoadmap(result.content);
+    assert.equal(rows.length, before, 'a newline must not split the row in two');
+    assert.equal(rows.find(r => r.slug === 'widget').cells.Lane, 'feat evil @ /repos/widget');
+  });
+
+  it('round-trips: parseRoadmap row count is unchanged for every label', () => {
+    const before = parseRoadmap(LANE_ROADMAP).length;
+    const labels = [
+      'main @ /repo',
+      'feat|x @ /repo',
+      '|||',
+      'a\nb',
+      '\r\n',
+      '',
+      '   ',
+      '— | —'
+    ];
+    for (const label of labels) {
+      const result = applyLaneColumn(LANE_ROADMAP, new Map([['widget', label]]));
+      assert.equal(
+        parseRoadmap(result.content).length,
+        before,
+        `label ${JSON.stringify(label)} destroyed a row`
+      );
+    }
   });
 
   it('degrades to — for a null or non-Map argument rather than throwing', () => {

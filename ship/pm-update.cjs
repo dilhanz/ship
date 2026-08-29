@@ -393,6 +393,21 @@ function stampFirstSeen(content, today) {
  * @param {Map<string, string|null>} laneByName
  * @returns {{ content: string, changed: boolean }}
  */
+function sanitizeLaneLabel(value) {
+  // A branch name or worktree path may legally contain neither a newline nor
+  // a `|`, but nothing here validates that: a lane label carrying either one
+  // would change the row's cell count, and `parseRoadmap` DROPS rows whose
+  // cell count differs from their header's. An unsanitised `|` therefore does
+  // not mangle the row, it deletes it from every parse — including this
+  // writer's own — so the cell can never be seen again to repair it.
+  // Same collapse as ledgerCell, minus its empty-to-`unknown` fallback: here
+  // the empty case must stay the authored `—`.
+  return String(value == null ? '' : value)
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\|/g, '/')
+    .trim();
+}
+
 function applyLaneColumn(content, laneByName) {
   const lines = content.split('\n');
   const map = laneByName instanceof Map ? laneByName : new Map();
@@ -404,7 +419,8 @@ function applyLaneColumn(content, laneByName) {
     if (row.slugless) continue;
 
     const owner = map.get(row.slug);
-    const value = typeof owner === 'string' && owner !== '' ? owner : '—';
+    const label = typeof owner === 'string' ? sanitizeLaneLabel(owner) : '';
+    const value = label !== '' ? label : '—';
     if ((row.cells.Lane || '') === value) continue; // already correct
 
     const segments = lines[row.lineIndex].split('|');
@@ -446,7 +462,9 @@ function laneOwnershipMap(sweepResult) {
       for (const feature of features) {
         const name = feature && feature.name;
         if (typeof name !== 'string' || name === '') continue;
-        map.set(name, `${branch} @ ${lanePath}`);
+        // Sanitised at the source too, so any future consumer of this map
+        // inherits the guard rather than re-deriving it.
+        map.set(name, sanitizeLaneLabel(`${branch} @ ${lanePath}`));
       }
     }
   } catch (e) {
