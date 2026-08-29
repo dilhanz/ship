@@ -1818,14 +1818,72 @@ function runHarvest(cwd, root, slugs, today) {
   }
 }
 
-module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, extractVerdict, harvestFeature, LEDGER_COLUMNS, ledgerSlugs, ledgerRows, ledgerHeaders, hasLedgerHeader, renderLedgerRow, appendLedger, reharvestLedger, runHarvest };
+/** Verify cells that mean the shipped work carries verification debt. */
+const DEBT_VERDICTS = new Set(['none', 'unknown', 'fail', 'inconclusive']);
+
+/** Outcomes that were never meant to ship, so they carry no verification debt. */
+const NON_SHIPPING_OUTCOMES = new Set(['abandoned', 'superseded', 'umbrella']);
+
+/**
+ * Backlog rows proposed for LEDGER.md's verification debt.
+ *
+ * A row qualifies when its `Verify` cell is `none`, `unknown`, `FAIL` or
+ * `INCONCLUSIVE` — the four shapes that mean nothing on disk proves the
+ * shipped work was verified. An `Outcome` of `abandoned`, `superseded` or
+ * `umbrella` excludes it: work that was never meant to ship is not debt. An
+ * absent `Outcome` column, or an `unknown` value, excludes nothing — an
+ * unstamped archive is a recorded gap, not evidence against shipping.
+ *
+ * Every entry is a *proposal*, never a written row: `--debt` writes nothing
+ * and the `ship-pm` agent writes only what the user accepts, the same
+ * propose-never-write discipline that governs Priority. `priority` is `P1`
+ * for every proposal — verification debt blocks confidence in shipped work.
+ *
+ * Pure; never throws. An empty, absent or unparseable ledger yields `[]`.
+ *
+ * @param {string} ledgerContent
+ * @returns {Object[]} proposals in the ledger's own row order
+ */
+function debtProposals(ledgerContent) {
+  const proposals = [];
+  try {
+    for (const row of ledgerRows(ledgerContent)) {
+      const verify = String(row.cells.Verify || '').trim();
+      if (!DEBT_VERDICTS.has(verify.toLowerCase())) continue;
+
+      // An absent Outcome column reads exactly as an unstamped one.
+      const outcome = String(row.cells.Outcome || '').trim() || 'unknown';
+      if (NON_SHIPPING_OUTCOMES.has(outcome.toLowerCase())) continue;
+
+      proposals.push({
+        item: `Verify ${row.slug}`,
+        status: 'pending',
+        priority: 'P1',
+        size: '—',
+        dependsOn: '—',
+        source: `LEDGER.md ${row.slug} row — Verify: ${verify}`,
+        shipFeature: row.slug,
+        kind: 'debt',
+        verify,
+        outcome,
+        reason: `The ledger records Verify: ${verify} for ${row.slug}, so nothing on disk proves the shipped work was verified; re-running /ship:pm check ${row.slug} and recording the verdict would settle it.`
+      });
+    }
+  } catch (e) {
+    return proposals; // silent by contract — a damaged ledger proposes nothing
+  }
+  return proposals;
+}
+
+module.exports = { parseRoadmap, resolveBaseRef, archiveMergeStatus, mappedStatus, applyStatusUpdates, stampFirstSeen, applyLaneColumn, laneOwnershipMap, bumpUpdated, selectNext, computeUnblocks, derivePriority, generateDashboard, writeFileAtomic, stampLane, extractVerdict, harvestFeature, LEDGER_COLUMNS, ledgerSlugs, ledgerRows, ledgerHeaders, hasLedgerHeader, renderLedgerRow, appendLedger, reharvestLedger, runHarvest, debtProposals };
 
 if (require.main === module) {
   try {
     const args = process.argv.slice(2);
     const wantNext = args.includes('--next');
     const wantEvidence = args.includes('--evidence');
-    const slugs = args.filter(a => a !== '--next' && a !== '--evidence');
+    const wantDebt = args.includes('--debt');
+    const slugs = args.filter(a => a !== '--next' && a !== '--evidence' && a !== '--debt');
     const cwd = process.cwd();
 
     // One date for every stamp this run makes, so a ledger row and a
@@ -1836,8 +1894,8 @@ if (require.main === module) {
     // Lane stamp — best effort, and deliberately BEFORE the .project-manager/
     // early-exit: the stamp records which lane owns the feature and must not
     // become conditional on a PM directory existing. `--next` and `--evidence`
-    // both mean "write nothing", so they suppress this too.
-    if (!wantNext && !wantEvidence) {
+    // both mean "write nothing", so they suppress this too — as does --debt.
+    if (!wantNext && !wantEvidence && !wantDebt) {
       for (const slug of slugs) {
         try {
           stampLane(cwd, slug);
@@ -1856,12 +1914,24 @@ if (require.main === module) {
     // damaged or missing roadmap cannot silently disable it. Query modes write
     // nothing, so they suppress it. A harvest failure never reaches stderr and
     // never changes the exit code — the status transition is the caller's job.
-    if (!wantNext && !wantEvidence) {
+    if (!wantNext && !wantEvidence && !wantDebt) {
       try {
         runHarvest(cwd, root, slugs, today);
       } catch (e) {
         // silent by contract
       }
+    }
+
+    if (wantDebt) {
+      // Query only — verification-debt proposals from LEDGER.md, printed as
+      // JSON and never written anywhere. Deliberately handled BEFORE the
+      // roadmap early-exit below: this mode reads LEDGER.md, not ROADMAP.md,
+      // so a missing or damaged roadmap must not silently disable it. An
+      // absent .project-manager/, an absent ledger, or an unparseable one all
+      // print [] and exit 0 — never an error, never a non-zero exit.
+      const ledger = readOptional(path.join(root, '.project-manager', 'LEDGER.md')) || '';
+      console.log(JSON.stringify(debtProposals(ledger), null, 2));
+      process.exit(0);
     }
 
     const roadmapPath = path.join(root, '.project-manager', 'ROADMAP.md');
