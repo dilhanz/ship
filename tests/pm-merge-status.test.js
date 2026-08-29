@@ -138,6 +138,46 @@ describe('pm-merge-status: archiveMergeStatus', { skip: !gitAvailable }, () => {
     assert.equal(archiveMergeStatus(repo, 'widget'), 'done');
   });
 
+  it('never moves a recorded done backwards — same archive, two recorded values', () => {
+    // One archive, one git answer. The gate is the recorded status, not the
+    // merge test: `done` is left alone, anything else records the status.
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    git(repo, 'checkout', '-b', 'feature/widget');
+    const head = commit(repo, 'widget.txt', 'work\n', 'build widget');
+    git(repo, 'checkout', 'main');
+    git(repo, 'update-ref', 'refs/remotes/origin/feature/widget', head);
+    archive(repo, 'widget', verifyMd(head));
+
+    assert.equal(archiveMergeStatus(repo, 'widget'), 'awaiting-merge');
+    assert.equal(mappedStatus(repo, 'widget', 'done'), null, 'a recorded done is never downgraded');
+    assert.equal(mappedStatus(repo, 'widget', 'in-progress'), 'awaiting-merge');
+  });
+
+  it('still records done for a recorded done against a stamp-less archive', () => {
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    archive(repo, 'widget');
+
+    assert.equal(archiveMergeStatus(repo, 'widget'), 'no-stamp');
+    assert.equal(mappedStatus(repo, 'widget', 'done'), 'done');
+  });
+
+  it('treats an absent or empty recorded status as not-done, without throwing', () => {
+    // The shape a slugless or malformed row can produce.
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    git(repo, 'checkout', '-b', 'feature/widget');
+    const head = commit(repo, 'widget.txt', 'work\n', 'build widget');
+    git(repo, 'checkout', 'main');
+    git(repo, 'update-ref', 'refs/remotes/origin/feature/widget', head);
+    archive(repo, 'widget', verifyMd(head));
+
+    assert.equal(mappedStatus(repo, 'widget', undefined), 'awaiting-merge');
+    assert.equal(mappedStatus(repo, 'widget', ''), 'awaiting-merge');
+    assert.equal(mappedStatus(repo, 'widget', 'DONE'), null, 'the gate is case-insensitive');
+  });
+
   it('is inconclusive — status unchanged — when neither main nor master exists', () => {
     const repo = path.join(root, 'repo');
     initRepo(repo, 'work');
