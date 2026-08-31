@@ -150,7 +150,11 @@ describe('legacy install-tree guard vs. the installer it guards against', () => 
     const installed = fs
       .readdirSync(path.join(sandbox, '.claude'))
       .filter((e) => !PRESERVED.has(e));
-    const present = new Set(fs.readdirSync(path.join(ROOT, '.claude')));
+    // `.claude/` is gitignored, so a CI checkout has none at all — which is
+    // the strongest possible pass, not an error. Reading it unguarded threw
+    // ENOENT and reported a clean tree as a failure.
+    const rootClaude = path.join(ROOT, '.claude');
+    const present = new Set(fs.existsSync(rootClaude) ? fs.readdirSync(rootClaude) : []);
     const fossils = installed.filter((e) => present.has(e));
     assert.deepEqual(
       fossils,
