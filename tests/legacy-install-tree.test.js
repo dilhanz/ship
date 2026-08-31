@@ -14,10 +14,13 @@
  *     file whenever a permission is granted in this repo and it is not
  *     gitignored, so a disk-absence assertion would go permanently red on any
  *     working copy. Its one-time removal was checked at deletion time instead.
- *   - Only the tracked `.claude/agent-memory/ship-ship-verifier/` is asserted to
- *     survive. The sibling `ship-ship-pm/`, `ship-ship-replanner/` and
- *     `ship-ship-reviewer/` directories are untracked and absent from a CI
- *     checkout; asserting on them would fail every CI run.
+ *   - The agent-memory survival case is conditional on `.claude/` existing at
+ *     all. `.claude/` is gitignored and nothing under it is tracked any more,
+ *     so a CI checkout has no such directory and an unconditional assertion
+ *     would fail every run — the same reason the sibling `ship-ship-pm/`,
+ *     `ship-ship-replanner/` and `ship-ship-reviewer/` directories were never
+ *     asserted on. What survives the narrowing is the thing worth guarding: a
+ *     careless `.claude*` glob that empties a tree which *is* present.
  */
 
 const { describe, it } = require('node:test');
@@ -55,6 +58,10 @@ describe('legacy .claude/ install tree stays gone', () => {
   });
 
   it('.claude/agent-memory/ship-ship-verifier survives', () => {
+    // No `.claude/` at all is the CI shape, and nothing can have been lost
+    // from a tree that is not there. Only a present-but-pruned tree is a
+    // finding.
+    if (!exists('.claude')) return;
     const rel = '.claude/agent-memory/ship-ship-verifier';
     const abs = path.join(repoRoot, rel);
     assert.ok(exists(rel), `${rel} is live plugin-era agent memory, not fossil — it must be preserved`);
