@@ -1284,8 +1284,11 @@ function extractVerdict(verifyContent) {
       return { verify: 'in-progress', note: qualifier(text.replace(/^IN[\s-]*PROGRESS\b/i, '')) };
     }
 
+    // Trailing `*` and `` ` `` too: the `**Verdict: PASS.** Criterion 8 holds.`
+    // shape captures to end of line, so the closing emphasis lands *inside*
+    // the first token where the end-of-text decoration strip cannot reach it.
     const parts = text.match(/^(\S+)([\s\S]*)$/);
-    const token = parts[1].replace(/[.,:;]+$/, '').toUpperCase();
+    const token = parts[1].replace(/[.,:;*`]+$/, '').toUpperCase();
     if (!VERIFY_VERDICTS.has(token)) return { verify: 'unknown', note: text };
 
     return { verify: token, note: qualifier(parts[2]) };
