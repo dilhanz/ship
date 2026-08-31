@@ -100,10 +100,28 @@ describe('pm-merge-status: archiveMergeStatus', { skip: !gitAvailable }, () => {
     git(repo, 'checkout', '-b', 'feature/widget');
     const head = commit(repo, 'widget.txt', 'work\n', 'build widget');
     git(repo, 'checkout', 'main');
+    // The branch genuinely still exists on the remote — that is the positive
+    // proof of non-merge `awaiting-merge` now requires.
+    git(repo, 'update-ref', 'refs/remotes/origin/feature/widget', head);
     archive(repo, 'widget', verifyMd(head));
 
     assert.equal(archiveMergeStatus(repo, 'widget'), 'awaiting-merge');
     assert.equal(mappedStatus(repo, 'widget', 'in-progress'), 'awaiting-merge');
+  });
+
+  it('is inconclusive for a non-ancestor no remote branch corroborates', () => {
+    // The squash shape: the work landed, the stamped commit did not, and the
+    // branch is gone. Undecidable — and this used to answer awaiting-merge.
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    git(repo, 'checkout', '-b', 'feature/widget');
+    const head = commit(repo, 'widget.txt', 'work\n', 'build widget');
+    git(repo, 'checkout', 'main');
+    git(repo, 'branch', '-D', 'feature/widget');
+    archive(repo, 'widget', verifyMd(head));
+
+    assert.equal(archiveMergeStatus(repo, 'widget'), 'inconclusive');
+    assert.equal(mappedStatus(repo, 'widget', 'in-progress'), null, 'unchanged, never invented');
   });
 
   it('flips to done once the side branch is merged — ancestry self-heals', () => {
@@ -112,11 +130,52 @@ describe('pm-merge-status: archiveMergeStatus', { skip: !gitAvailable }, () => {
     git(repo, 'checkout', '-b', 'feature/widget');
     const head = commit(repo, 'widget.txt', 'work\n', 'build widget');
     git(repo, 'checkout', 'main');
+    git(repo, 'update-ref', 'refs/remotes/origin/feature/widget', head);
     archive(repo, 'widget', verifyMd(head));
     assert.equal(archiveMergeStatus(repo, 'widget'), 'awaiting-merge');
 
     git(repo, 'merge', '--no-ff', '-m', 'merge widget', 'feature/widget');
     assert.equal(archiveMergeStatus(repo, 'widget'), 'done');
+  });
+
+  it('never moves a recorded done backwards — same archive, two recorded values', () => {
+    // One archive, one git answer. The gate is the recorded status, not the
+    // merge test: `done` is left alone, anything else records the status.
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    git(repo, 'checkout', '-b', 'feature/widget');
+    const head = commit(repo, 'widget.txt', 'work\n', 'build widget');
+    git(repo, 'checkout', 'main');
+    git(repo, 'update-ref', 'refs/remotes/origin/feature/widget', head);
+    archive(repo, 'widget', verifyMd(head));
+
+    assert.equal(archiveMergeStatus(repo, 'widget'), 'awaiting-merge');
+    assert.equal(mappedStatus(repo, 'widget', 'done'), null, 'a recorded done is never downgraded');
+    assert.equal(mappedStatus(repo, 'widget', 'in-progress'), 'awaiting-merge');
+  });
+
+  it('still records done for a recorded done against a stamp-less archive', () => {
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    archive(repo, 'widget');
+
+    assert.equal(archiveMergeStatus(repo, 'widget'), 'no-stamp');
+    assert.equal(mappedStatus(repo, 'widget', 'done'), 'done');
+  });
+
+  it('treats an absent or empty recorded status as not-done, without throwing', () => {
+    // The shape a slugless or malformed row can produce.
+    const repo = path.join(root, 'repo');
+    initRepo(repo);
+    git(repo, 'checkout', '-b', 'feature/widget');
+    const head = commit(repo, 'widget.txt', 'work\n', 'build widget');
+    git(repo, 'checkout', 'main');
+    git(repo, 'update-ref', 'refs/remotes/origin/feature/widget', head);
+    archive(repo, 'widget', verifyMd(head));
+
+    assert.equal(mappedStatus(repo, 'widget', undefined), 'awaiting-merge');
+    assert.equal(mappedStatus(repo, 'widget', ''), 'awaiting-merge');
+    assert.equal(mappedStatus(repo, 'widget', 'DONE'), null, 'the gate is case-insensitive');
   });
 
   it('is inconclusive — status unchanged — when neither main nor master exists', () => {

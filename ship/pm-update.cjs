@@ -207,6 +207,55 @@ function cachedBaseRef(cwd) {
 }
 
 /**
+ * Positive proof that a stamped head has *not* merged: a remote branch other
+ * than the base still contains it.
+ *
+ * A non-ancestor result on its own proves nothing — under a squash merge the
+ * stamped commit is replaced, so merged work is a non-ancestor forever. What
+ * does carry evidence is a live remote branch that still holds the commit:
+ * the work is still sitting on a branch, unlanded.
+ *
+ * Local-only (`git branch -r --contains` reads `refs/remotes/`, no network).
+ * The base itself is excluded in both spellings (`main` and `origin/main`)
+ * and under *any* remote: the remote prefix is stripped from each listed ref
+ * and a ref whose branch part equals the base branch is skipped, so a fork's
+ * `upstream/main` — which legitimately contains the merged commit — is never
+ * read as a live branch still holding unlanded work. Symbolic entries
+ * (`origin/HEAD -> origin/main`) never count either.
+ *
+ * Every other outcome — no run, non-zero status, empty stdout, an absent git
+ * binary, any exception — is `false`, so this can only ever *withhold* `done`,
+ * never invent `awaiting-merge`. Silent on both streams; never throws.
+ *
+ * @param {string} cwd
+ * @param {string} head - the stamped commit
+ * @param {string} base - the resolved base ref
+ * @returns {boolean} true only on positive proof of non-merge
+ */
+function remoteBranchStillHolds(cwd, head, base) {
+  try {
+    const run = spawnSync('git', ['branch', '-r', '--contains', head], { cwd, encoding: 'utf8' });
+    if (!run || run.status !== 0 || typeof run.stdout !== 'string') return false;
+
+    const excluded = new Set([base, `origin/${base}`]);
+    // `main` for a base of either `main` or `origin/main`.
+    const baseBranch = String(base || '').replace(/^[^/]+\//, '');
+    const branchPart = name => name.replace(/^[^/]+\//, '');
+    return run.stdout
+      .split('\n')
+      .map(line => line.replace(/^[*+\s]+/, '').trim())
+      .some(name =>
+        name !== '' &&
+        !name.includes('->') &&
+        !excluded.has(name) &&
+        !(baseBranch !== '' && branchPart(name) === baseBranch)
+      );
+  } catch (e) {
+    return false; // silent by contract
+  }
+}
+
+/**
  * Test whether an archived feature's work actually reached the base branch,
  * anchored on the `**Head:**` commit the verifier stamps into VERIFY.md.
  *
@@ -223,10 +272,14 @@ function cachedBaseRef(cwd) {
  *                    evidence *against* a merge (~60 archives predate the
  *                    stamp), so the caller keeps today's `done`.
  * - `'done'`       — the stamped head is an ancestor of the base.
- * - `'awaiting-merge'` — it is not.
- * - `'inconclusive'` — no base ref, an unresolvable commit, or any git
- *                    failure. The caller leaves the row unchanged; the safe
- *                    direction is never to claim `done`.
+ * - `'awaiting-merge'` — the head is not in the base **and** a live remote
+ *                    branch still contains it: positive proof the work has
+ *                    not landed.
+ * - `'inconclusive'` — no base ref, an unresolvable commit, any git failure,
+ *                    or a non-ancestor result that no remote branch
+ *                    corroborates — under a squash merge this is the expected
+ *                    shape of merged work. The caller leaves the row
+ *                    unchanged; the safe direction is never to claim `done`.
  *
  * Silent on both streams; never throws.
  *
@@ -250,7 +303,9 @@ function archiveMergeStatus(cwd, slug) {
     const run = spawnSync('git', ['merge-base', '--is-ancestor', stamp[1], base], { cwd, encoding: 'utf8' });
     if (!run) return 'inconclusive';
     if (run.status === 0) return 'done';
-    if (run.status === 1) return 'awaiting-merge';
+    // Not an ancestor. That alone is not evidence — a squash merge replaces
+    // the commit — so `awaiting-merge` needs a live remote branch to hold it.
+    if (run.status === 1) return remoteBranchStillHolds(cwd, stamp[1], base) ? 'awaiting-merge' : 'inconclusive';
     return 'inconclusive'; // 128 for an unresolvable commit, null for a missing binary
   } catch (e) {
     return 'inconclusive'; // silent by contract
@@ -265,8 +320,14 @@ function archiveMergeStatus(cwd, slug) {
  * Never invents a status.
  *
  * An archived slug resolves through archiveMergeStatus, so a feature whose
- * stamped head has not reached the base branch records `awaiting-merge`
- * instead of `done`. A stamp-less archive still records `done`.
+ * stamped head has not reached the base branch — and whose branch a live
+ * remote still holds — records `awaiting-merge` instead of `done`. A
+ * stamp-less archive still records `done`.
+ *
+ * The merge test may never move a recorded `done` backwards: a downgrade
+ * would need positive evidence the work was *un*-shipped, which no test here
+ * produces. The rule is scoped to the archive branch alone — every other
+ * mapping keeps today's behaviour.
  *
  * @param {string} cwd
  * @param {string} slug
@@ -280,8 +341,12 @@ function mappedStatus(cwd, slug, recorded) {
     if (fs.existsSync(path.join(cwd, '.planning', 'archive', slug))) {
       // Archived is where the work went, not proof it merged — ask git.
       const merge = archiveMergeStatus(cwd, slug);
-      if (merge === 'awaiting-merge') return 'awaiting-merge';
       if (merge === 'inconclusive') return null; // unchanged; never invented
+      if (merge === 'awaiting-merge') {
+        // Never move a recorded `done` backwards — the merge test can only
+        // withhold `done`, never revoke one already recorded.
+        return (recorded || '').toLowerCase() === 'done' ? null : 'awaiting-merge';
+      }
       return 'done'; // 'done', and 'no-stamp' keeps today's answer byte-for-byte
     }
   } catch (e) {
@@ -1219,8 +1284,11 @@ function extractVerdict(verifyContent) {
       return { verify: 'in-progress', note: qualifier(text.replace(/^IN[\s-]*PROGRESS\b/i, '')) };
     }
 
+    // Trailing `*` and `` ` `` too: the `**Verdict: PASS.** Criterion 8 holds.`
+    // shape captures to end of line, so the closing emphasis lands *inside*
+    // the first token where the end-of-text decoration strip cannot reach it.
     const parts = text.match(/^(\S+)([\s\S]*)$/);
-    const token = parts[1].replace(/[.,:;]+$/, '').toUpperCase();
+    const token = parts[1].replace(/[.,:;*`]+$/, '').toUpperCase();
     if (!VERIFY_VERDICTS.has(token)) return { verify: 'unknown', note: text };
 
     return { verify: token, note: qualifier(parts[2]) };
@@ -1645,9 +1713,15 @@ function renderLedgerRow(record, headers) {
     Artifacts: Array.isArray(r.artifacts) ? r.artifacts.join('; ') : ''
   };
 
-  const cells = columns.map(name =>
-    ledgerCell(Object.prototype.hasOwnProperty.call(byColumn, name) ? byColumn[name] : '')
-  );
+  // `Verify note` is the one column whose empty case is not ignorance: a
+  // verdict that carried no qualifier has nothing to say, which `ledgerCell`
+  // would otherwise record as `unknown` — the exact confusion between "clean
+  // run" and "no record" this ledger exists to prevent.
+  const cells = columns.map(name => {
+    const raw = Object.prototype.hasOwnProperty.call(byColumn, name) ? byColumn[name] : '';
+    if (name === 'Verify note' && !String(raw == null ? '' : raw).trim()) return 'none';
+    return ledgerCell(raw);
+  });
 
   return `| ${cells.join(' | ')} |`;
 }
@@ -1776,11 +1850,18 @@ function repairLedgerRow(row, record) {
     .map(c => c.trim());
 
   const cells = headers.map((name, index) => {
-    if (REHARVEST_COLUMNS.has(name)) return fresh[index];
-    const recorded = row.cells && Object.prototype.hasOwnProperty.call(row.cells, name)
+    const raw = row.cells && Object.prototype.hasOwnProperty.call(row.cells, name)
       ? row.cells[name]
       : '';
-    return String(recorded == null ? '' : recorded);
+    const recorded = String(raw == null ? '' : raw);
+    if (!REHARVEST_COLUMNS.has(name)) return recorded;
+    // `unknown` was the older spelling of "this verdict carried no qualifier",
+    // which now renders `none`. They are the same claim, so replacing one with
+    // the other is churn rather than repair — and would rewrite and re-date
+    // every legacy row on the first run after the rename, breaking the no-op
+    // guarantee that is the whole point of the narrow re-admission.
+    if (name === 'Verify note' && fresh[index] === 'none' && recorded === 'unknown') return recorded;
+    return fresh[index];
   });
 
   return `| ${cells.join(' | ')} |`;

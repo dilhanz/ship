@@ -77,6 +77,11 @@ describe('pm-blind-spots fix round — the base ref cache is per working tree', 
       repo.run(['add', 'side.txt']);
       repo.run(['commit', '-qm', 'two']);
       repo.side = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo.dir, encoding: 'utf8' }).trim();
+      // The side branch still exists on the remote, which is the positive
+      // proof of non-merge `awaiting-merge` requires; without it the answer
+      // would be `inconclusive` and the per-cwd property under test would be
+      // invisible.
+      repo.run(['update-ref', 'refs/remotes/origin/side', repo.side]);
     }
 
     stampArchive(onMain.dir, 'merged', onMain.head);

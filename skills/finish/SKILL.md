@@ -95,7 +95,7 @@ git rev-parse --verify main &>/dev/null && echo main || echo master
 # Get feature summary from CONTEXT.md for PR body
 # Push and create PR
 git push -u origin HEAD
-gh pr create --title "{type}: {feature-name}" --body "$(cat <<'EOF'
+PR_URL=$(gh pr create --title "{type}: {feature-name}" --body "$(cat <<'EOF'
 ## Summary
 {2-3 bullets from CONTEXT.md acceptance criteria}
 
@@ -104,10 +104,46 @@ gh pr create --title "{type}: {feature-name}" --body "$(cat <<'EOF'
 
 Built with [Ship](https://github.com/dilhanz/ship)
 EOF
-)"
+)")
+
+# `gh pr create` prints the URL on success. When its output is empty or is not
+# a URL (an existing PR, a warning-only run), ask for the URL directly.
+case "$PR_URL" in
+  https://*) ;;
+  *) PR_URL=$(gh pr view --json url -q .url) ;;
+esac
 ```
 
-Report the PR URL to the user.
+Report the PR URL (`$PR_URL`) to the user, then stamp it into the feature record.
+
+### Stamp the PR URL
+
+Record the PR on the feature itself, so merge provenance is a lookup on disk rather than git archaeology later. The URL is written verbatim as `gh` printed it — the PR number stays derivable from it rather than stored twice.
+
+Stamp it **before** the archive move, while the directory is still at `.planning/features/{feature-name}/`. Stamping after the `mv` would target a path that no longer exists — in a worktree-isolated session it would silently do nothing. This is the same ordering rule the `outcome:` stamp follows, and for the same reason.
+
+This skill has no Write or Edit tool, so the stamp goes through Bash. Replace an existing `pr:` line if there is one, otherwise insert one directly after the `status:` line inside the leading frontmatter block, and leave every other byte alone:
+
+```bash
+CTX=".planning/features/{feature-name}/CONTEXT.md"
+node -e '
+  const fs = require("fs"), [p, v] = process.argv.slice(1);
+  if (!v) process.exit(1);
+  const s = fs.readFileSync(p, "utf8");
+  const m = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) process.exit(1);
+  let fm = m[1];
+  fm = /^pr:/m.test(fm)
+    ? fm.replace(/^pr:.*$/m, "pr: " + v)
+    : fm.replace(/^(status:.*)$/m, "$1\npr: " + v);
+  if (!/^pr:/m.test(fm)) fm += "\npr: " + v;
+  fs.writeFileSync(p, s.slice(0, m.index) + "---\n" + fm + "\n---" + s.slice(m.index + m[0].length));
+' "$CTX" "$PR_URL" && grep -n 'pr: ' "$CTX"
+```
+
+A failed or impossible stamp is **not fatal** — report the failure, leave the field absent, and let the archive proceed. An empty or unavailable URL (neither `gh pr create` nor the `gh pr view` fallback produced one) exits non-zero and writes nothing: an absent field is a recorded gap, whereas a literal `pr: ` line with no value would be a false record that the trailing `grep` would read back as success. A CONTEXT.md with no leading frontmatter block behaves the same way — exits non-zero, left byte-identical.
+
+Option 2 and Option 3 open no PR and stamp nothing.
 
 ### Option 2: Merge Locally
 
@@ -174,6 +210,13 @@ mv .planning/features/{feature-name} "$MAIN_ROOT/.planning/archive/{feature-name
 
 In the main worktree, `MAIN_ROOT` resolves to the current root — behavior unchanged. From a linked worktree, this moves the record to the main worktree so the audit trail (CONTEXT.md, PLAN.md, VERIFY.md) survives `git worktree remove`. If `git rev-parse` fails (not a git repo), fall back to the local `.planning/archive/` exactly as before.
 
+**The move relocates the record for everyone, out of band.** Once it lands on `main`, every open branch still carries `.planning/features/{feature-name}/`, so a branch that later amends that record — a follow-up fix PR marking a carried finding resolved in VERIFY.md, say — is editing a path `main` no longer has. Local git resolves this as the rename it is, but GitHub has been observed to report `mergeable: CONFLICTING` with no file named even for an isolated, near-pure-rename archive commit, so rename detection is not something to rely on. Two consequences worth stating when you archive:
+
+- **Commit the move on its own**, touching nothing else. It does not guarantee clean rename detection, but it is the shape most likely to get it, and it keeps the resolution obvious when detection fails.
+- **A branch that will amend the archived record must sync `main` first.** Merge `main` into the PR branch locally, confirm the resolution leaves exactly one copy of the record — at the archive path, carrying the branch's edits — and push that merge. GitHub then reports `MERGEABLE`. Say this in the report below whenever you archive a feature that has open follow-up branches.
+
+Anything outside `.planning/` that hard-codes a feature path (an E2E script writing to `.planning/features/{name}/shots`, for instance) breaks at the same moment, for the same reason. Archiving moves the directory; it does not update references to it.
+
 Then run pm-update **from the main root** so its archive check sees the moved directory (`mappedStatus` runs against its cwd):
 
 ```bash
@@ -199,7 +242,7 @@ Feature: {name}
 Action: {PR created / Merged to main / Kept as-is}
 {If PR:} PR: {url}
 {If merged:} Branch merged and tests passing
-Archived: .planning/archive/{name}
+Archived: .planning/archive/{name} — a branch that will amend this record must merge main first
 {If an unapplied PM-HANDOFF.md exists:} PM handoff pending: {N} shared .project-manager/ edit(s) at {path} — run /ship:pm apply
 ```
 
