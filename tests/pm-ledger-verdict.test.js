@@ -43,6 +43,27 @@ describe('extractVerdict — the four shapes', () => {
     });
   });
 
+  it('reads **Verdict: X** with prose following the closing asterisks', () => {
+    // The inline shape captures to end of line, so the closing `**` lands
+    // inside the first token. It used to yield `PASS.**` — an unrecognised
+    // verdict — recording phantom verification debt for a feature that passed.
+    assert.deepEqual(extractVerdict('**Verdict: PASS.** Criterion 8 holds.\n'), {
+      verify: 'PASS',
+      note: 'Criterion 8 holds.'
+    });
+    assert.deepEqual(extractVerdict('**Verdict: PASS** and more\n'), {
+      verify: 'PASS',
+      note: 'and more'
+    });
+  });
+
+  it('reads a backtick-wrapped verdict inside the bold span', () => {
+    assert.deepEqual(extractVerdict('**Verdict: `FAIL`** — criterion 2 unproven\n'), {
+      verify: 'FAIL',
+      note: 'criterion 2 unproven'
+    });
+  });
+
   it('reads a ## Verdict section body', () => {
     const doc = '# Report\n\n## Criteria\n\nstuff\n\n## Verdict\n\nINCONCLUSIVE\n\n## Notes\n\nmore\n';
     assert.deepEqual(extractVerdict(doc), { verify: 'INCONCLUSIVE', note: '' });
