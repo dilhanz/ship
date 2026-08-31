@@ -210,6 +210,13 @@ mv .planning/features/{feature-name} "$MAIN_ROOT/.planning/archive/{feature-name
 
 In the main worktree, `MAIN_ROOT` resolves to the current root — behavior unchanged. From a linked worktree, this moves the record to the main worktree so the audit trail (CONTEXT.md, PLAN.md, VERIFY.md) survives `git worktree remove`. If `git rev-parse` fails (not a git repo), fall back to the local `.planning/archive/` exactly as before.
 
+**The move relocates the record for everyone, out of band.** Once it lands on `main`, every open branch still carries `.planning/features/{feature-name}/`, so a branch that later amends that record — a follow-up fix PR marking a carried finding resolved in VERIFY.md, say — is editing a path `main` no longer has. Local git resolves this as the rename it is, but GitHub has been observed to report `mergeable: CONFLICTING` with no file named even for an isolated, near-pure-rename archive commit, so rename detection is not something to rely on. Two consequences worth stating when you archive:
+
+- **Commit the move on its own**, touching nothing else. It does not guarantee clean rename detection, but it is the shape most likely to get it, and it keeps the resolution obvious when detection fails.
+- **A branch that will amend the archived record must sync `main` first.** Merge `main` into the PR branch locally, confirm the resolution leaves exactly one copy of the record — at the archive path, carrying the branch's edits — and push that merge. GitHub then reports `MERGEABLE`. Say this in the report below whenever you archive a feature that has open follow-up branches.
+
+Anything outside `.planning/` that hard-codes a feature path (an E2E script writing to `.planning/features/{name}/shots`, for instance) breaks at the same moment, for the same reason. Archiving moves the directory; it does not update references to it.
+
 Then run pm-update **from the main root** so its archive check sees the moved directory (`mappedStatus` runs against its cwd):
 
 ```bash
@@ -235,7 +242,7 @@ Feature: {name}
 Action: {PR created / Merged to main / Kept as-is}
 {If PR:} PR: {url}
 {If merged:} Branch merged and tests passing
-Archived: .planning/archive/{name}
+Archived: .planning/archive/{name} — a branch that will amend this record must merge main first
 {If an unapplied PM-HANDOFF.md exists:} PM handoff pending: {N} shared .project-manager/ edit(s) at {path} — run /ship:pm apply
 ```
 
