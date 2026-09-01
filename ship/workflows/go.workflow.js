@@ -143,11 +143,10 @@ const VERIFY_SCHEMA = {
   required: ['feature', 'status', 'criteria_total', 'criteria_passed'],
   properties: {
     feature: { type: 'string' },
-    status: { enum: ['PASS', 'FAIL', 'INCONCLUSIVE', 'DEFERRED'] },
+    status: { enum: ['PASS', 'FAIL', 'INCONCLUSIVE'] },
     criteria_passed: { type: 'number' },
     criteria_failed: { type: 'number' },
     criteria_inconclusive: { type: 'number' },
-    criteria_deferred: { type: 'number' },
     criteria_total: { type: 'number' },
     criteria_verdicts: {
       type: 'array',
@@ -157,19 +156,9 @@ const VERIFY_SCHEMA = {
         required: ['criterion', 'verdict'],
         properties: {
           criterion: { type: 'string' },
-          verdict: { enum: ['PASS', 'FAIL', 'INCONCLUSIVE', 'DEFERRED'] },
+          verdict: { enum: ['PASS', 'FAIL', 'INCONCLUSIVE'] },
           evidence: { type: 'string' },
         },
-      },
-    },
-    // Present when any criterion is DEFERRED: the in-lane record of shared
-    // .project-manager/ edits only the PM layer may apply.
-    pm_handoff: {
-      type: ['object', 'null'],
-      additionalProperties: false,
-      properties: {
-        path: { type: 'string' },
-        edits: { type: 'number' },
       },
     },
     tests_written: { type: 'number' },

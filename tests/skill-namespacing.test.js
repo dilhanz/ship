@@ -25,7 +25,7 @@ const nameField = (dir) => {
 
 describe('skill namespacing', () => {
   it('every skill carries a name: field', () => {
-    assert.ok(skillDirs.length >= 17, 'skills/ holds the full skill set');
+    assert.ok(skillDirs.length >= 15, 'skills/ holds the full skill set');
     for (const dir of skillDirs) {
       assert.ok(nameField(dir), `skills/${dir}/SKILL.md has a name: line`);
     }

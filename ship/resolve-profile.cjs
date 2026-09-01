@@ -5,7 +5,7 @@
 //
 // Workflow scripts cannot `require()` anything, so the profile→knobs table must
 // live in exactly one place outside them — here. The go skill shells out to the
-// CLI (as it does for pm-update.cjs) and passes the resolved knob values on.
+// CLI and passes the resolved knob values on.
 //
 // Zero dependencies. Resolution degrades, never dies: an unknown value, a
 // missing CONTEXT.md, or any read failure yields `standard` (today's full

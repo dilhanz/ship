@@ -221,16 +221,6 @@ describe('salvage retry — verifier', () => {
     assert.ok(/no result/i.test(c.slice(c.indexOf('## Clean Up the Scratch Record'))),
       'the one exception — a verifier that returned nothing — must keep its record');
   });
-
-  it('/ship:pm check can tell a gate that died from one that never ran', () => {
-    const c = readSrc('agents/ship-pm.md');
-    assert.ok(/IN PROGRESS — Stage 1 only/.test(c),
-      'the audit must recognise the partial marker');
-    assert.ok(/gate started and died/.test(c),
-      'the third state needs its own words, or a partial run reads as a missing one');
-    assert.ok(/\.review-scratch\/verify\.json/.test(c),
-      'the audit should name the salvageable record when it is still on disk');
-  });
 });
 
 describe('salvage retry — go workflow wiring', () => {

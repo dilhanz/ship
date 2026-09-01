@@ -26,8 +26,8 @@ Commands:
   /ship:status         Show all features and their status
   /ship:resume         Pick up where you left off on a feature
 
-  /ship:pm "question"  Ask the project manager: next item, parallel work, status, decisions
-  /ship:pm-sync        Set up or update project-manager state (.project-manager/)
+  /ship:ledger         Show the planned-feature ledger (.planning/LEDGER.md)
+                       add <idea> | <slug> now|next|someday|top | drop <slug>
 
   /ship:help           Show this reference
 

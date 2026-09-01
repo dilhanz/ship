@@ -170,16 +170,16 @@ describe('INFRASTRUCTURE is a terminal status the operator actually sees', () =>
       'the stoppedAt branch must enumerate the new status alongside the other three');
   });
 
-  it('the headless contract names infrastructure as a 12th outcome', () => {
+  it('the headless contract names infrastructure as an outcome', () => {
     const c = readSrc('ship/docs/headless.md');
     assert.match(c, /^\| `infrastructure` \|/m, 'the vocabulary table must carry the word');
     const row = /^\| `infrastructure` \|.*$/m.exec(c)[0];
     assert.match(row, /`building`/, 'the row must record the status left behind');
     assert.match(row, /exhausted/,
       'the row must distinguish itself from exhausted, which is the word that misled the team');
-    assert.match(c, /exactly one of these 12 outcomes/,
+    assert.match(c, /exactly one of these 11 outcomes/,
       'the count must move with the vocabulary');
-    assert.ok(!/these 11 outcomes/.test(c),
+    assert.ok(!/these 12 outcomes/.test(c),
       'a stale count leaves the contract of record disagreeing with itself');
   });
 });

@@ -19,8 +19,8 @@ const repoRoot = path.resolve(__dirname, '..');
 const readSrc = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
 
 const OUTCOMES = [
-  'done', 'deferred', 'needs-input', 'stuck', 'unresolved', 'blocked',
-  'verify-fail', 'needs-context', 'exhausted', 'checkpoint', 'error',
+  'done', 'needs-input', 'stuck', 'unresolved', 'blocked',
+  'verify-fail', 'needs-context', 'exhausted', 'infrastructure', 'checkpoint', 'error',
 ];
 
 describe('headless doctrine — flag parsing', () => {

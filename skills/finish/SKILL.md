@@ -196,7 +196,7 @@ node -e '
 ' "$CTX" "$OUTCOME" && grep -n '^outcome:' "$CTX"
 ```
 
-A failed stamp is **not fatal** — the archive still proceeds. The ledger then records `outcome: unknown`, which is a recorded gap rather than a false `shipped`. Report the failure and move on; never block the archive on it.
+A failed stamp is **not fatal** — the archive still proceeds. CONTEXT.md then carries no `outcome:`, which is a visible gap rather than a false `shipped`. Report the failure and move on; never block the archive on it.
 
 ### Move the directory
 
@@ -217,21 +217,38 @@ In the main worktree, `MAIN_ROOT` resolves to the current root — behavior unch
 
 Anything outside `.planning/` that hard-codes a feature path (an E2E script writing to `.planning/features/{name}/shots`, for instance) breaks at the same moment, for the same reason. Archiving moves the directory; it does not update references to it.
 
-Then run pm-update **from the main root** so its archive check sees the moved directory (`mappedStatus` runs against its cwd):
+## Close the Ledger Row
+
+The ledger lives at the **main worktree root** — `$MAIN_ROOT/.planning/LEDGER.md` — never in a linked worktree. Read `${CLAUDE_PLUGIN_ROOT}/skills/ledger/SKILL.md` for the format.
+
+Move the feature's row out of `## Now` / `## Next` / `## Someday` and insert `- [x] {feature-name} → .planning/archive/{feature-name}/` at the **top of `## Shipped`**. This skill has no Write or Edit tool, so it goes through Bash:
 
 ```bash
-cd "$MAIN_ROOT" && node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {feature-name}
+node -e '
+  const fs = require("fs"), [p, name] = process.argv.slice(1);
+  if (!fs.existsSync(p)) process.exit(0);
+  const row = "- [x] " + name + " \u2192 .planning/archive/" + name + "/";
+  const lines = fs.readFileSync(p, "utf8").split("\n");
+  const slug = new RegExp("^- \\[[ x]\\] \\*{0,2}" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\*{0,2}(\\s|$|—|→)");
+  const kept = lines.filter((l) => !slug.test(l.trim()));
+  const i = kept.findIndex((l) => /^##\s+Shipped\s*$/.test(l));
+  if (i === -1) { kept.push("", "## Shipped", row); }
+  else {
+    let j = i + 1;
+    while (j < kept.length && (kept[j].trim() === "" || kept[j].trim() === "_(empty)_")) {
+      if (kept[j].trim() === "_(empty)_") kept.splice(j, 1); else j++;
+    }
+    kept.splice(j, 0, row);
+  }
+  fs.writeFileSync(p, kept.join("\n"));
+' "$MAIN_ROOT/.planning/LEDGER.md" "{feature-name}" && grep -n "{feature-name}" "$MAIN_ROOT/.planning/LEDGER.md"
 ```
 
-This syncs PM state (silent no-op when `.project-manager/` is absent — pm-update finds the main root's `.project-manager/` itself via the resolver) — archive presence at the main root is what maps the roadmap row to `done`. It is mechanical only: status cells and the dashboard. Authored `.project-manager/` edits are never applied here.
+`## Shipped` is ordered by recency, so the newest row goes first. If no row for the feature exists in any section, the `## Shipped` row is still added — a feature that shipped without ever sitting in the ledger still belongs in its history. A failed ledger edit is **not fatal**: report it and move on, the same as a failed `outcome:` stamp.
 
-## Carry the PM Handoff
+On **Option 3 (keep as-is)** the feature is not archived, so do not touch the ledger: the row stays where it is and the work is still in flight.
 
-Check for `PM-HANDOFF.md` in the feature directory — at its archived location after Option 1 or 2, or in place under `.planning/features/{name}/` after Option 3.
-
-The archive `mv` above moves the whole feature directory, so on Options 1 and 2 the handoff reaches the main worktree root with the rest of the record and needs no separate step. Do not attempt to apply it: the edits belong to the PM layer, and this skill has no Write or Edit tool by design.
-
-If the handoff exists and its frontmatter reads `applied: no`, surface it in the report below. On Option 3 (keep as-is), say explicitly that the handoff is still sitting in this worktree — if the lane is later removed without finishing, an unapplied handoff goes with it.
+If `.planning/LEDGER.md` is absent, skip this silently. A project that never made a ledger is not in an error state.
 
 ## Report
 
@@ -243,7 +260,7 @@ Action: {PR created / Merged to main / Kept as-is}
 {If PR:} PR: {url}
 {If merged:} Branch merged and tests passing
 Archived: .planning/archive/{name} — a branch that will amend this record must merge main first
-{If an unapplied PM-HANDOFF.md exists:} PM handoff pending: {N} shared .project-manager/ edit(s) at {path} — run /ship:pm apply
+Ledger: moved to ## Shipped{, or "unchanged — feature kept in flight" on Option 3}
 ```
 
 $ARGUMENTS

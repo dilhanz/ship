@@ -106,7 +106,7 @@ Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ens
 
 ### Branch on `status`
 
-- **`APPROVED`** — set CONTEXT.md `status: plan-verified`, then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent). The outcome block additionally lists the examined files and any WARNING/SUGGESTION findings. Continue to the approval gate (section 3).
+- **`APPROVED`** — set CONTEXT.md `status: plan-verified`. The outcome block additionally lists the examined files and any WARNING/SUGGESTION findings. Continue to the approval gate (section 3).
 - **`NEEDS_INPUT`** — split on `--headless`:
   - **Interactive (no `--headless`)** — ask each entry in `questions` via AskUserQuestion (one question per entry, using its `options`; the automatic Other option covers anything else). Then RE-INVOKE the same workflow with `args: { feature: "{name}", answers: "<Q/A transcript>", roundOffset: <total rounds spent so far across all invocations>, maxPlanRounds: {knobs.maxPlanRounds} }` and re-branch on the new status. The `roundOffset` is what keeps the replanner's `### Round {n}` headings unique across re-invocations — without it a second run restarts at `### Round 1` and collides with the first run's subsection, which the replanner is forbidden to rewrite. Do **not** use `resumeFromRunId`. Cap this at 2 re-invocations; if a third `NEEDS_INPUT` arrives, report it and stop.
   - **Headless** — do NOT call AskUserQuestion. Write `.planning/features/{name}/QUESTIONS.md` in the format specified in **`ship/docs/headless.md` §6**, recording `roundOffset` as the total plan-loop rounds spent so far across all invocations. Leave CONTEXT.md at `planned` and terminate as `needs-input` with `questions_file` set.
@@ -133,7 +133,7 @@ Fires when status is `plan-verified` (whether the plan loop just approved it or 
 
 1. From PLAN.md, build the ordered list of **pending phases** (each `<phase>` whose `status` != `done`, as `{id, name}`). If the plan is flat (no `<phase>` elements), use a single pseudo-phase `{id: "all", name: "all"}`. If no pending phases remain but pending `<task>`s exist outside any phase (fix tasks appended by an older verifier), also use the `{id: "all", name: "all"}` pseudo-phase — its builder prompt says to execute all pending tasks in the plan, which sweeps them up.
 2. If status is `built` (build already complete, verify only), use an **empty** phase list — the workflow will skip straight to verify.
-3. Set CONTEXT.md frontmatter `status: building` (unless already `built`), then run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` to sync PM state (silent no-op when `.project-manager/` is absent).
+3. Set CONTEXT.md frontmatter `status: building` (unless already `built`).
 
 ## 5. Run the Build→Verify Workflow
 
@@ -180,11 +180,8 @@ From the returned result:
 5. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, `EXHAUSTED`, or `INFRASTRUCTURE`): leave CONTEXT.md `status: building` and report the blocker, including `stoppedAt.build.commits` — a stopped phase is usually partially built, and those commits are real. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run). For `EXHAUSTED`, the phase outlived several builders without finishing: report `tasks_completed / tasks_total`, and suggest `/ship:build {name}` to continue or `/ship:plan {name}` to split the remaining tasks into smaller ones.
 
    **`INFRASTRUCTURE`** — the run lost its connection to the API: several consecutive agents died on a transport error (`ENOTFOUND`, `ECONNRESET`, a 5xx, an overload) having done no work. Nothing about the plan is wrong and every committed task is preserved. Leave CONTEXT.md `status: building`, report `stoppedAt.build.reason` (it names the actual transport error) and the commits that landed, and recommend re-running `/ship:go {name}`. Do **NOT** suggest splitting tasks into smaller ones or running `/ship:plan {name}` — that is `EXHAUSTED`'s advice, and giving it here is the exact confusion this status exists to end: an outage was previously reported as a spent turn budget, and operators went off resizing tasks that were fine. `stoppedAt.phase.id` may be `verify`, meaning the outage took the verifier rather than a build phase; the recommendation is the same.
-6. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE/DEFERRED, `plan-verified` + fix tasks on FAIL). Report it.
-
-   A `DEFERRED` verdict means one or more acceptance criteria target shared `.project-manager/` state, which no lane may write — the requested edits are recorded in `verdict.pm_handoff`. Report it as a completed build with pending PM work, never as a failure, and never re-run the workflow to "fix" it: no builder can clear a deferral, so a retry would spend a full build→verify cycle to arrive back here unchanged. If `verdict.criteria_deferred` is non-zero but `verdict.pm_handoff` is null, say so — the deferral went unrecorded.
+6. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE, `plan-verified` + fix tasks on FAIL). Report it.
 7. **If `verdict` is null and nothing stopped:** all phases built but the verifier produced no result (it crashed or was skipped — the workflow retries once, then degrades to null). Set CONTEXT.md `status: built`, check `git log` to confirm the build commits landed, and tell the user to run `/ship:verify {name}` manually.
-8. Whatever the outcome, run `node "${CLAUDE_PLUGIN_ROOT}/ship/pm-update.cjs" {name}` once here to sync PM state against the settled CONTEXT.md status (silent no-op when `.project-manager/` is absent) — this covers the status the verifier set inside the workflow.
 
 ```
 ## GO COMPLETE
@@ -193,7 +190,7 @@ Feature: {name}
 Final status: {status}
 [If the resolved profile is not `standard`:] Profile: {profile} (review gate: {on|off}, verify depth: {verifyDepth}, build rounds: {maxBuildRounds})
 Phases built: {N} / {total}   Review fixes applied: {count}
-Verify: {PASS | FAIL | INCONCLUSIVE | DEFERRED — criteria_passed/criteria_total, bugs by severity}
+Verify: {PASS | FAIL | INCONCLUSIVE — criteria_passed/criteria_total, bugs by severity}
 
 [If any unresolved review findings:] Unresolved review findings (marked done anyway, one fix round only — handed to the verifier as mandatory targets):
 - {phase id}: [{severity}] {file} — {description} → {verifier outcome from VERIFY.md, or "not accounted for in VERIFY.md"}
@@ -204,9 +201,7 @@ Verify: {PASS | FAIL | INCONCLUSIVE | DEFERRED — criteria_passed/criteria_tota
 [If any phase whose reviewStatus is NOT `SKIPPED_BY_PROFILE` has an empty verifyRuns and empty filesReviewed:] Unsubstantiated review verdicts: phase {id} approved with no verify re-runs and no files reviewed.
 [If any phase's reviewStatus is `SKIPPED_BY_PROFILE`:] Review gate off by profile ({profile}): no reviewer ran for phase(s) {ids} — the verifier was the only gate.
 
-[If verdict DEFERRED:] Deferred to the PM layer ({verdict.criteria_deferred} criteria): {verdict.pm_handoff.edits} shared .project-manager/ edit(s) recorded in {verdict.pm_handoff.path}. No lane can apply these — run /ship:pm apply from the main worktree.
-
-[If verdict PASS/INCONCLUSIVE/DEFERRED:] Ready to finish — run /ship:finish (or I can run it now).
+[If verdict PASS/INCONCLUSIVE:] Ready to finish — run /ship:finish (or I can run it now).
 [If FAIL:] Fix tasks were appended to PLAN.md as a pending fix phase. Review them, then /ship:go to continue (or /ship:build for manual control).
 [If stoppedAt:] Stopped at phase {id}. Reason: {status}{, tasks_completed/tasks_total if EXHAUSTED}. Commits landed: {stoppedAt.build.commits}. Next: {suggested action}.
    An `INFRASTRUCTURE` stop reports the transport cause from `stoppedAt.build.reason` and the `/ship:go {name}` re-run recommendation instead of task counts — the counts are not what stopped it.
@@ -233,7 +228,6 @@ Under `--headless`, EVERY terminal path in this skill — the resolution/`done` 
 | Build `stoppedAt` CHECKPOINT | `checkpoint` |
 | Build `stoppedAt` INFRASTRUCTURE | `infrastructure` — CONTEXT.md stays `building`; the `detail` names the transport cause from `stoppedAt.build.reason` and the `/ship:go {name}` re-run. Never `exhausted`: nothing needs resizing |
 | Verdict PASS / INCONCLUSIVE | `done` |
-| Verdict DEFERRED | `deferred` — build complete, shared `.project-manager/` edits pending; set `handoff_file` to the PM-HANDOFF.md path and name `/ship:pm apply` in `detail`. Never `done`: a caller that reads `done` archives the lane and the handoff rots |
 | Verdict FAIL | `verify-fail` — fix tasks are already in PLAN.md; go never auto-retries, the caller decides |
 | Null verdict, nothing stopped | `error` — detail names the manual `/ship:verify {name}` follow-up |
 | Unrecoverable skill-level failure (workflow crash, unresolvable feature) | `error` |
@@ -241,8 +235,8 @@ Under `--headless`, EVERY terminal path in this skill — the resolution/`done` 
 
 ## 7. Finish (interactive)
 
-If the verdict is PASS, INCONCLUSIVE, or DEFERRED, offer to run `/ship:finish` (PR/merge/keep is outward-facing — confirm before acting). Do not finish automatically without the user's go-ahead.
+If the verdict is PASS or INCONCLUSIVE, offer to run `/ship:finish` (PR/merge/keep is outward-facing — confirm before acting). Do not finish automatically without the user's go-ahead.
 
-Under `--headless`, skip this section entirely: PASS/INCONCLUSIVE terminates as `done` and DEFERRED as `deferred`, with the finish offer suppressed — PR/merge stays human-gated, and the `detail` notes `/ship:finish` is the manual next step.
+Under `--headless`, skip this section entirely: PASS/INCONCLUSIVE terminates as `done`, with the finish offer suppressed — PR/merge stays human-gated, and the `detail` notes `/ship:finish` is the manual next step.
 
 $ARGUMENTS

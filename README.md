@@ -41,23 +41,40 @@ The heavy lifting runs in background workflows, so agent output never floods you
 
 If verify fails, fix tasks are written back into the plan and `/ship:go` picks them up again. If a builder runs out of turns mid-phase, a fresh one resumes from the first pending task — progress is never lost.
 
-## The project manager
+## The ledger
 
-Ship includes a project layer above individual features, stored in `.project-manager/` (roadmap, status, decisions, conventions, plus a generated `dashboard.html` you can open in a browser).
+Ship keeps one ordered index of planned features at `.planning/LEDGER.md`. **Position is priority** — the top line of `## Now` is the next thing to do — so reprioritising is moving a line, in any editor, without telling anything.
+
+```markdown
+# Ledger
+
+## Now
+- [ ] **worktree-flow** — brainstorm in main, build in worktrees
+- [ ] **plan-cache** — reuse exploration across replans
+
+## Next
+- [ ] **verify-speed** — make the anti-pattern scan opt-in
+
+## Someday
+- [ ] **multi-repo** — features spanning two repos
+
+## Shipped
+- [x] kill-pm → .planning/archive/kill-pm/
+```
 
 ```
-/ship:pm-sync               Set up the PM (first run), reconcile it afterwards
-/ship:pm                    Project brief: milestones, blockers, what to work on next
-/ship:pm status             Reconstruct the true state and fix the files to match
-/ship:pm groom              Re-check, re-prioritise, re-size the backlog
-/ship:pm check <feature>    Audit whether a "shipped" feature was genuinely verified
-/ship:pm handover           Close out a session: update state, commit, write a handover
-/ship:pm <question>         "what should I work on next?", "why did we choose X?"
+/ship:ledger                Show the ledger, annotated with live feature status
+/ship:ledger add "idea"     Append a row to ## Next
+/ship:ledger <slug> top     Move a row to the top of ## Now
+/ship:ledger <slug> someday Park it
+/ship:ledger drop <slug>    Remove a row
 ```
 
-The PM never writes application code — it keeps the roadmap honest (every backlog item needs a traceable source), catches verification debt (features marked shipped whose verify gate never ran), and always ends with the Ship command to run next. Lifecycle commands sync it automatically, and a hook nudges you when the roadmap drifts from reality.
+A row holds a slug and a one-liner and nothing else. **Everything about a feature lives in `.planning/features/{slug}/`** — context, plan, review, verification — and status is read live from that folder every time the ledger is displayed, so there is no status cell to drift. A row does not need a folder: an idea can sit under `## Next` indefinitely, and `/ship:start` is what gives it one.
 
-**Works across git worktrees.** Run parallel feature lanes in linked worktrees and the PM still sees one project: when `.project-manager/` is gitignored, all PM state anchors to the main worktree root, and `/ship:pm` sweeps every lane to report who's working where — branch, feature, stage, task progress — in the brief, STATUS.md, and the dashboard's Lanes panel. It also warns when two in-flight plans are about to touch the same files, and `/ship:finish` archives from any lane back to the main root so history survives `git worktree remove`.
+`/ship:start` puts the new feature at the top of `## Now`; `/ship:finish` moves it to `## Shipped`. Nothing else writes the file, so the ordering stays yours.
+
+**Brainstorm in main, build in a worktree.** `/ship:start` runs in the main checkout and offers, once CONTEXT.md is written, to create a `feature/{slug}` worktree and move the session into it — carrying the feature directory across so the worktree holds the only copy. The ledger stays behind in the main checkout, where it belongs: it indexes the project, not the branch. `/ship:finish` archives from any lane back to the main root, so history survives `git worktree remove`.
 
 ## Feature directory
 
@@ -77,8 +94,7 @@ Status lives in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-v
 |---------|--------------|
 | `/ship:start "idea"` | Intensive brainstorm → CONTEXT.md |
 | `/ship:go [--auto]` | Auto-run everything from plan to verify |
-| `/ship:pm [verb\|question]` | Project manager: brief, status, groom, check, handover |
-| `/ship:pm-sync` | Bootstrap or reconcile the PM state |
+| `/ship:ledger [verb]` | Show or reorder the planned-feature ledger |
 | `/ship:design` | Compare 2–3 architecture approaches before planning (optional) |
 | `/ship:plan` | Plan tasks manually → PLAN.md |
 | `/ship:plan-verify` | Single-shot independent plan review |
@@ -91,11 +107,11 @@ Status lives in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-v
 
 ## Under the hood
 
-**Seven specialized agents**, each with a single job: `ship-brainstormer` (requirements interview), `ship-plan-reviewer` (read-only plan review), `ship-replanner` (plan revision against critical findings), `ship-builder` (task execution with atomic commits), `ship-reviewer` (per-phase diff review), `ship-verifier` (acceptance criteria + bug hunt), and `ship-pm` (project-level state work).
+**Six specialized agents**, each with a single job: `ship-brainstormer` (requirements interview), `ship-plan-reviewer` (read-only plan review), `ship-replanner` (plan revision against critical findings), `ship-builder` (task execution with atomic commits), `ship-reviewer` (per-phase diff review), and `ship-verifier` (acceptance criteria + bug hunt).
 
-**Four reference skills** preloaded into agents: `deviation-rules` (what to do when reality diverges from the plan), `git-commits` (atomic commit discipline), `tdd` (RED-GREEN-REFACTOR when tasks are test-backed), and `pm-state` (the `.project-manager/` file formats).
+**Three reference skills** preloaded into agents: `deviation-rules` (what to do when reality diverges from the plan), `git-commits` (atomic commit discipline), and `tdd` (RED-GREEN-REFACTOR when tasks are test-backed).
 
-**Hooks** keep sessions honest: Ship awareness is injected at session start and after context compaction, `git add .` is blocked to enforce atomic commits, context-usage warnings fire before the window fills, and a PM drift nudge fires when the roadmap falls behind feature reality.
+**Hooks** keep sessions honest: Ship awareness is injected at session start and after context compaction, `git add .` is blocked to enforce atomic commits, and context-usage warnings fire before the window fills.
 
 **Status line** (optional) — model, current task, context bar, session cost. The plugin system can't register it automatically, so add to `~/.claude/settings.json`:
 
