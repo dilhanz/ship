@@ -17,7 +17,7 @@
  *   - The agent-memory survival case is conditional on `.claude/` existing at
  *     all. `.claude/` is gitignored and nothing under it is tracked any more,
  *     so a CI checkout has no such directory and an unconditional assertion
- *     would fail every run — the same reason the sibling `ship-ship-pm/`,
+ *     would fail every run — the same reason the sibling
  *     `ship-ship-replanner/` and `ship-ship-reviewer/` directories were never
  *     asserted on. What survives the narrowing is the thing worth guarding: a
  *     careless `.claude*` glob that empties a tree which *is* present.

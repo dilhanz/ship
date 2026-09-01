@@ -21,7 +21,7 @@ const doc = readSrc('ship/docs/headless.md');
 const go = readSrc('skills/go/SKILL.md');
 
 const OUTCOMES = [
-  'done', 'deferred', 'needs-input', 'stuck', 'unresolved', 'blocked',
+  'done', 'needs-input', 'stuck', 'unresolved', 'blocked', 'infrastructure',
   'verify-fail', 'needs-context', 'exhausted', 'checkpoint', 'error',
 ];
 const REQUIRED_FIELDS = ['schema_version', 'feature', 'outcome', 'status', 'timestamp', 'head', 'detail'];

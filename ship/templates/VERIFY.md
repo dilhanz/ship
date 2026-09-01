@@ -3,27 +3,17 @@
 **Feature:** {feature-name}
 **Verified:** {date}
 **Head:** {git rev-parse HEAD at verification time}
-**Overall Status:** PASS | FAIL | INCONCLUSIVE | DEFERRED
+**Overall Status:** PASS | FAIL | INCONCLUSIVE
 
-(A Stage 1 flush — written after the criteria table is complete and before Stage 2 begins — carries `**Status:** IN PROGRESS — Stage 1 only` in place of the `**Overall Status:**` line and omits the `**Head:**` line entirely; the verifier's final write, after the bug hunt, replaces both with the real verdict and the real head stamp. A report carrying the IN PROGRESS marker is a dead run's partial evidence, never a verdict: `/ship:pm check` reports it as "gate started and died", and the salvage path supersedes it from `.review-scratch/verify.json`.)
+(A Stage 1 flush — written after the criteria table is complete and before Stage 2 begins — carries `**Status:** IN PROGRESS — Stage 1 only` in place of the `**Overall Status:**` line and omits the `**Head:**` line entirely; the verifier's final write, after the bug hunt, replaces both with the real verdict and the real head stamp. A report carrying the IN PROGRESS marker is a dead run's partial evidence, never a verdict: it reads as "gate started and died", and the salvage path supersedes it from `.review-scratch/verify.json`.)
 
 ## Stage 1 — Acceptance Criteria
 
-Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE, DEFERRED}. INCONCLUSIVE means no runnable verify command was available; grep-only file existence does not upgrade to PASS. DEFERRED means the criterion targets shared `.project-manager/` state, which only the PM layer may write — the requested edits are recorded in PM Handoff below.
+Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runnable verify command was available; grep-only file existence does not upgrade to PASS.
 
 | Criterion | Verdict | Evidence |
 |-----------|---------|----------|
-| [Criterion from CONTEXT.md] | PASS / FAIL / INCONCLUSIVE / DEFERRED | [Command run, output observed, or file path checked] |
-
-## PM Handoff
-
-Shared `.project-manager/` edits this feature needs and no lane may perform. Recorded in `.planning/features/{feature-name}/PM-HANDOFF.md`; applied by `/ship:pm apply` at the main worktree root.
-
-| # | Target file | Criterion | Requested edit |
-|---|-------------|-----------|----------------|
-| 1 | .project-manager/ROADMAP.md | [criterion this satisfies] | [what must change] |
-
-(If none: "None — no criterion required shared PM state." An empty table must never mean a DEFERRED criterion went unrecorded.)
+| [Criterion from CONTEXT.md] | PASS / FAIL / INCONCLUSIVE | [Command run, output observed, or file path checked] |
 
 ## Stage 2 — Bug Hunt & Quality
 

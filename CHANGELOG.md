@@ -1,5 +1,31 @@
 # Changelog
 
+## 5.20.0
+
+The project-manager layer is removed and replaced by one ordered markdown file. Versioned as a minor by choice, but read it as breaking: `/ship:pm` and `/ship:pm-sync` no longer exist. Roughly 6,000 lines come out: two skills, a reference skill, an agent, three scripts, a hook, a dashboard template, and thirty test files.
+
+The PM layer was the heaviest thing in Ship and the least load-bearing: six state files, a twelve-column backlog table, a derived-priority engine, a fleet sweep binding feature slugs to worktree lanes, a verification-debt harvest, and a drift-nudge hook — all of it maintained so that a question ("what next?") could be answered from a file instead of from a folder. Its removal takes the `DEFERRED` verdict with it, which existed for exactly one reason: shared PM state is unwritable from a worktree, so a criterion targeting it could neither pass nor honestly fail.
+
+### Added
+
+- **`/ship:ledger` — the planned-feature index.** One file, `.planning/LEDGER.md`, four fixed sections: `## Now`, `## Next`, `## Someday`, `## Shipped`. **Position is priority.** The top line of `## Now` is the next thing to do, so reprioritising is moving a line — in any editor, at any time, without a command. A row is `- [ ] **{slug}** — {one-liner}` and carries nothing else. Verbs: bare (show), `add {idea}`, `{slug} now|next|someday|top`, `drop {slug}`, and free-text reorders ("put verify-speed above plan-cache").
+- **Status is read, never stored.** Displaying the ledger globs `.planning/features/*/CONTEXT.md` and annotates each row from live frontmatter. There is no status cell, so nothing can drift — which is what the entire `pm-update.cjs` reconciler existed to prevent. A row whose folder has an unrecognised status is marked `[status unknown]`, never guessed.
+- **A row does not require a folder.** An idea can sit under `## Next` indefinitely with nothing but its line; `/ship:start` is what gives it a folder. The inverse — a folder with no row — is reported as an **orphan** and offered, never silently adopted: adopting one would invent an ordering the user did not choose.
+- **Brainstorm in main, build in a worktree.** `/ship:start` now runs its brainstorm in the main checkout and, once CONTEXT.md is written, offers to create the `feature/{slug}` worktree and enter it — carrying the feature directory across so the worktree holds the sole copy. The move is a `rm` only when every line of `git status --porcelain` for that directory begins `??`; anything already tracked is copied and the source left alone. `.planning/LEDGER.md` is deliberately not carried across: it indexes the project, not the branch. A `/ship:start` already running inside a worktree skips the offer entirely.
+
+### Removed
+
+- **`/ship:pm` and `/ship:pm-sync`**, the `pm-state` reference skill, and the `ship-pm` agent. The agent roster is six.
+- **`ship/pm-update.cjs` (2,289 lines), `ship/lane-sweep.cjs`, `ship/resolve-state-root.cjs`.** Every lifecycle skill called `pm-update.cjs` after a status transition; none do now, because there is nothing to reconcile.
+- **`hooks/pm-sync-nudge.cjs`** and its `PostToolUse` registration. Four hooks plus the status line remain.
+- **`ship/templates/dashboard.html`** and the generated `.project-manager/dashboard.html`.
+- **The `DEFERRED` verdict, `PM-HANDOFF.md`, and the `deferred` headless outcome.** The verifier emits three verdicts again (PASS / FAIL / INCONCLUSIVE); the go workflow's `VERIFY_SCHEMA` enumerates three and carries no `pm_handoff` or `criteria_deferred`; VERIFY.md's template drops its PM Handoff section; the builder loses its "Shared PM State — Defer, Don't Fight" escape hatch; and `ship/docs/headless.md` documents 11 outcomes with `handoff_file` gone. Everything unrelated survives untouched — the carried-review-findings table, the INCONCLUSIVE verdict and its `--accept-inconclusive` override, and the `infrastructure` outcome.
+- **Thirty test files** covering the removed machinery, plus the `pm-state` and `pm-ledger-archive` fixtures. `tests/ledger.test.js` replaces them: the ledger's own contract, the three writers, the worktree handoff, and an assertion sweep that fails if any PM vocabulary returns to `skills/`, `agents/`, `ship/`, or `hooks/`.
+
+### Migration
+
+`.project-manager/` is not read by anything in 5.20.0 and is not deleted for you. Keep it as a historical record or remove it; either way nothing references it. There is no automatic import — the ledger is short enough to write by hand from the top of your old backlog, which is the point. Features already in `.planning/features/` need no change: `/ship:ledger` reports them as orphans on first run and offers to add rows.
+
 ## 5.18.1
 
 Patch release — the three follow-ups 5.18.0 shipped with, a test that had been reporting the developer's own working tree as a failure, and the squash-merge defect that made 5.18.0's new merge test downgrade correct `done` rows.

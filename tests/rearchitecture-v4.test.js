@@ -52,13 +52,12 @@ describe('v4 — removed pieces', () => {
 // ---------------------------------------------------------------------------
 
 describe('v4 — agent roster', () => {
-  it('exactly the 7 expected agents exist', () => {
+  it('exactly the 6 expected agents exist', () => {
     const agents = fs.readdirSync(path.join(repoRoot, 'agents')).filter((f) => f.endsWith('.md')).sort();
     assert.deepEqual(agents, [
       'ship-brainstormer.md',
       'ship-builder.md',
       'ship-plan-reviewer.md',
-      'ship-pm.md',
       'ship-replanner.md',
       'ship-reviewer.md',
       'ship-verifier.md',
@@ -146,7 +145,9 @@ describe('v4 — surviving behaviours', () => {
 
   it('version files agree with ship/VERSION', () => {
     const version = readSrc('ship/VERSION').trim();
-    assert.ok(version.startsWith('5.'), 'ship/VERSION on the 5.x line');
+    // The v4 architecture is what this file pins; the version only has to be at
+    // or past it, so a major bump does not falsely fail an architecture test.
+    assert.ok(Number(version.split('.')[0]) >= 4, `ship/VERSION at or past the v4 line, got ${version}`);
     assert.equal(JSON.parse(readSrc('.claude-plugin/plugin.json')).version, version, `plugin.json at ${version}`);
     assert.equal(JSON.parse(readSrc('package.json')).version, version, `package.json at ${version}`);
   });

@@ -62,20 +62,6 @@ You have a bounded turn budget, and a phase of large tasks can exceed it. Runnin
 
 **Resuming:** you may be invoked to continue a phase another builder started. PLAN.md is the source of truth — skip tasks already marked `status="done"` and start at the first pending one. If the working tree has uncommitted changes from an interrupted task, complete that task, run its `<verify>`, and commit it before moving on.
 
-## Shared PM State — Defer, Don't Fight
-
-A task whose `<files>` name `.project-manager/` state — `ROADMAP.md`, `STATUS.md`, `DECISIONS.md`, `CONVENTIONS.md`, or `decisions/` — is not yours to execute, and often not yours to *reach*: writer ownership gives those files to the PM layer, and when `.project-manager/` is gitignored it exists only at the main worktree root, outside a worktree-isolated session's editing tools.
-
-Do not retry the write, do not route around it with a shell command, and do not treat the refusal as a Rule 2 verify failure to debug — the wall is structural and three more attempts hit the same one.
-
-Instead:
-
-1. Append the requested edit to `.planning/features/{feature-name}/PM-HANDOFF.md` (create it if absent), in the format defined by the `pm-state` skill — frontmatter plus a numbered `### {n}.` block naming the target file, the intent, and the exact proposed content. This path is inside your own worktree, so it is always writable.
-2. Mark the task `status="done"` with its commit if it had other work that you did complete; if the PM edit *was* the whole task, leave it pending.
-3. Record it in your `build_result` `concerns` — one line naming the file and the handoff. The verifier turns this into a `DEFERRED` criterion; it never becomes a Fix Task, because no builder can clear it.
-
-This applies only to *authored* edits. Running `ship/pm-update.cjs` is not one — it reconciles status cells and the dashboard through Node from any lane, so a task that invokes it executes normally.
-
 ## Fix Scope Boundary
 
 Only fix issues **directly caused by the current task's changes**. Note pre-existing problems under "deviations" but do not fix them; do not re-run builds hoping unrelated failures resolve.

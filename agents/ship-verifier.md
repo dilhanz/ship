@@ -41,7 +41,7 @@ When your prompt carries an explicit **"Verification depth: criteria-only"** ins
 
   `Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped.`
 
-  Audits grep for this exact string, so a reworded equivalent — however clear to a human reader — makes a narrowed run indistinguishable from a full one to `/ship:pm check`. Add any extra context you want in a **following** sentence; the verbatim line must come first.
+  Audits grep for this exact string, so a reworded equivalent — however clear to a human reader — makes a narrowed run indistinguishable from a full one to any later audit. Add any extra context you want in a **following** sentence; the verbatim line must come first.
 
 Never narrow on your own judgment. No instruction means full depth.
 
@@ -122,26 +122,10 @@ Record one verdict per criterion:
 - **PASS** — a runnable verify command executed and its output proves the criterion is met.
 - **FAIL** — a runnable verify command executed and its output shows the criterion is NOT met, or grep/read evidence proves an absence (e.g. a module that is never imported).
 - **INCONCLUSIVE** — no runnable verify exists (or the only evidence is grep-based file existence). Do not upgrade grep-only evidence to PASS; the operator resolves these via `/ship:finish --accept-inconclusive`.
-- **DEFERRED** — the criterion requires a write to shared `.project-manager/` state. See below; this verdict has a strict trigger and is never a fallback for work that was merely hard.
 
 Grep evidence is asymmetric: it can prove absence (→ FAIL) but never correctness — existence alone is at most INCONCLUSIVE.
 
 If ANY criterion is FAIL, you may skip Stage 2's bug-hunt depth but still record the failures.
-
-### DEFERRED — criteria that belong to the PM layer
-
-A criterion is DEFERRED when satisfying it means writing shared project-manager state: `.project-manager/ROADMAP.md`, `STATUS.md`, `DECISIONS.md`, `CONVENTIONS.md`, or their `decisions/` spill files.
-
-Two independent facts make that work impossible here, and both matter:
-
-1. **Doctrine** — writer ownership (`skills/pm-state/SKILL.md`) gives a lane its own `.planning/features/{slug}/` and gives `.project-manager/` to the PM layer alone. A lane writing shared state is a violation even when it succeeds.
-2. **Mechanics** — when `.project-manager/` is gitignored it exists only at the main worktree root, and a worktree-isolated session's Write/Edit tools are scoped to its own worktree. The write is refused outright.
-
-So a FAIL here would be wrong twice over: nothing is defective, and the fix round it triggers would re-run a builder into the same wall for no possible gain. Record DEFERRED instead, and never write Fix Tasks for it.
-
-**The trigger is narrow.** DEFERRED applies only when the criterion's *target* is a `.project-manager/` file. It is not for a criterion you found difficult, could not devise a command for (that is INCONCLUSIVE), or believe should have been scoped differently. Mechanical status and dashboard reconciliation does **not** qualify — `ship/pm-update.cjs` performs that from any lane through Node, so a criterion satisfied by running it is verified normally.
-
-**A DEFERRED verdict obliges you to write the handoff.** Deferral without a record is a criterion silently dropped. Before recording the verdict, create or update `.planning/features/{name}/PM-HANDOFF.md` — inside your own worktree, so always writable — in the format defined by the `pm-state` skill: frontmatter (`feature`, `lane`, `head`, `raised`, `applied: no`) and one `### {n}. {summary}` block per requested edit, each naming the target file, the criterion it satisfies, the intent, and the exact proposed content wherever you can state it. Write it so the PM can perform the edit without reading this feature's diff.
 
 ### Flush Stage 1 to VERIFY.md before Stage 2 begins
 
@@ -200,21 +184,14 @@ Fill the **Carried Review Findings** table with one row per unresolved finding y
 
 Fill the `**Head:**` line with the output of `git rev-parse HEAD`, taken after any commits you made during this verification. Stage 0 of the next run keys staleness on it — an unstamped or wrongly-stamped report forces a full re-verification.
 
-If any criterion is DEFERRED, fill the **PM Handoff** section with one row per requested edit, pointing at the PM-HANDOFF.md you wrote. A DEFERRED verdict with an empty PM Handoff section is a dropped criterion, not a deferral.
-
 **Overall status** (first match wins):
 - **FAIL** — any criterion FAIL, or any critical/high bug found (a reproduced carried review finding is such a bug).
 - **INCONCLUSIVE** — no FAIL, but at least one criterion INCONCLUSIVE.
-- **DEFERRED** — no FAIL and no INCONCLUSIVE, but at least one criterion DEFERRED.
-- **PASS** — all criteria PASS, no INCONCLUSIVE, no DEFERRED, no critical/high bugs. Medium/low bugs and quality notes are recorded as recommendations.
-
-DEFERRED ranks below INCONCLUSIVE deliberately: an unprovable criterion is a hole in the evidence and needs the operator's override, whereas a deferred one is fully understood work with a named owner and a written record. When both are present the weaker guarantee is the one that must be reported.
+- **PASS** — all criteria PASS, no INCONCLUSIVE, no critical/high bugs. Medium/low bugs and quality notes are recorded as recommendations.
 
 Update CONTEXT.md frontmatter:
-- PASS, INCONCLUSIVE, or DEFERRED → `status: done` (INCONCLUSIVE gaps are recorded in VERIFY.md and the override gate lives in `/ship:finish`; DEFERRED edits are recorded in PM-HANDOFF.md and applied by `/ship:pm apply`)
+- PASS or INCONCLUSIVE → `status: done` (INCONCLUSIVE gaps are recorded in VERIFY.md and the override gate lives in `/ship:finish`)
 - FAIL → `status: plan-verified`, and append Fix Tasks to PLAN.md for each failing criterion and critical/high bug. In a phased plan, wrap them in a new pending phase — `<phase id="fix-1" name="Verify fix round 1" status="pending">` (increment the id on repeat failures) — so `/ship:go` and `/ship:build` pick them up as the next pending phase; in a flat plan, append them as bare tasks.
-
-**Never write a Fix Task for a DEFERRED criterion.** No builder can clear it, so a fix round would burn a full build→verify cycle to arrive back here unchanged.
 
 ## Output
 
@@ -226,16 +203,14 @@ After writing VERIFY.md, emit a fenced block tagged `verify_result` as your fina
 ```verify_result
 {
   "feature": "{name}",
-  "status": "PASS" | "FAIL" | "INCONCLUSIVE" | "DEFERRED",
+  "status": "PASS" | "FAIL" | "INCONCLUSIVE",
   "criteria_passed": {number},
   "criteria_failed": {number},
   "criteria_inconclusive": {number},
-  "criteria_deferred": {number},
   "criteria_total": {number},
   "criteria_verdicts": [
-    {"criterion": "{text}", "verdict": "PASS" | "FAIL" | "INCONCLUSIVE" | "DEFERRED", "evidence": "{command or grep output, or the PM-HANDOFF.md entry for DEFERRED}"}
+    {"criterion": "{text}", "verdict": "PASS" | "FAIL" | "INCONCLUSIVE", "evidence": "{command or grep output}"}
   ],
-  "pm_handoff": {"path": "{.planning/features/{name}/PM-HANDOFF.md}", "edits": {number}} | null,
   "tests_written": {number},
   "tests_passed": {number},
   "tests_failed": {number},

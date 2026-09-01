@@ -3,7 +3,7 @@
 // Extracts feature status, task progress, current phase, goal, decisions, and
 // the owning-lane stamp from .planning/features/. Features carrying a terminal
 // status (the fixed tombstone set below) are excluded. Used by guide.cjs,
-// post-compact.cjs, pm-sync-nudge.cjs, and ship/lane-sweep.cjs.
+// post-compact.cjs.
 
 const fs = require('fs');
 const path = require('path');

@@ -7,14 +7,13 @@ Ship is a feature-centric development framework for Claude Code. Every piece of 
 Three-layer design, all Markdown with YAML frontmatter:
 
 ```
-skills/*/SKILL.md          17 skills (13 user-invocable commands + 4 reference skills)
+skills/*/SKILL.md          15 skills (12 user-invocable commands + 3 reference skills)
 skills/deviation-rules/    Reference skill preloaded into builder agent
 skills/git-commits/        Reference skill preloaded into builder + verifier agents
 skills/tdd/                Reference skill preloaded into builder agent (test-driven development)
-skills/pm-state/           Reference skill defining the five .project-manager/ state file formats
 ship/workflows/go.workflow.js   Workflow-engine script for the /ship:go build→verify spine
 ship/workflows/plan.workflow.js Workflow-engine script for the /ship:go plan revision loop
-agents/*.md                7 specialized agents (brainstormer, plan-reviewer, replanner, builder, reviewer, verifier, pm)
+agents/*.md                6 specialized agents (brainstormer, plan-reviewer, replanner, builder, reviewer, verifier)
 ```
 
 **Skills** define frontmatter fields like `model` and `allowed-tools`. Some skills delegate to agents via the Agent tool; others run inline with full instructions embedded in the skill body.
@@ -28,7 +27,6 @@ agents/*.md                7 specialized agents (brainstormer, plan-reviewer, re
 - `ship-builder` — task execution with atomic commits
 - `ship-reviewer` — re-runs phase verify commands + reviews the phase diff → review_result findings
 - `ship-verifier` — acceptance criteria + adversarial bug hunt + anti-pattern scan → VERIFY.md (single post-build gate)
-- `ship-pm` — project-level work against `.project-manager/` state: status reconstruction, backlog grooming, shipped-feature verification audits, pending PM-handoff application, session handover
 
 **Inline skills** (run in the main conversation for unlimited turns):
 - `plan` — codebase exploration → PLAN.md (exploration scaled to uncertainty — reuses CONTEXT.md Codebase Notes when present, explores inline for small surfaces, fans out Explore agents for large ones)
@@ -37,7 +35,8 @@ agents/*.md                7 specialized agents (brainstormer, plan-reviewer, re
 ## Flow
 
 ```
-/ship:start       "idea" → brainstorm (outcome-gated)   → CONTEXT.md
+/ship:ledger             → ordered index of planned features → .planning/LEDGER.md
+/ship:start       "idea" → brainstorm (outcome-gated)   → CONTEXT.md + ledger row + worktree
 /ship:plan               → explore code, design tasks    → PLAN.md
 /ship:plan-verify        → verify plan against codebase  → PLAN.md (review appended)
 /ship:build              → implement, verify, commit     → tasks marked done
@@ -54,9 +53,9 @@ agents/*.md                7 specialized agents (brainstormer, plan-reviewer, re
   PLAN.md       — implementation plan with tasks (status tracked inline)
   REVIEW.md     — per-phase review findings (fixed and unresolved)
   VERIFY.md     — verification report (criteria + bug hunt)
-  PM-HANDOFF.md — shared .project-manager/ edits the lane may not make (written only when a criterion is DEFERRED)
 
 .planning/archive/{feature-name}/   — completed features moved here by /ship:finish
+.planning/LEDGER.md                — ordered index of planned features (Now / Next / Someday / Shipped)
 ```
 
 Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-verified` → `building` → `built` → `done`. If verify fails: `built` → (verifier writes fix tasks, reverts to `plan-verified`) → rebuild via /ship:build → `built` → /ship:verify retried.
@@ -64,18 +63,17 @@ Status tracked in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan
 ## Supporting Files
 
 ```
-hooks/                 6 Node.js hooks (stdin->stdout, zero dependencies)
+hooks/                 5 Node.js hooks (stdin->stdout, zero dependencies)
   guide.cjs              SessionStart event — injects Ship awareness so Claude proactively suggests commands
   statusline.cjs         StatusLine event — displays model, task, dir, context %
   context-monitor.cjs    PostToolUse event — injects warnings when context is high (matcher: Write|Edit|Bash|Agent)
   safety-gate.cjs        PreToolUse event — blocks git add . to enforce atomic commits (matcher: Bash)
   post-compact.cjs       PostCompact event — re-injects feature state after context compaction
-  pm-sync-nudge.cjs      PostToolUse event — nudges /ship:pm-sync when ROADMAP.md drifts from feature statuses (matcher: Write|Edit)
   scan-features.cjs      Helper — scans .planning/features for state injected by guide/post-compact
   hooks.json             Declarative hook registration for the plugin system
 
-ship/templates/        VERIFY.md planning template + dashboard.html PM dashboard template
-ship/resolve-profile.cjs  Helper — resolves a feature's workflow profile to knob values (module + CLI, like pm-update.cjs)
+ship/templates/        VERIFY.md planning template
+ship/resolve-profile.cjs  Helper — resolves a feature's workflow profile to knob values (module + CLI)
 install.js             Deprecated legacy installer — use claude plugin install ship instead
 ```
 
@@ -97,8 +95,8 @@ install.js             Deprecated legacy installer — use claude plugin install
 - **Salvage retries:** a lost structured result is a transport failure, not proof the work never happened, so `safeAgent`'s optional `retryPrompt` (in both workflows) points the retry at a durable record instead of redoing ~90k tokens of work. Four call sites use it: the phase reviewer and plan reviewer write scratch records under `.planning/features/{name}/.review-scratch/` (`phase-{id}[-rereview].json`, `plan-round-{n}.json` — their one permitted write; the read-only-on-source gate still holds), while the verifier salvages its own VERIFY.md and the replanner its own `### Round {n}` subsection in PLAN.md. Every record is **fingerprinted** — `head` (git HEAD) for phase reviews, `plan_hash` (`git hash-object PLAN.md`) for plan reviews, and a `**Head:**` line in VERIFY.md itself for verifications — so a record from a different build or a different plan is rejected rather than salvaged. The verifier's stamp is what makes its salvage safe: a FAIL verdict sends the feature back for a fix round, so a *complete* VERIFY.md from the previous round is exactly what the re-verification finds on disk, and a report with no stamp is treated as stale rather than trusted. Deleting `.review-scratch/` deleting `.review-scratch/` (section 6 of the go skill, step 7 of the build skill, plus the plan loop's terminal outcomes) is hygiene, not the safety net. The builder needs none of this — PLAN.md plus the progress probe already cover it, which is why its call site keeps `retry: false`
 - **Precomputed diff range:** the builder reports `commits` oldest-first (one atomic commit per task, in task order), so the go workflow derives `{oldest}~1..HEAD` and hands the reviewer a finished range instead of paying turns for it to re-derive one with `git log`. The reviewer falls back to deriving it only when the range errors, diffs empty, or the phase starts at the repo's root commit (where `~1` does not resolve and the empty-tree hash is used instead)
 - **Builder continuation:** a builder that runs out of turn budget mid-phase is expected on large tasks, not a failure — its finished tasks are committed and marked done in PLAN.md, so a continuation resumes from the first pending task. The builder signals it with `PARTIAL`; if it dies without reporting, the `go` workflow probes PLAN.md for the real task status. Both paths continue the phase (up to 5 builder rounds in the workflow, 4 continuation rounds in the manual skill) and stop only when a round lands no new done tasks
-- **Deferred-to-PM outcome:** an acceptance criterion whose target is an authored `.project-manager/` file cannot be satisfied by the lane that owns the feature — writer ownership gives shared state to the PM layer, and when `.project-manager/` is gitignored it exists only at the main worktree root, outside a worktree-isolated session's Write/Edit scope. Both facts are structural, so a FAIL would be wrong twice over: nothing is defective, and the fix round it triggers re-runs a builder into the same wall. The lane instead records the requested edits in `.planning/features/{slug}/PM-HANDOFF.md` (inside its own worktree, always writable) and the verifier marks the criterion `DEFERRED` — a fourth verdict that never produces a Fix Task and leaves the feature `done`, ranked below INCONCLUSIVE because a deferral is understood work with a named owner rather than a hole in the evidence. `/ship:finish`'s archive move carries the handoff to the main root for free; `/ship:pm apply` performs the edits there, with `applied: yes` as the idempotence key and a DECISIONS.md entry as the redundant record. The fleet sweep reports `pendingHandoffs` across every lane — deliberately not via `scanFeatures`, which drops `done` features and would hide exactly this case — and the handover prune guard refuses to prune a lane still holding one. Headless runs terminate as `deferred` (not `done`), so a fleet runner cannot archive the lane and let the handoff rot. The exception is `pm-update.cjs`: mechanical status and dashboard reconciliation runs from any lane through Node, so a criterion satisfied by running it verifies normally.
-- **Project manager:** two skills sit above the feature layer. `/ship:pm` is verb-driven — `status` (reconstruct the true state and fix the files), `groom` (re-check, re-prioritise, re-size the backlog), `check <feature>` (audit whether a shipped feature was genuinely verified), `apply` (perform pending PM handoffs), `handover` (close out a session), plus the bare brief and free-text project questions — and it delegates every verb to the `ship-pm` agent so large state never enters the main conversation. `/ship:pm-sync` stays inline and interactive (bootstrap/reconcile, needs AskUserQuestion). State lives in five files under `.project-manager/` — `ROADMAP.md` (milestones + backlog), `STATUS.md` (narrative snapshot), `DECISIONS.md` (short dated entries), `CONVENTIONS.md` (project conventions + learning loop), generated `dashboard.html` — plus `decisions/{date}-{slug}.md` spill files, all per the `skills/pm-state` reference skill. Backlog rows carry a **mandatory `Source`** (do not add an item you cannot point at) and a P0–P3 priority; sizing by plan effort (S/M/L/XL) is permitted while deadlines and time estimates stay banned. The write boundary (`.project-manager/**`, `.planning/**`, `.claude/**`, root `*.md`, git for owned files — never application source, never rewritten history) is documented discipline, not machinery. The fleet sweep binds each feature slug to at most one owning lane through a four-layer chain — sole holder → branch match → self-consistent CONTEXT.md `lane:` stamp → unowned, first match wins — records the deciding layer on each owned feature as `ownedBy`, hoists a slug no lane owns once into a fleet-level `unowned` array instead of repeating it under every lane holding a copy, and feeds `findOverlaps()` owned claims only so a copy is never reported as a collision; `ship/pm-update.cjs` stamps `lane: {branch} @ {worktree-path}` into its own lane's CONTEXT.md best-effort, and `hooks/scan-features.cjs` drops the fixed tombstone set (`done`, `superseded`, `abandoned`, `cancelled`) while still surfacing an unrecognised or absent status. The pm-sync-nudge hook parses the backlog table by header name and injects a sync reminder when Ship feature statuses drift. Legacy v5.3.0 directories (three files, 5-column table) keep working and grow into the enriched shape only through a confirmed `/ship:pm-sync` reconcile. The PM directs and hands off to Ship commands but never implements.
+- **Ledger:** one ordered index of planned features at `.planning/LEDGER.md`, with four fixed sections — `## Now`, `## Next`, `## Someday`, `## Shipped`. **Position is priority**: the top line of `## Now` is the next thing to do, so reprioritising is moving a line rather than editing a cell. A row is `- [ ] **{slug}** — {one-liner}` and holds nothing else; everything about a feature lives in `.planning/features/{slug}/`, and status is read live from that folder's CONTEXT.md frontmatter every time the ledger is displayed — there is no status cell, so nothing can drift. A row does not require a folder (an idea may sit under `## Next` indefinitely; `/ship:start` is what gives it one), and a folder without a row is reported as an orphan rather than silently adopted. `/ship:start` inserts the row at the top of `## Now`; `/ship:finish` moves it to the top of `## Shipped` (recency order there, not priority) via Bash, since finish has no Write or Edit tool. `/ship:ledger` owns the other three sections. Nothing else writes the file — the ordering belongs to the user
+- **Brainstorm in main, build in a worktree:** `/ship:start` runs in the main checkout, and once CONTEXT.md is written it offers to create the `feature/{slug}` worktree and `EnterWorktree` into it, moving the feature directory across so the worktree holds the sole copy (a copy-without-remove fallback whenever any part of the directory is already tracked — two divergent CONTEXT.md files is the failure this avoids). `.planning/LEDGER.md` is deliberately **not** carried across: it indexes the project, not the branch, and lives at the main root. When `/ship:start` is already running inside a worktree, the whole offer is skipped
 
 ## Plugin Structure
 

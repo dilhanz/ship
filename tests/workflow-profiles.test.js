@@ -308,7 +308,7 @@ describe('doctrine — back-compat', () => {
 // profile run, which contract assertions alone did not catch.
 // ---------------------------------------------------------------------------
 
-// The exact string /ship:pm check audits grep for. A reworded equivalent reads
+// The exact string a later audit greps for. A reworded equivalent reads
 // fine to a human and is invisible to the audit, so the wording is load-bearing.
 const NARROWED_LINE =
   'Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped.';

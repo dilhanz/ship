@@ -9,10 +9,6 @@
       {
         "matcher": "Write|Edit|Bash|Agent",
         "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/context-monitor.cjs" }]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [{ "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/pm-sync-nudge.cjs" }]
       }
     ],
     "PreToolUse": [
