@@ -385,15 +385,22 @@ describe('salvage retry — plan workflow', () => {
       'without the round number the reviewer cannot find or write its scratch record');
   });
 
-  it('replan salvage reads PLAN.md rather than re-revising', () => {
+  it('replan salvage reads the scratch record rather than re-revising', () => {
+    // The `### Round n` subsection is written last, so a turn-capped replanner
+    // leaves full edits and no subsection — keying salvage on it redid the
+    // whole revision. The scratch record is written before the first edit.
     const c = wf();
     const prompt = c.split('const salvageReplanPrompt')[1].split('// Convergence key')[0];
-    assert.ok(/### Round \$\{round \+ roundOffset\}/.test(prompt),
-      'the salvage must look for the same round heading the replanner writes');
+    assert.ok(/replan-round-/.test(prompt),
+      'the salvage must read the replanner scratch record the replanner writes');
+    assert.ok(/pending/.test(prompt),
+      'a partial record is resumed from its first pending finding, not redone');
     assert.ok(/double-apply/.test(prompt),
       'the danger of a blind replan retry is double-applied edits — say so');
-    assert.ok(/escalation is not recoverable/.test(prompt),
-      'a NEEDS_INPUT escalation leaves no subsection and must be re-decided, not salvaged');
+    assert.ok(/escalated/.test(prompt),
+      'an escalation recorded as escalated findings is reported, not re-decided');
+    assert.ok(!/and stop/.test(prompt),
+      '"and stop" contradicts the StructuredOutput final-action rule and loses the salvaged result');
   });
 
   it('a one-off plan-verify writes a scratch record too', () => {
