@@ -2,7 +2,7 @@
 name: plan-verify
 description: Use when a plan has been created and needs independent verification against codebase patterns before building
 effort: high
-allowed-tools: Read, Write, Edit, Glob, Grep, Agent
+allowed-tools: Read, Write, Edit, Glob, Grep, Agent, Bash
 argument-hint: "[feature-name]"
 ---
 
@@ -52,7 +52,14 @@ Overall Status:
 - **APPROVED:** No CRITICAL findings. Plan is structurally sound.
 - **NEEDS-REVISION:** One or more CRITICAL findings. Plan must be fixed.
 
-If the subagent errors or returns no parseable verdict, relaunch it once; if it fails again, report the failure to the user and stop — never approve a plan without a completed review.
+### Reviewer failure
+
+If the subagent errors or returns no parseable verdict, relaunch it once. If it fails again, run the **scratch fallback** before giving up: the reviewer writes its record incrementally to `.planning/features/{name}/.review-scratch/plan-round-1.json` (this skill is single-shot, so the record is always round 1), and a reviewer that finished its review but died before reporting has left the whole verdict on disk.
+
+1. Run `git hash-object .planning/features/{name}/PLAN.md` — the only Bash use this skill makes; Bash is in `allowed-tools` for this one command and nothing else.
+2. Read `.planning/features/{name}/.review-scratch/plan-round-1.json`.
+3. If the file exists, parses as JSON, its `plan_hash` equals the hash from step 1, and `complete` is `true`, adopt its `findings` and `examined` as the verdict (status `APPROVED` when no finding is CRITICAL, `NEEDS-REVISION` otherwise) and continue to "Handle the Verdict" / "Write Results" exactly as for a returned review. In the PLAN.md `## Plan Review` block add the line `**Source:** adopted from the reviewer's scratch record (plan-round-1.json)` under `**Status:**`, so the record shows the verdict was salvaged rather than returned.
+4. Otherwise — file missing, unparseable, `plan_hash` mismatched (it reviewed a different plan), or `complete` false — report the failure to the user and stop. A partial record is not a review: never approve a plan without a completed review.
 
 ## Write Results
 

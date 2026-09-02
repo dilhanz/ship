@@ -18,6 +18,37 @@ Feature state is injected by hooks at session start and after compaction — che
 4. If multiple candidates exist, list them and pick the most recent
 5. If no candidates exist, report that no plannable features were found
 
+## Replan Mode
+
+Before exploring, decide whether this is a fresh plan or a **replan**. Replan mode is on when all three hold:
+
+1. `.planning/features/{name}/PLAN.md` exists, **and**
+2. it contains a `## Plan Review` section, **and**
+3. that section's latest verdict is not approved — the last `**Status:**` line is `NEEDS-REVISION` (a `/ship:plan-verify` verdict), or the last `### Outcome — {status}` heading is `STUCK`, `UNRESOLVED`, or `BLOCKED` (a `/ship:go` plan-loop outcome).
+
+Anything else — no PLAN.md, no review section, or a last verdict of `APPROVED` — is a fresh plan: follow the steps below exactly as today.
+
+In replan mode, the open findings are the reason the skill was invoked, and the plan is revised around them rather than rewritten:
+
+- **Required inputs.** The open CRITICAL findings are the required inputs to this run: the `### Critical Issues` list (plan-verify), or the CRITICAL findings named by the last `### Round n` subsection and the outcome block's history (loop). Read each one and verify it against the code before acting on it — a finding can be wrong, and a disproved finding is recorded as such, not silently dropped.
+- **Surgical edits only.** Keep every task id and **never renumber**. Leave tasks the findings do not name untouched. Revise only what a finding names — files, reference, action, verify, ordering — or add a new task with the next unused id when a finding calls for work no task covers. Exploration is scoped to the findings; do not re-explore the whole surface. Do not rewrite `## Exploration Summary` or `## Decisions` wholesale; append to `## Decisions` when a finding changes one.
+- **Preserve `## Plan Review` entirely** — every prior `### Round n`, `### Critical Issues`, and `### Outcome` block stays as written. Then append a new subsection at the end of the section:
+
+  ```markdown
+  ### Round {n} — /ship:plan
+
+  **Findings received:** {count}
+
+  1. [CRITICAL] Task {id} / {file} — {description}
+     revised: {what changed}
+  2. [CRITICAL] Task {id} / {file} — {description}
+     disproved: {evidence from the code}
+  ```
+
+  `{n}` is one greater than the highest existing `### Round` number in the section (treat an absent number as 0), so the record never collides with a round the loop or a replanner wrote. Every finding received gets exactly one `revised:` or `disproved:` line.
+
+Step 7 and the display below carry the replan-mode branches; Step 8 is unchanged.
+
 ## Pre-Planning Exploration
 
 Scale exploration to uncertainty — the gate is the output, not the process:
@@ -162,7 +193,9 @@ Completeness, wiring, ordering, and phase-coherence judgments belong to the inde
 
 ### Step 7 — Write PLAN.md
 
-Write `.planning/features/{name}/PLAN.md`:
+**In replan mode, do not Write the template.** Edit `.planning/features/{name}/PLAN.md` in place: revise the tasks the findings name, preserve everything else (including `## Plan Review`), and append the `### Round {n} — /ship:plan` subsection described under Replan Mode.
+
+Otherwise, write `.planning/features/{name}/PLAN.md`:
 
 ```markdown
 ---
@@ -221,6 +254,7 @@ After writing, display:
 ## PLAN READY
 
 Feature: {name}
+[In replan mode:] Mode: replan (N findings addressed)
 Tasks: [N] [in M phases / flat]
 Must Deliver: [N items]
 Research: [done / skipped]
@@ -236,5 +270,6 @@ Next: /ship:plan-verify
 - **Scope creep.** Only plan tasks that serve the acceptance criteria.
 - **Open contracts.** Never leave a *contract* open — "choose an appropriate library" stays banned (library choice is a contract); pick one and name it. Internals latitude is not an open decision.
 - **Verify commands needing a running server without setup.**
+- **Discard review findings** — in replan mode they are the input, not noise. Rewriting PLAN.md from the template throws away the `## Plan Review` section the run exists to address.
 
 $ARGUMENTS

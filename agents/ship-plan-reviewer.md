@@ -32,7 +32,7 @@ Do not re-litigate the plan from scratch. A replanner may resolve a finding by *
 
 A previous reviewer may have finished this exact review and had its result lost in transit, or been cut off by its turn budget partway through. Always Read `.planning/features/{name}/.review-scratch/plan-round-{n}.json` (use `plan-round-1.json` when you were given no round number) and run `git hash-object .planning/features/{name}/PLAN.md`.
 
-- **It exists, its `plan_hash` matches, and `complete` is `true`** (or absent, for records written before this key existed) — that review already ran against exactly the plan on disk now. Report its findings verbatim as your own result and stop. Do not re-explore the codebase. The expensive work is already paid for.
+- **It exists, its `plan_hash` matches, and `complete` is `true`** (or absent, for records written before this key existed) — that review already ran against exactly the plan on disk now. Report its findings verbatim as your own result and proceed directly to Output — inside a workflow that means calling `StructuredOutput` as your final action. A salvage that ends without that call is a lost result, which is exactly the failure being salvaged. Do not re-explore the codebase. The expensive work is already paid for.
 - **It exists, its `plan_hash` matches, and `complete` is `false`** — a prior reviewer was cut off mid-review. Adopt its `findings` and `examined` as your own starting point, do not re-verify the tasks it already covered, and resume from the first task it never reached. Its partial work is evidence, not noise.
 - **It is missing, malformed, or its `plan_hash` differs** — it reviewed a different plan. Ignore it and review properly.
 
