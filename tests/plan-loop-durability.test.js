@@ -329,3 +329,105 @@ describe('plan-loop durability — result fields', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Doctrine — the agent and skill text that carries the contracts above.
+// Workflow scripts cannot read files, so record adoption lives in the skills;
+// these assertions pin the prose the workflow tests cannot reach.
+// ---------------------------------------------------------------------------
+
+describe('plan-loop durability — doctrine', () => {
+  const section = (text, heading) => {
+    const start = text.indexOf(heading);
+    assert.ok(start > -1, `missing section ${heading}`);
+    const rest = text.slice(start + heading.length);
+    const end = rest.indexOf('\n## ');
+    return heading + (end === -1 ? rest : rest.slice(0, end));
+  };
+
+  it('the replanner runs at 60 turns and keeps an incremental scratch record', () => {
+    const c = readSrc('agents/ship-replanner.md');
+    assert.match(c.split('---')[1], /^maxTurns: 60$/m,
+      'the 5.11 "never reached" claim was falsified by 7- and 8-CRITICAL runs; the budget must match the reviewer');
+    const gate = c.split('<HARD-GATE>')[1].split('</HARD-GATE>')[0];
+    assert.match(gate, /replan-round-/, 'the HARD-GATE must carve out the scratch record — nothing else may be written');
+    assert.match(c, /before the first edit/i, 'the record must exist before any edit lands, or a cut-off run loses the whole round');
+    assert.match(c, /after each finding/i, 'the record must be rewritten per finding — that is what a resume reads');
+    const salvage = section(c, '## Salvage check');
+    assert.doesNotMatch(salvage, /and stop/i,
+      '"and stop" contradicts the StructuredOutput final-action rule — it is the observed lost-result failure');
+    assert.match(salvage, /pending/, 'a partial record resumes from the first pending finding');
+    for (const key of ['plan_hash', 'complete']) {
+      assert.ok(c.includes(key), `the record schema must carry ${key}`);
+    }
+  });
+
+  it('the plan reviewer salvage check no longer says "and stop"', () => {
+    const c = readSrc('agents/ship-plan-reviewer.md');
+    assert.doesNotMatch(c, /and stop/i, 'the salvaged result must still be emitted through StructuredOutput');
+    assert.match(c, /IS your final action/, 'the final-action exception is the only terminal rule');
+  });
+
+  it('the go skill adopts a complete reviewer record on BLOCKED and re-invokes at most once', () => {
+    const c = readSrc('skills/go/SKILL.md');
+    const s2a = c.slice(c.indexOf('## 2a.'), c.indexOf('## 3.'));
+    assert.ok(s2a.length > 0, 'section 2a must precede section 3');
+    for (const phrase of ['plan-round-{rounds}.json', 'git hash-object', 'plan_hash', 'complete', 'adopt']) {
+      assert.ok(s2a.includes(phrase), `§2a scratch fallback must mention ${phrase}`);
+    }
+    assert.match(s2a, /re-invoke[^.]*once/i, 'CRITICALs in an adopted record re-invoke the loop exactly once');
+    assert.ok(s2a.includes('nextRoundOffset'),
+      'the re-invocation must thread nextRoundOffset, or an answers step makes the ### Round labels collide');
+  });
+
+  it('the go skill tells the truth about a lost replan', () => {
+    const c = readSrc('skills/go/SKILL.md');
+    const s2a = c.slice(c.indexOf('## 2a.'), c.indexOf('## 3.'));
+    const start = s2a.indexOf('**`replanner` / `answers`**');
+    assert.ok(start > -1, 'BLOCKED must split on blockedBy and carry a replanner/answers bullet');
+    const bullet = s2a.slice(start, s2a.indexOf('\n\n', start));
+    assert.match(bullet, /may already be partly or fully revised/,
+      'the replanner edits before it writes its subsection — "still carries CRITICAL findings" was false');
+    assert.match(bullet, /\/ship:go/, 'the remedy is a re-run that salvages the record');
+    assert.doesNotMatch(bullet, /\/ship:plan-verify/,
+      'a manual review of a half-revised plan was the wrong remedy the audit found');
+  });
+
+  it('the go skill deletes scratch records only after the fallback has read them', () => {
+    const c = readSrc('skills/go/SKILL.md');
+    const s2a = c.slice(c.indexOf('## 2a.'), c.indexOf('## 3.'));
+    const fallback = s2a.indexOf('scratch fallback');
+    const cleanup = s2a.indexOf('plan-round-*.json');
+    assert.ok(fallback > -1 && cleanup > -1, 'both the fallback and the cleanup rule must exist');
+    assert.ok(cleanup > fallback, 'deleting before the fallback reads the record would destroy the safety net');
+    const cleanupPara = s2a.slice(s2a.lastIndexOf('\n\n', cleanup), s2a.indexOf('\n\n', cleanup));
+    assert.match(cleanupPara, /replan-round-/, 'cleanup must cover the replanner records too');
+  });
+
+  it('plan-verify adopts the reviewer record on its second failure, never approving without one', () => {
+    const c = readSrc('skills/plan-verify/SKILL.md');
+    for (const phrase of ['plan-round-1.json', 'plan_hash', 'git hash-object', 'never approve']) {
+      assert.ok(c.includes(phrase), `plan-verify fallback must mention ${phrase}`);
+    }
+    const tools = /^allowed-tools:\s*(.+)$/m.exec(c.split('---')[1])[1];
+    assert.match(tools, /\bBash\b/, 'git hash-object needs Bash in allowed-tools');
+  });
+
+  it('/ship:plan carries a surgical replan mode', () => {
+    const c = readSrc('skills/plan/SKILL.md');
+    assert.ok(c.includes('## Replan Mode'), 'the mode must be a findable section');
+    const mode = section(c, '## Replan Mode');
+    for (const phrase of ['## Plan Review', '### Round {n} — /ship:plan', 'never renumber']) {
+      assert.ok(mode.includes(phrase), `replan mode must mention ${phrase}`);
+    }
+    assert.match(mode, /required inputs/i, 'open findings are the input, not noise');
+    for (const verdict of ['STUCK', 'UNRESOLVED', 'BLOCKED', 'NEEDS-REVISION']) {
+      assert.ok(mode.includes(verdict), `detection must list ${verdict}`);
+    }
+  });
+
+  it('the headless contract defines roundOffset as the workflow nextRoundOffset', () => {
+    assert.ok(readSrc('ship/docs/headless.md').includes('nextRoundOffset'),
+      'QUESTIONS.md frontmatter must round-trip the label count, not the review count');
+  });
+});
