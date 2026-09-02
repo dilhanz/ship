@@ -139,14 +139,18 @@ describe('plan loop — control flow', () => {
   });
 
   it('re-invocation with args.answers puts them verbatim in the replan prompt', async () => {
+    let answersPrompt = null;
     let replanPrompt = null;
     await runWorkflow({ feature: 'f', answers: 'Q: Which store? A: postgres' }, (label, prompt) => {
+      if (label === 'replan:answers') { answersPrompt = prompt; return revised(); }
       if (label === 'plan-review:r1') return review(critical('3', 'src/a.js', 'undecided store'));
       if (label === 'replan:r1') { replanPrompt = prompt; return revised(); }
       if (label === 'plan-review:r2') return clean();
       return null;
     });
 
+    assert.match(answersPrompt, /Q: Which store\? A: postgres/, 'the apply-answers step carries the transcript');
+    assert.match(answersPrompt, /Treat these answers as settled/);
     assert.match(replanPrompt, /Q: Which store\? A: postgres/);
     assert.match(replanPrompt, /Answers from the user/);
   });
