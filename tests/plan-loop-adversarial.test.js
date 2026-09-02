@@ -308,6 +308,8 @@ describe('plan loop — escalation and prompt contracts', () => {
       if (label.startsWith('replan:')) return revised();
       return null;
     });
+    assert.match(promptFor(prompts, 'replan:answers'), /A: postgres/,
+      'the apply-answers step runs before the first review with the transcript');
     assert.match(promptFor(prompts, 'replan:r1'), /A: postgres/);
     assert.match(promptFor(prompts, 'replan:r2'), /A: postgres/,
       'the loop restarts at round 1 on re-invocation, so answers must stay in scope');
