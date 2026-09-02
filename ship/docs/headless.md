@@ -109,7 +109,7 @@ Example (the run's last output):
 
 Written only when the plan loop returns NEEDS_INPUT under `--headless` (interactive runs never write it). Format:
 
-- YAML frontmatter: `feature` (string), `roundOffset` (integer — total plan-loop rounds spent across all invocations so far), `created` (ISO date).
+- YAML frontmatter: `feature` (string), `roundOffset` (integer — the workflow's `nextRoundOffset`: the total number of `### Round n` labels consumed across all invocations so far, which includes an apply-answers step; when an older workflow returns no `nextRoundOffset`, the summed `rounds`), `created` (ISO date).
 - One `### Q{n}: {question}` section per `needs_input` entry, each with its `**Why blocking:**` line, an `Options:` bullet list, and an empty `**Answer:**` line.
 - The raw replanner `needs_input` JSON array in a fenced `json` block at the end.
 
@@ -165,7 +165,7 @@ Options:
 
 The caller (or a human) fills each `**Answer:**` line and re-invokes `/ship:go --headless {name}`. Go checks for the file **before** running the plan loop:
 
-- **Every `**Answer:**` line non-empty** → build the Q/A transcript for `args.answers` — one `Q: {question}` / `A: {answer}` pair per question section — pass the frontmatter `roundOffset` to the plan workflow, then, once the workflow has been invoked, rename the file to `QUESTIONS-{roundOffset}.answered.md` (the `roundOffset` from its own frontmatter — strictly increasing across re-invocations, so the archive name is collision-free and deterministic), and continue the loop.
+- **Every `**Answer:**` line non-empty** → build the Q/A transcript for `args.answers` — one `Q: {question}` / `A: {answer}` pair per question section — pass the frontmatter `roundOffset` to the plan workflow (`findings` are optional on resume — the workflow reads the open findings from the latest `## Plan Review` round in PLAN.md when none are passed, and applies the answers in a `replan:answers` step before its first review), then, once the workflow has been invoked, rename the file to `QUESTIONS-{roundOffset}.answered.md` (the `roundOffset` from its own frontmatter — strictly increasing across re-invocations, so the archive name is collision-free and deterministic), and continue the loop.
 - **Any answer still empty** → terminate immediately as `needs-input` again, with `detail` "QUESTIONS.md awaiting answers" and `questions_file` set, without re-running the loop. Re-invoking with an unanswered file is idempotent.
 - **File absent** → run the loop normally.
 
