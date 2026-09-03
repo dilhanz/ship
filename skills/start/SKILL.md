@@ -46,7 +46,13 @@ Explore the codebase, then probe with `AskUserQuestion` until the problem, scope
 
 Once CONTEXT.md is written, put the feature at the top of the ledger — it is what you are working on now, by definition.
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/ledger/SKILL.md` for the format. Then, in `.planning/LEDGER.md` (create it with the four empty headings if absent):
+Read `${CLAUDE_PLUGIN_ROOT}/skills/ledger/SKILL.md` for the format. The ledger indexes the project, not the branch, and lives at the main worktree root — resolve it first:
+
+```bash
+MAIN_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+```
+
+If `git` fails (not a repository), `MAIN_ROOT` is the cwd and the row goes to the relative `.planning/LEDGER.md` — today's behavior. Then, in `$MAIN_ROOT/.planning/LEDGER.md` (create it there with the four empty headings if absent), never in a linked worktree's copy:
 
 - If a row for `{name}` already exists in any of `## Now` / `## Next` / `## Someday`, **move it to the top of `## Now`** and leave its one-liner alone — the user wrote it, and brainstorming does not license rewriting it.
 - If no row exists, insert `- [ ] **{name}** — {one-line summary from CONTEXT.md}` at the top of `## Now`.
@@ -61,7 +67,7 @@ Brainstorming happens in the main checkout; the build happens in a worktree. Now
 1. Confirm this is the main checkout:
 
    ```bash
-   MAIN_ROOT=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+   MAIN_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
    CWD_ROOT=$(git rev-parse --show-toplevel)
    ```
 

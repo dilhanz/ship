@@ -81,6 +81,16 @@ describe('ledger — format contract', () => {
       'the render step must glob the folders rather than trust the file');
   });
 
+  it('sees features that /ship:start moved into a worktree, and edits the main-root ledger', () => {
+    assert.match(c, /find-features\.cjs/,
+      'status is resolved through the shared helper — a cwd-only glob cannot see a moved feature directory');
+    assert.match(c, /\$LEDGER/, 'every read and edit targets the one resolved ledger path');
+    assert.match(c, /--git-common-dir/,
+      'the main root is derived from git on every call, the same idiom /ship:finish uses');
+    assert.match(c, /\[\{status\} · \{branch\}\]/,
+      'a feature living in another worktree renders its branch, not a bare status or a path');
+  });
+
   it('names .planning/LEDGER.md as the one file it writes', () => {
     assert.match(c, /\.planning\/LEDGER\.md/, 'the path must be explicit');
     assert.match(c, /\*\*Write only `\.planning\/LEDGER\.md`\.\*\*/,
@@ -298,15 +308,15 @@ describe('5.20.0 — the DEFERRED verdict went with it', () => {
   });
 });
 
-describe('5.21.0 — version agreement', () => {
-  it('VERSION, package.json, and plugin.json all read 5.21.0', () => {
-    assert.equal(readSrc('ship/VERSION').trim(), '5.21.0');
-    assert.equal(JSON.parse(readSrc('package.json')).version, '5.21.0');
-    assert.equal(JSON.parse(readSrc('.claude-plugin/plugin.json')).version, '5.21.0');
+describe('5.22.0 — version agreement', () => {
+  it('VERSION, package.json, and plugin.json all read 5.22.0', () => {
+    assert.equal(readSrc('ship/VERSION').trim(), '5.22.0');
+    assert.equal(JSON.parse(readSrc('package.json')).version, '5.22.0');
+    assert.equal(JSON.parse(readSrc('.claude-plugin/plugin.json')).version, '5.22.0');
   });
 
   it('the CHANGELOG documents the release', () => {
     const c = readSrc('CHANGELOG.md');
-    assert.match(c, /^## 5\.21\.0/m, 'the release workflow extracts this section as the release notes');
+    assert.match(c, /^## 5\.22\.0/m, 'the release workflow extracts this section as the release notes');
   });
 });
