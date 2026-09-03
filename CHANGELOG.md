@@ -1,5 +1,29 @@
 # Changelog
 
+## 5.22.0
+
+Minor release — the feature-state commands can see across worktrees. 5.20.0's handoff moves a feature's directory *into* its `feature/{slug}` worktree and leaves `.planning/LEDGER.md` behind in the main checkout, but `/ship:ledger`, `/ship:status`, and `/ship:resume` each resolved feature state against the current checkout only. From main, a feature actively being built rendered with no marker — which the ledger defines as "not started" — `/ship:status` reported nothing in flight, and `/ship:resume` offered to `/ship:start` a second copy of work already underway. From inside the worktree, `/ship:ledger` found no ledger at all. Location is now derived from `git worktree list --porcelain` on every read and never stored, so there is nothing to drift.
+
+### Added
+
+- **`ship/find-features.cjs` — the shared lookup helper.** Module plus CLI (`node ship/find-features.cjs [slug]`), zero dependencies, one `git worktree list --porcelain` call per invocation. It scans `.planning/features/` in every listed checkout and `.planning/archive/` at the main root, and prints one JSON line: `{ cwd, cwdRoot, mainRoot, worktrees, features, warning }`, where each feature entry carries `status` (read from the leading frontmatter block only, terminal statuses kept), `location` (`main` | `worktree` | `archive`), `branch`, `path`, `here`, `owner`, `copies`, `candidates`, `alsoArchived`, and the task/phase/goal enrichment `scanFeatures` already computes. Skills cannot share logic any other way, so this follows the `resolve-profile.cjs` shape exactly: never throws, never calls `process.exit()`, always valid JSON.
+- **The ownership ladder.** When a slug has live copies in more than one checkout, the copy whose worktree branch is exactly `feature/{slug}` or `{slug}` wins as `owner: branch` (two such matches → `ambiguous`); otherwise the copy in the current checkout wins as `cwd`; otherwise the entry is `ambiguous`, with `copies` and every candidate listed and a null `status` unless all copies agree. Statuses are never compared to pick a winner. A live copy anywhere beats the archive; the archive resolves only when no live copy exists.
+- **`/ship:resume` offers the hop.** When the chosen feature is not in the current checkout, resume reports where it lives (`{path}` on `{branch}`) and asks once — **Enter that worktree** / **Stay here** — before touching any status-driven step, entering via `EnterWorktree` only on yes. It never enters automatically: relocating the session is a side effect a read-shaped command must ask about. An `ambiguous` entry lists its candidates and asks which to resume; an archived one is reported as already shipped.
+
+### Changed
+
+- **`/ship:ledger` and `/ship:start` write the main-root `LEDGER.md`.** Both resolve `MAIN_ROOT` with the idiom `/ship:finish` already used — `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"` — and read and edit `$MAIN_ROOT/.planning/LEDGER.md` from any worktree, never creating a second copy in a linked one. Outside a git repo the cwd is the main root, which is exactly the previous behavior.
+- **`/ship:ledger` renders remote features.** A feature in the current checkout still renders `[{status}]`; one that lives elsewhere renders `[{status} · {branch}]` (`detached` when the worktree has no branch); an ambiguous one renders `[{status} · N copies]`. A slug with no directory anywhere still renders with no marker. An entry with `location: archive` or `alsoArchived: true` under a live section is the archive orphan, from the same helper call.
+- **`/ship:status` gains `Bash`** in `allowed-tools` to call the helper, gains a **Location** column, and reads each feature's files from the entry's `dir` — which may be in another worktree. It remains read-only.
+- **`/ship:resume` gains `AskUserQuestion` and `EnterWorktree`** in `allowed-tools` for the hop offer.
+- **`/ship:start` standardises its `MAIN_ROOT` idiom.** The worktree offer's `git worktree list --porcelain | awk` derivation is replaced by the same `--git-common-dir` line; the pinned `MAIN_ROOT` != `CWD_ROOT` comparison and the copy/rm mechanics are unchanged.
+
+### Fixed
+
+- **From main, a feature being built in a worktree no longer renders as "not started".** The ledger row shows `[building · feature/{slug}]`, `/ship:status` lists it with its location, and `/ship:resume` finds it instead of suggesting `/ship:start`.
+- **From a worktree, the ledger is no longer reported empty.** `/ship:ledger` reads the main root's file through `--git-common-dir` rather than looking for one beside the current checkout.
+- **`hooks/guide.cjs` and `hooks/post-compact.cjs` are untouched** — they keep calling `scanFeatures(cwd)`, so a session's injected state still describes the checkout it is in.
+
 ## 5.21.0
 
 Minor release — the plan revision loop stops losing work it has already done. A 2026-09-02 audit of 59 plan-loop runs across two real projects found four defects, each of which forced the main session to finish a plan round by hand: the replanner lost its structured result on plans carrying 6–8 CRITICALs and the salvage retry could not recover it (three features, Aug 22–26, every one ending `BLOCKED` with PLAN.md already rewritten); the plan reviewer's salvage retry failed *after* writing a complete scratch record, because its own instructions told it to stop; a `NEEDS_INPUT` answer was dropped without a trace when the re-invoked review approved, since answers only reached a replanner and a replanner only ran on CRITICALs; and `/ship:plan`, the documented remedy for every non-approved verdict, rewrote PLAN.md from the template and discarded the `## Plan Review` findings it was invoked to address. Every agent in the loop now leaves a durable record before it can die, every salvage path actually reports, and every recovery path consumes the record instead of the user.

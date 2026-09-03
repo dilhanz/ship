@@ -308,15 +308,15 @@ describe('5.20.0 — the DEFERRED verdict went with it', () => {
   });
 });
 
-describe('5.21.0 — version agreement', () => {
-  it('VERSION, package.json, and plugin.json all read 5.21.0', () => {
-    assert.equal(readSrc('ship/VERSION').trim(), '5.21.0');
-    assert.equal(JSON.parse(readSrc('package.json')).version, '5.21.0');
-    assert.equal(JSON.parse(readSrc('.claude-plugin/plugin.json')).version, '5.21.0');
+describe('5.22.0 — version agreement', () => {
+  it('VERSION, package.json, and plugin.json all read 5.22.0', () => {
+    assert.equal(readSrc('ship/VERSION').trim(), '5.22.0');
+    assert.equal(JSON.parse(readSrc('package.json')).version, '5.22.0');
+    assert.equal(JSON.parse(readSrc('.claude-plugin/plugin.json')).version, '5.22.0');
   });
 
   it('the CHANGELOG documents the release', () => {
     const c = readSrc('CHANGELOG.md');
-    assert.match(c, /^## 5\.21\.0/m, 'the release workflow extracts this section as the release notes');
+    assert.match(c, /^## 5\.22\.0/m, 'the release workflow extracts this section as the release notes');
   });
 });
