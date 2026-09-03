@@ -81,6 +81,16 @@ describe('ledger — format contract', () => {
       'the render step must glob the folders rather than trust the file');
   });
 
+  it('sees features that /ship:start moved into a worktree, and edits the main-root ledger', () => {
+    assert.match(c, /find-features\.cjs/,
+      'status is resolved through the shared helper — a cwd-only glob cannot see a moved feature directory');
+    assert.match(c, /\$LEDGER/, 'every read and edit targets the one resolved ledger path');
+    assert.match(c, /--git-common-dir/,
+      'the main root is derived from git on every call, the same idiom /ship:finish uses');
+    assert.match(c, /\[\{status\} · \{branch\}\]/,
+      'a feature living in another worktree renders its branch, not a bare status or a path');
+  });
+
   it('names .planning/LEDGER.md as the one file it writes', () => {
     assert.match(c, /\.planning\/LEDGER\.md/, 'the path must be explicit');
     assert.match(c, /\*\*Write only `\.planning\/LEDGER\.md`\.\*\*/,
