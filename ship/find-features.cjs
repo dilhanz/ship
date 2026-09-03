@@ -20,6 +20,12 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+// One CONTEXT.md/PLAN.md parser for the whole plugin: progress enrichment comes
+// from the hooks' scanner, whose behavior stays byte-identical. Its terminal
+// filter is right for the hooks and wrong for the ledger, so status itself is
+// read unfiltered by readStatus() below.
+const { scanFeatures } = require(path.join(__dirname, '..', 'hooks', 'scan-features.cjs'));
+
 /**
  * Parse `git worktree list --porcelain` output. Blocks are separated by blank
  * lines; the first block git prints is always the main worktree.
@@ -162,6 +168,57 @@ function readStatus(contextPath) {
 }
 
 /**
+ * List the feature slugs under `{root}/.planning/{section}/` that carry a
+ * CONTEXT.md. Returns null (with a reason) when the section directory itself
+ * cannot be listed for any reason other than not existing.
+ */
+function listSlugs(root, section, slug) {
+  const sectionDir = path.join(root, '.planning', section);
+  let names;
+  try {
+    if (slug !== null) {
+      names = [slug];
+    } else {
+      names = fs.readdirSync(sectionDir, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => d.name);
+    }
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { slugs: [], reason: null };
+    return { slugs: [], reason: (e && (e.code || e.message)) || 'unreadable' };
+  }
+
+  const slugs = [];
+  for (const name of names) {
+    const dir = path.join(sectionDir, name);
+    const status = readStatus(path.join(dir, 'CONTEXT.md'));
+    if (status === null) continue; // no CONTEXT.md, or unreadable — not a feature dir
+    slugs.push({ slug: name, dir, status });
+  }
+  return { slugs, reason: null };
+}
+
+/**
+ * The ownership ladder, ported from lane-ownership (branch over testimony):
+ * one copy is sole; a worktree on `feature/{slug}` or `{slug}` wins exactly
+ * once; then the cwd's copy; otherwise honest ambiguity. Statuses are never
+ * compared to pick a winner — that can flip between two reads with no change
+ * in the repo.
+ */
+function resolveOwner(slug, candidates) {
+  if (candidates.length === 1) return { owner: 'sole', winner: candidates[0] };
+
+  const byBranch = candidates.filter(c => c.branch === `feature/${slug}` || c.branch === slug);
+  if (byBranch.length === 1) return { owner: 'branch', winner: byBranch[0] };
+  if (byBranch.length > 1) return { owner: 'ambiguous', winner: null };
+
+  const byCwd = candidates.filter(c => c.isCwd);
+  if (byCwd.length === 1) return { owner: 'cwd', winner: byCwd[0] };
+
+  return { owner: 'ambiguous', winner: null };
+}
+
+/**
  * Resolve features across every worktree and the archive.
  *
  * @param {{ cwd?: string, slug?: string|null, env?: object }} [options]
@@ -170,18 +227,139 @@ function readStatus(contextPath) {
 function findFeatures(options) {
   const opts = options || {};
   const cwd = opts.cwd || process.cwd();
+  const slug = opts.slug ? String(opts.slug) : null;
   const { worktrees, warning } = listWorktrees(cwd, { env: opts.env });
+  const warnings = warning ? [warning] : [];
 
   const main = worktrees.find(w => w.isMain) || worktrees[0];
   const here = worktrees.find(w => w.isCwd) || null;
+  const mainRoot = main.path;
+
+  // Collection: every live copy, keyed by slug.
+  const candidatesBySlug = new Map();
+  for (const wt of worktrees) {
+    if (!fs.existsSync(wt.path)) {
+      warnings.push(`skipped worktree ${wt.path} (path missing)`);
+      continue;
+    }
+    const { slugs, reason } = listSlugs(wt.path, 'features', slug);
+    if (reason) {
+      warnings.push(`skipped worktree ${wt.path} (${reason})`);
+      continue;
+    }
+    for (const found of slugs) {
+      if (!candidatesBySlug.has(found.slug)) candidatesBySlug.set(found.slug, []);
+      candidatesBySlug.get(found.slug).push({
+        path: wt.path,
+        branch: wt.branch,
+        status: found.status,
+        isCwd: wt.isCwd === true,
+        dir: found.dir,
+      });
+    }
+  }
+
+  // Archive: only the main root's — /ship:finish always moves there. A live
+  // copy anywhere beats it; it resolves on its own only when no copy is live.
+  const archived = new Map();
+  const archiveScan = listSlugs(mainRoot, 'archive', slug);
+  if (archiveScan.reason) warnings.push(`skipped archive at ${mainRoot} (${archiveScan.reason})`);
+  for (const found of archiveScan.slugs) archived.set(found.slug, found);
+
+  // Enrichment comes from scanFeatures() of the owning checkout, once per
+  // distinct owning worktree. Terminal-status features have no snapshot.
+  const snapshotCache = new Map();
+  const snapshotsFor = (root) => {
+    if (!snapshotCache.has(root)) {
+      let snapshots = [];
+      try {
+        snapshots = scanFeatures(root);
+      } catch (e) {
+        warnings.push(`progress unavailable for ${root} (${(e && e.message) || 'scan failed'})`);
+      }
+      snapshotCache.set(root, snapshots);
+    }
+    return snapshotCache.get(root);
+  };
+
+  const slugs = Array.from(new Set([...candidatesBySlug.keys(), ...archived.keys()])).sort();
+  const features = {};
+
+  for (const name of slugs) {
+    const candidates = (candidatesBySlug.get(name) || [])
+      .slice()
+      .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    const archiveHit = archived.get(name) || null;
+
+    if (candidates.length === 0) {
+      features[name] = {
+        slug: name,
+        dir: archiveHit.dir,
+        status: archiveHit.status,
+        location: 'archive',
+        branch: null,
+        path: mainRoot,
+        here: main.isCwd === true,
+        owner: 'sole',
+        copies: 0,
+        candidates: [],
+        alsoArchived: false,
+      };
+      continue;
+    }
+
+    const { owner, winner } = resolveOwner(name, candidates);
+
+    if (!winner) {
+      const shared = candidates.every(c => c.status === candidates[0].status) ? candidates[0].status : null;
+      features[name] = {
+        slug: name,
+        dir: null,
+        status: shared,
+        location: null,
+        branch: null,
+        path: null,
+        here: false,
+        owner,
+        copies: candidates.length,
+        candidates,
+        alsoArchived: archiveHit !== null,
+      };
+      continue;
+    }
+
+    const owning = worktrees.find(w => w.path === winner.path) || main;
+    const entry = {
+      slug: name,
+      dir: winner.dir,
+      status: winner.status,
+      location: owning.isMain ? 'main' : 'worktree',
+      branch: winner.branch,
+      path: winner.path,
+      here: winner.isCwd,
+      owner,
+      copies: candidates.length,
+      candidates,
+      alsoArchived: archiveHit !== null,
+    };
+
+    const snapshot = snapshotsFor(winner.path).find(s => s.name === name);
+    if (snapshot) {
+      if (snapshot.tasks) entry.tasks = snapshot.tasks;
+      if (snapshot.currentPhase) entry.currentPhase = snapshot.currentPhase;
+      if (snapshot.goal) entry.goal = snapshot.goal;
+    }
+
+    features[name] = entry;
+  }
 
   return {
     cwd,
     cwdRoot: here ? here.path : null,
-    mainRoot: main.path,
+    mainRoot,
     worktrees,
-    features: {},
-    warning,
+    features,
+    warning: warnings.length > 0 ? warnings.join('; ') : null,
   };
 }
 
