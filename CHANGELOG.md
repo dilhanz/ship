@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.22.1
+
+Patch release — archived features stop rendering as live work. The ledger's marker rules and the status skill's Location rule both applied their `here` / `owner` / `branch` rules before anything checked `location`, so an archived entry fell straight through them: every `## Shipped` row rendered `[done]` from the main checkout and `[done · detached]` from a linked worktree, and the status table's Location column read `here` or `detached` for a feature that lives in `.planning/archive/`.
+
+### Fixed
+
+- **`location: archive` is now the first rule in both skills.** In `skills/ledger/SKILL.md` step 3 an archived entry gets **no marker, in any section** — a `## Shipped` row already carries `→ .planning/archive/{slug}/`, which is the status, and an archived slug still sitting under `## Now`/`## Next`/`## Someday` is the step-4 orphan report's job, not something to mark inline. In `skills/status/SKILL.md` step 6 the Location column reads `archive` from every checkout. Both rules state *why* they come first — an archived entry's `here` and `branch` describe the archive copy at the main root, not live work — so the precedence survives a future tidy-up, and `tests/archive-ledger-marker.test.js` pins the order by index in the file text.
+- `ship/find-features.cjs` is **unchanged**. It reported the archive entry correctly all along; this was a rendering-order bug in the prose only.
+
 ## 5.22.0
 
 Minor release — the feature-state commands can see across worktrees. 5.20.0's handoff moves a feature's directory *into* its `feature/{slug}` worktree and leaves `.planning/LEDGER.md` behind in the main checkout, but `/ship:ledger`, `/ship:status`, and `/ship:resume` each resolved feature state against the current checkout only. From main, a feature actively being built rendered with no marker — which the ledger defines as "not started" — `/ship:status` reported nothing in flight, and `/ship:resume` offered to `/ship:start` a second copy of work already underway. From inside the worktree, `/ship:ledger` found no ledger at all. Location is now derived from `git worktree list --porcelain` on every read and never stored, so there is nothing to drift.
