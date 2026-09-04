@@ -227,17 +227,37 @@ function resolveOwner(slug, candidates) {
 function findFeatures(options) {
   const opts = options || {};
   const cwd = opts.cwd || process.cwd();
-  const slug = opts.slug ? String(opts.slug) : null;
   const { worktrees, warning } = listWorktrees(cwd, { env: opts.env });
   const warnings = warning ? [warning] : [];
+
+  // The slug is a name, not a path: listSlugs() joins it under .planning/, so
+  // a fragment like '../../../outside' would walk out of the tree and read a
+  // CONTEXT.md that is not a feature. It is rejected rather than
+  // path.basename()-ed — coercing '../../../outside' into 'outside' could
+  // silently resolve a different, real feature — and it warns rather than
+  // throws, because the ledger/status/resume skills read this payload through
+  // a pipe and must always get JSON. Presence, not truthiness: an empty
+  // string is validated (and rejected), not treated as "no filter".
+  let slug = null;
+  let slugRejected = false;
+  if (opts.slug !== undefined && opts.slug !== null) {
+    const raw = String(opts.slug);
+    if (raw.trim() === '' || raw.includes('/') || raw.includes('\\') || raw.includes('..')) {
+      warnings.push(`ignored invalid slug '${raw}' — a slug is one path segment`);
+      slugRejected = true;
+    } else {
+      slug = raw;
+    }
+  }
 
   const main = worktrees.find(w => w.isMain) || worktrees[0];
   const here = worktrees.find(w => w.isCwd) || null;
   const mainRoot = main.path;
 
-  // Collection: every live copy, keyed by slug.
+  // Collection: every live copy, keyed by slug. A rejected slug scans nothing:
+  // no worktree or archive directory is ever joined with it.
   const candidatesBySlug = new Map();
-  for (const wt of worktrees) {
+  for (const wt of slugRejected ? [] : worktrees) {
     if (!fs.existsSync(wt.path)) {
       warnings.push(`skipped worktree ${wt.path} (path missing)`);
       continue;
@@ -262,7 +282,7 @@ function findFeatures(options) {
   // Archive: only the main root's — /ship:finish always moves there. A live
   // copy anywhere beats it; it resolves on its own only when no copy is live.
   const archived = new Map();
-  const archiveScan = listSlugs(mainRoot, 'archive', slug);
+  const archiveScan = slugRejected ? { slugs: [], reason: null } : listSlugs(mainRoot, 'archive', slug);
   if (archiveScan.reason) warnings.push(`skipped archive at ${mainRoot} (${archiveScan.reason})`);
   for (const found of archiveScan.slugs) archived.set(found.slug, found);
 
@@ -369,7 +389,10 @@ if (require.main === module) {
   const cwd = process.cwd();
   let result;
   try {
-    const slug = process.argv.slice(2).find(arg => !arg.startsWith('--')) || null;
+    // A present-but-empty bare argument must reach the guard in findFeatures()
+    // (which rejects it), so only absence maps to "no filter".
+    const bare = process.argv.slice(2).find(arg => !arg.startsWith('--'));
+    const slug = bare === undefined ? null : bare;
     result = findFeatures({ cwd, slug });
   } catch (e) {
     result = {
