@@ -42,7 +42,7 @@ Show the status of all features with progress details.
 | {name}  | {status} | {location} | {done}/{total} tasks | {problem summary} |
 ```
 
-   **Location** is `here` when `here` is true; otherwise `{branch}` (`detached` when null), `archive` for an archived entry, or `{copies} copies` for an ambiguous one.
+   **Location** is `archive` when `location` is `archive` — checked first, because an archived entry's `here` and `branch` describe the archive copy at the main root rather than live work, so it must read `archive` from every checkout. Otherwise it is `here` when `here` is true; otherwise `{branch}` (`detached` when null), or `{copies} copies` for an ambiguous one.
 
 7. For the active (non-done) feature, show additional detail:
 
