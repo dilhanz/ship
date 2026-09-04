@@ -8,20 +8,23 @@ argument-hint: "[feature-name]"
 
 Resume work on a feature.
 
-1. Find the feature with the shared helper — it looks across the main checkout, every linked worktree, and the archive, so a feature whose directory `/ship:start` moved into a worktree is found from anywhere:
+1. Find the feature with the shared helper — it looks across the main checkout, every linked worktree, and the archive, so a feature whose directory the start command moved into a worktree is found from anywhere:
 
    ```bash
-   # with a name in $ARGUMENTS:
-   node "${CLAUDE_PLUGIN_ROOT}/ship/find-features.cjs" {name}
-   # without one:
    node "${CLAUDE_PLUGIN_ROOT}/ship/find-features.cjs"
    ```
 
+   The call is always unfiltered, even when `$ARGUMENTS` names a feature — never put the name on the command line. The full map is what lets the not-found case be reported honestly: a filtered call answers a typo'd name with an empty map, which is indistinguishable from "no features exist", and the two need different replies.
+
    It prints one line of JSON. Parse it. `features` is a map keyed by slug; each entry carries `dir` (the absolute feature directory), `status`, `location` (`main` | `worktree` | `archive`), `branch`, `path` (the checkout that holds it), `here` (true when it sits in the current checkout), `owner` (`sole` | `branch` | `cwd` | `ambiguous`), `copies`, and `candidates`. If `warning` is non-null, surface it verbatim.
 
-   Only after the helper has looked across every worktree: if `features` is empty, tell the user no features exist and suggest `/ship:start`. Saying so from a cwd-only glob is how a second directory gets created for work already in flight.
+   Not found has two cases. Check them in this order:
 
-2. Pick the feature: the named one when `$ARGUMENTS` is given; otherwise the entries whose `status` is not `done`. If several qualify, show them (slug, status, location) and ask which one to resume.
+   **A name was given and `features` has no key equal to it** → tell the user "`{name}` was not found in any checkout or the archive" and list every entry that does exist as `{slug} [{status} · {location}]` so a typo is visible. Do not suggest starting a new feature from this branch: a near-miss name is far more likely a typo than new work, and offering to start one here is how a second directory gets created for work already in flight. Stop after reporting.
+
+   **`features` is genuinely empty** → no features exist anywhere; suggest `/ship:start`. Say this only after the helper has looked across every worktree — saying it from a cwd-only glob is how a second directory gets created for work already in flight.
+
+2. Pick the feature: the named one is `features[name]` — an exact key lookup on the map — when `$ARGUMENTS` is given; otherwise the entries whose `status` is not `done`. If several qualify, show them (slug, status, location) and ask which one to resume.
 
 3. **Hop if needed.** Before consulting the status table, check where the chosen entry lives:
 
