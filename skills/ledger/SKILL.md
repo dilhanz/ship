@@ -82,6 +82,7 @@ Every read and every edit in this skill targets `$LEDGER`. In the main checkout 
    ```
 
    Markers, from the entry:
+   - `location: archive` → **no marker, in any section**. Checked first: an archived entry's `here` and `branch` describe the archive copy at the main root, not live work, so the rules below must never see it. A `## Shipped` row already carries `→ .planning/archive/{slug}/`; an archived slug still sitting under `## Now`/`## Next`/`## Someday` is the orphan reported by step 4, not something to mark inline.
    - `here` true → `[{status}]`, exactly as before.
    - `here` false and `owner` is not `ambiguous` → `[{status} · {branch}]` — the branch, not the path, because a path wraps the row. Use `detached` when `branch` is null.
    - `owner: ambiguous` → `[{status} · {copies} copies]`, with `status unknown` in place of a null status. Several checkouts hold the folder and no branch or cwd rule picks one; say so rather than guess.
