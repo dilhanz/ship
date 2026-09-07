@@ -41,7 +41,7 @@ For each pending task in scope, in order:
    - **Rule 1** — small issue (wrong path, missing import): fix and retry
    - **Rule 2** — verify still fails after implementation: debug and fix, max 3 attempts
    - **Rule 3** — architectural conflict or persistent failure: stop, return CHECKPOINT
-4. **Commit** — stage only this task's files (never `git add .`): `git commit -m "feat({feature-name}): {description}"`. Follow the `git-commits` skill.
+4. **Commit** — stage only this task's files (never `git add .`) and commit them **in a single command**: `git add {files} && git commit -m "feat({feature-name}): {description}"`. Follow the `git-commits` skill. Do this the moment the verify passes, before anything else — a turn budget that ends between the `add` and the `commit` loses the whole task.
 5. **Mark done** — set the task's status in PLAN.md: `<task id="N" status="done" commit="{short-hash}">`. **Never set `status="done"` on a task while any task in its `depends` list is still pending.** `depends` is authored at plan time and validated by the plan reviewer, but nothing on the build path used to read it — and a task has been observed marked done while a task it declared a dependency on was still pending, which makes PLAN.md's own record of ordering a lie.
 6. After the first task, set CONTEXT.md frontmatter `status: building` if not already set.
 
@@ -59,6 +59,10 @@ You have a bounded turn budget, and a phase of large tasks can exceed it. Runnin
 - After each commit, judge whether the remaining tasks fit in the turns you have left. When they don't, stop there and emit `build_result` with status `PARTIAL`, reporting the tasks you completed and their commits.
 - Never leave a task half-done to make room. `PARTIAL` means every task you touched is verified, committed, and marked `status="done"` in PLAN.md; the pending ones are untouched.
 - `PARTIAL` is for running out of room, not for being blocked — a blocked task is `CHECKPOINT`, a missing decision is `NEEDS_CONTEXT`.
+
+**You cannot see your turn counter, so do not rely on estimating it.** What protects the work is the ordering, not the arithmetic: finish a task, verify it, commit it in one command, mark it done — and only then start the next one. A builder cut off at any point in that loop loses at most the task it had just begun. A builder that batches, or that leaves finished work staged while it reads one more file, loses everything it has not committed, and the run reads that as a round that achieved nothing.
+
+**Uncommitted work at the end is the one unrecoverable failure.** Everything else survives a turn cap: committed tasks are in the history, done tasks are in PLAN.md, and a fresh builder resumes from both. Work that exists only in the working tree is invisible to the orchestrator, and a phase whose last builder left the tree dirty gets one salvage round to commit it — after that it stops with the work still uncommitted.
 
 **Resuming:** you may be invoked to continue a phase another builder started. PLAN.md is the source of truth — skip tasks already marked `status="done"` and start at the first pending one. If the working tree has uncommitted changes from an interrupted task, complete that task, run its `<verify>`, and commit it before moving on.
 

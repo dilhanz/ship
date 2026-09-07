@@ -449,12 +449,23 @@ const buildPhase = async (ph, label) => {
   let priorTasks = 0
   let lastDone = null // absolute done-count from the last probe, when we have one
   let lastTotal = 0
+  // One salvage round is granted, once, for a dead builder that left the
+  // working tree dirty — see the `landed` decision below.
+  let salvagedDirtyTree = false
+  // Set when the salvage is granted, consumed by the next round's prompt.
+  let salvageNotePending = false
 
   for (let round = 1; round <= MAX_BUILD_ROUNDS; round++) {
     const suffix = round === 1 ? '' : `:cont${round - 1}`
-    const state = lastDone === null
+    const base = lastDone === null
       ? `Committed so far this phase: ${priorCommits.length ? priorCommits.join(', ') : '(none reported)'}.`
       : `PLAN.md showed ${lastDone} of ${lastTotal} task(s) done in this scope when the previous builder stopped.`
+    // The salvage round exists for the dirty tree, so say so rather than
+    // leaving the builder to find it: this round is the work's last chance.
+    const state = salvageNotePending
+      ? `${base}\n\n**The previous builder died with uncommitted changes in the working tree.** That is finished work from an interrupted task, not scratch. Before anything else: run \`git status\` and \`git diff\`, complete that task if it is incomplete, run its \`<verify>\`, and commit it. This is the only round that will do it — a phase that ends with those changes still uncommitted loses them.`
+      : base
+    salvageNotePending = false
 
     const build = await safeAgent(round === 1 ? buildPrompt(ph) : continuePrompt(ph, state), {
       agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, phase: 'Build', retry: false,
@@ -537,6 +548,29 @@ const buildPhase = async (ph, label) => {
           }
         }
         landed = lastDone === null || progress.tasks_done > lastDone
+
+        // A dead builder that left the tree dirty did work the done-count
+        // cannot see. The commit is the last step of a task, so a builder cut
+        // off just before it has the whole task sitting in the working tree —
+        // finished and verified, but uncommitted, unmarked, and by this
+        // count indistinguishable from a builder that achieved nothing. Ending
+        // the phase there discards it and escalates a run that was minutes
+        // from done; one more builder commits it, because that is exactly what
+        // `continuePrompt` tells a continuation to do first.
+        //
+        // Granted ONCE per phase (`salvagedDirtyTree`). A tree that is still
+        // dirty after the salvage round is not an interrupted commit — it is
+        // something no builder is going to finish, and looping on it would
+        // burn the whole round budget discovering that.
+        if (!landed && progress.working_tree_clean === false && !salvagedDirtyTree) {
+          salvagedDirtyTree = true
+          salvageNotePending = true
+          landed = true
+          const concern = `phase ${label}: a builder died leaving uncommitted work in the tree; granted one salvage round to commit it`
+          if (!phaseConcerns.includes(concern)) phaseConcerns.push(concern)
+          log(`build:${label} round ${round} landed no new done tasks, but the working tree is dirty — granting one salvage round to commit the interrupted task`)
+        }
+
         lastDone = progress.tasks_done
         lastTotal = progress.tasks_total
         priorTasks = progress.tasks_done

@@ -38,10 +38,13 @@ chore(user-auth): install bcrypt and jsonwebtoken
 2. **One task = one commit** — do not batch multiple tasks into one commit.
 3. **Commit only after verify passes** — the verify command in the task must succeed before committing.
 4. **No WIP commits** — every commit on main represents working, verified code.
+5. **Stage and commit in ONE command** — `git add ... && git commit -m ...`, never `git add` in one turn and `git commit` in the next. A turn budget that runs out between the two leaves the whole task staged and uncommitted: invisible to PLAN.md, invisible to the progress probe, and indistinguishable from a builder that did nothing. That is not hypothetical — it is how a finished, green, 470-line task was read as "no progress" and stopped a run that had four minutes of work left in it.
+6. **Nothing between green and committed** — the moment a task's verify passes, the very next thing you do is the commit. Not a `git status`, not a backlog lookup, not one more read "while I'm here". Those are free once the work is safe and unrecoverable if the turn budget ends first.
 
 ## Command Template
 
+One command — the `&&` is the point, not a style preference:
+
 ```bash
-git add <file1> <file2> ...
-git commit -m "feat(feature-name): description of what was done"
+git add <file1> <file2> ... && git commit -m "feat(feature-name): description of what was done"
 ```

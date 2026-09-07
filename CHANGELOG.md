@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+Not yet numbered — on `main` ahead of 5.22.2, awaiting a cut (this section's heading plus the three version files, per the release notes in CLAUDE.md).
+
+A builder can no longer lose a finished task to its turn cap. The commit is the last step of a task, so a builder cut off just before it holds the whole task in the working tree: finished, verified, and invisible. PLAN.md does not record it, the progress probe counts only done tasks, and the phase is read as a round that achieved nothing — so `/ship:go` ends the phase on top of working code and escalates a run that was minutes from finishing. Observed on a four-phase feature where the phase-4 builder wrote a page, its test and six registration edits, went green, spent its last turn on `git add ... && git status`, and died before the commit; the phase was declared `EXHAUSTED` at 3/5 tasks and the work sat staged for two hours until a human told a fresh session to commit it.
+
+### Fixed
+
+- **The `git-commits` command template is one command.** It showed `git add ...` and `git commit -m ...` on separate lines, and the builder faithfully turned that into two turns — which is the bug: a turn budget that ends between them leaves the task staged and uncommitted. The template is now `git add {files} && git commit -m "..."`, with the rule stated as its own numbered item (5) alongside the consequence, plus a rule 6 that nothing goes between a passing verify and the commit — not a `git status`, not a backlog lookup, not one more read "while I'm here". Those are free once the work is safe and unrecoverable if the turn budget ends first.
+- **The builder commits the moment verify passes.** Execution-loop step 4 now specifies the single `git add ... && git commit` command and the ordering. Its Turn Budget section gains the part that was missing: the builder **cannot see its turn counter**, so "judge whether the remaining tasks fit in the turns you have left" was never actionable on its own. What protects the work is the ordering, not the arithmetic — finish, verify, commit, mark done, then start the next task — and uncommitted work at the end is named as the one unrecoverable failure, since everything else (commits, done markers) survives a cap by design.
+
+### Added
+
+- **One dirty-tree salvage round per phase.** When a dead builder's round lands no newly-done task but the progress probe reports `working_tree_clean: false`, the go workflow now grants exactly one more builder instead of stopping: a dirty tree after a builder death is an interrupted commit, and `continuePrompt` already tells a continuation to finish and commit it. The salvage round's prompt says so explicitly and names it as the work's last chance. Granted once per phase (a tree still dirty after the salvage round is not an interrupted commit, and looping on it would burn the round budget discovering that), recorded as a phase concern so the salvage is never silent, and gated on an explicit `false` — a probe that omits the field is unknown, not dirty, and buys no round.
 ## 5.22.2
 
 Patch release — closes the two open rows from the worktree-aware-lookup verification, both on the path a slug argument takes into the shared lookup. `ship/find-features.cjs` treated a slug as a path fragment: `node ship/find-features.cjs '../../../outside'` joined it under `.planning/features/` and read a `status:` line from a CONTEXT.md outside `.planning/` entirely. And `/ship:resume` called the helper *filtered* by the name in `$ARGUMENTS`, so a typo'd name came back as an empty map that the skill read as "no features exist" — nudging toward `/ship:start`, which creates a second directory for work already in flight.
