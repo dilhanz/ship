@@ -1,10 +1,8 @@
 # Changelog
 
-## Unreleased
+## 5.23.0
 
-Not yet numbered — on `main` ahead of 5.22.2, awaiting a cut (this section's heading plus the three version files, per the release notes in CLAUDE.md).
-
-A builder can no longer lose a finished task to its turn cap. The commit is the last step of a task, so a builder cut off just before it holds the whole task in the working tree: finished, verified, and invisible. PLAN.md does not record it, the progress probe counts only done tasks, and the phase is read as a round that achieved nothing — so `/ship:go` ends the phase on top of working code and escalates a run that was minutes from finishing. Observed on a four-phase feature where the phase-4 builder wrote a page, its test and six registration edits, went green, spent its last turn on `git add ... && git status`, and died before the commit; the phase was declared `EXHAUSTED` at 3/5 tasks and the work sat staged for two hours until a human told a fresh session to commit it.
+Minor release — a builder can no longer lose a finished task to its turn cap. The commit is the last step of a task, so a builder cut off just before it holds the whole task in the working tree: finished, verified, and invisible. PLAN.md does not record it, the progress probe counts only done tasks, and the phase is read as a round that achieved nothing — so `/ship:go` ends the phase on top of working code and escalates a run that was minutes from finishing. Observed on a four-phase feature where the phase-4 builder wrote a page, its test and six registration edits, went green, spent its last turn on `git add ... && git status`, and died before the commit; the phase was declared `EXHAUSTED` at 3/5 tasks and the work sat staged for two hours until a human told a fresh session to commit it.
 
 ### Fixed
 
