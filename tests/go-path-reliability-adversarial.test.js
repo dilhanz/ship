@@ -441,6 +441,9 @@ describe('the verifier outage is reported through the one rendering path (execut
       if (label.startsWith('review:')) {
         return { feature: 'demo', status: 'APPROVED', findings: [], verify_runs: [], files_reviewed: ['x'] };
       }
+      // The connection check answers: the verifier's deaths are its own. (With
+      // the canary dead too this is the outage shape — tests/outage-signature.)
+      if (label === 'canary:verify') return { ok: true };
       throw new Error('subagent completed without calling StructuredOutput');
     });
     assert.equal(result.verdict, null);
