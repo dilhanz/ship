@@ -229,7 +229,37 @@ const TRANSPORT_PATTERNS = [
   // An HTTP 5xx marker: the status code alone is too generic to match on, so
   // it only counts when it sits next to a status/error word.
   /(status|error)[^0-9]{0,20}50\d/i,
+  // A spent usage window stops every agent exactly as a dropped connection
+  // does, and waiting is the only remedy for either.
+  /(session|usage) limit/i,
 ]
+
+// The patterns above only see what the harness puts in the thrown message, and
+// in the field that is almost never the cause. An agent that dies on ENOTFOUND
+// or a session limit ends on a synthetic "API Error" message, and what the
+// harness then throws is the generic `subagent completed without calling
+// StructuredOutput` — byte-identical to a turn-cap death. An audit of 114 runs
+// found every logged throw classified `[agent]` and none `[transport]`, across
+// ~60 outage deaths: the classification below never fired, and outages burned
+// every continuation round "retrying blind" before being reported as EXHAUSTED.
+//
+// So an outage is also recognised by its *shape*: a trivial read-only agent —
+// the progress probe on the build path, the canary below on the verify path —
+// has no turn budget to exhaust and no work to get wrong, so when it dies
+// right after a long-running agent did, the thing that failed is the
+// connection. MAX_BLIND_ROUNDS is how many consecutive build rounds may end
+// that way: the first is retried, because a laptop waking from sleep kills
+// the agents in flight and the next one succeeds; the second is an outage.
+const MAX_BLIND_ROUNDS = 2
+
+const CANARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['ok'],
+  properties: { ok: { type: 'boolean' } },
+}
+
+const canaryPrompt = `Connection check. Do not read files, run commands, or use any other tool. Call StructuredOutput with {"ok": true} as your only action.`
 
 const isTransportError = (e) => {
   const message = String((e && e.message) || e || '')
@@ -454,6 +484,8 @@ const buildPhase = async (ph, label) => {
   let salvagedDirtyTree = false
   // Set when the salvage is granted, consumed by the next round's prompt.
   let salvageNotePending = false
+  // Consecutive rounds in which the builder and the probe both died.
+  let blindRounds = 0
 
   for (let round = 1; round <= MAX_BUILD_ROUNDS; round++) {
     const suffix = round === 1 ? '' : `:cont${round - 1}`
@@ -487,7 +519,8 @@ const buildPhase = async (ph, label) => {
 
     let landed
     if (build) {
-      landed = (build.commits || []).length > 0 || (build.tasks_completed || 0) > 0
+      blindRounds = 0
+      landed =(build.commits || []).length > 0 || (build.tasks_completed || 0) > 0
       priorCommits.push(...(build.commits || []))
       priorTasks += build.tasks_completed || 0
       lastTotal = build.tasks_total || lastTotal
@@ -522,11 +555,33 @@ const buildPhase = async (ph, label) => {
         label: `progress:${label}${suffix}`,
       })
       if (!progress) {
-        // Blind round: the builder and the probe both failed. One fresh builder
-        // is cheap when nothing is pending (it returns COMPLETE immediately).
-        landed = round < MAX_BUILD_ROUNDS
-        log(`build:${label} round ${round} returned no result and the progress probe failed — ${landed ? 'retrying blind' : 'giving up'}`)
+        // Blind round: the builder and the probe both failed. The probe reads
+        // one file and has two attempts, so it does not die of anything a
+        // builder dies of — this is the outage shape (see MAX_BLIND_ROUNDS).
+        // One blind retry is allowed, and a fresh builder is cheap when
+        // nothing is pending (it returns COMPLETE immediately). Out of blind
+        // retries or out of rounds, the honest status is INFRASTRUCTURE either
+        // way: EXHAUSTED claims the tasks were too big, and a run that could
+        // not even read PLAN.md has no evidence of that.
+        blindRounds += 1
+        if (blindRounds >= MAX_BLIND_ROUNDS || round >= MAX_BUILD_ROUNDS) {
+          log(`build:${label} stopping: builder and progress probe both died in ${blindRounds} consecutive round(s) — this is an outage, not an exhausted budget`)
+          return {
+            feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
+            status: 'INFRASTRUCTURE',
+            tasks_completed: priorTasks, tasks_total: lastTotal,
+            commits: uniq(priorCommits),
+            stopped_at: `phase ${label}`,
+            reason: `the builder and the read-only progress probe both died in ${blindRounds} consecutive round(s) — a probe has no turn budget to exhaust, so the connection or the usage limit failed, not the plan${lastFailure ? ` (last error: ${lastFailure.message})` : ''}`,
+            recommendation: infraRecommendation,
+            concerns: [...phaseConcerns],
+            rounds: round,
+          }
+        }
+        landed = true
+        log(`build:${label} round ${round} returned no result and the progress probe failed — retrying blind (${blindRounds} of ${MAX_BLIND_ROUNDS})`)
       } else {
+        blindRounds = 0
         priorCommits.push(...(progress.commits || []))
         // The probe reads PLAN.md's declared ordering, so it can see a task
         // marked done ahead of a dependency it declared. Surface it: the
@@ -776,14 +831,33 @@ if (!stoppedAt) {
   // the run back to a null verdict reported as an unrecoverable `error`. One
   // classified death here is already the sustained outage the cap exists to
   // detect on the multi-round build path.
+  //
+  // The message rarely carries the cause (see MAX_BLIND_ROUNDS), and the verify
+  // path has no progress probe to double as one, so an unclassified double
+  // death asks the canary: a verifier can spend two turn budgets, a one-call
+  // agent cannot. The canary's own failure text is not what is reported — it is
+  // the same generic message — so the verifier's is kept.
+  let verifyOutage = null
   if (!verdict && lastFailure && lastFailure.transport) {
+    verifyOutage = `the verifier died on a transport error after both attempts: ${lastFailure.message}`
+  } else if (!verdict) {
+    const verifierFailure = lastFailure
+    const alive = await safeAgent(canaryPrompt, {
+      agentType: 'Explore', schema: CANARY_SCHEMA, phase: 'Verify', effort: 'low',
+      label: 'canary:verify', retry: false,
+    })
+    if (!alive) {
+      verifyOutage = `the verifier died on both attempts and a one-call connection check died after it — the connection or the usage limit failed, not the verification${verifierFailure ? ` (last error: ${verifierFailure.message})` : ''}`
+    }
+  }
+  if (verifyOutage) {
     stoppedAt = {
       phase: { id: 'verify', name: 'verify' },
       build: {
         status: 'INFRASTRUCTURE',
         tasks_completed: 0, tasks_total: 0, commits: [],
         stopped_at: 'verify',
-        reason: `the verifier died on a transport error after both attempts: ${lastFailure.message}`,
+        reason: verifyOutage,
         recommendation: infraRecommendation,
       },
     }
