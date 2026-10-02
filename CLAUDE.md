@@ -144,6 +144,15 @@ The VERIFY.md template in `ship/templates/` is read at runtime by the verifier a
 
 Use `node --test` (Node.js built-in test runner). Test files go in the `tests/` directory.
 
+Invocation traps on the dev machine (macOS, zsh, Node 25). Each one fakes a test failure rather than a real one:
+
+- Run the suite as `node --test "tests/*.test.js"` (the exact CI string). A bare `node --test tests/` fails with MODULE_NOT_FOUND.
+- Judge a run by its exit code, not by grepping a summary line. Local Node prints the spec reporter even when piped, while CI's Node 22 prints TAP, so a `# fail 0` grep can never match locally. Add `--test-reporter=tap` when you must parse counts, but never on a `.github/workflows/*.yml` `run:` line: `tests/ci-workflow-parity.test.js` requires `test.yml` and `release.yml` to stay byte-identical.
+- `timeout` is not installed (exit 127 reads like a hang). Use `--test-timeout=20000`.
+- In zsh, `${PIPESTATUS[0]}` is empty. Redirect to a file and read `$?` instead.
+- A `node --test` spawned from inside a test inherits `NODE_TEST_CONTEXT` and exits 0 with no output, so a "nested run must be red" assertion passes vacuously. Strip that variable from the child env and assert that real output came back (`tests/legacy-install-tree-adversarial.test.js` is the worked example).
+- The safety-gate hook refuses any Bash command whose text contains a bulk `git add` form, including scratch fixture repos and heredocs that only mention it. Stage explicit paths, and write prose about the rule with Write/Edit.
+
 ### Releasing
 
 The version lives in three files — `ship/VERSION`, `package.json`, `.claude-plugin/plugin.json` — and they must agree. Bump all three plus a `## {version}` CHANGELOG entry in the release PR, then tag `main` after merge:
