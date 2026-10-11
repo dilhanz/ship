@@ -107,7 +107,7 @@ Status lives in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-v
 
 ## Under the hood
 
-**Six specialized agents**, each with a single job: `ship-brainstormer` (requirements interview), `ship-plan-reviewer` (read-only plan review), `ship-replanner` (plan revision against critical findings), `ship-builder` (task execution with atomic commits), `ship-reviewer` (per-phase diff review), and `ship-verifier` (acceptance criteria + bug hunt).
+**Six specialized agents**, each with a single job: `ship-brainstormer` (requirements interview), `ship-plan-reviewer` (read-only plan review), `ship-replanner` (plan revision against critical findings), `ship-builder` (task execution with atomic commits), `ship-reviewer` (per-phase diff review), and `ship-verifier` (acceptance criteria + bug hunt, plus a repo verify checklist and a trial merge of main).
 
 **Three reference skills** preloaded into agents: `deviation-rules` (what to do when reality diverges from the plan), `git-commits` (atomic commit discipline), and `tdd` (RED-GREEN-REFACTOR when tasks are test-backed).
 
