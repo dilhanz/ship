@@ -180,6 +180,33 @@ const VERIFY_SCHEMA = {
     },
     anti_patterns: { type: 'number' },
     gaps: { type: 'array', items: { type: 'string' } },
+    // The verify gates (Stage 2b): one row per checklist item decided, and the
+    // trial merge with main. Optional, so an older verifier still validates.
+    checklist: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['item', 'source', 'verdict', 'evidence'],
+        properties: {
+          item: { type: 'string' },
+          source: { enum: ['generic', 'repo'] },
+          verdict: { enum: ['PASS', 'FAIL', 'N/A'] },
+          evidence: { type: 'string' },
+        },
+      },
+    },
+    trial_merge: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      required: ['outcome'],
+      properties: {
+        outcome: { enum: ['PASS', 'FAIL', 'NOT_RUNNABLE'] },
+        target: { type: 'string' },
+        command: { type: 'string' },
+        evidence: { type: 'string' },
+      },
+    },
     // See REVIEW_SCHEMA.salvaged — same channel, same reason.
     salvaged: { enum: ['adopted', 'rejected'] },
   },
@@ -445,7 +472,7 @@ A verifier just ran this exact verification, but its structured result was lost 
 **1. The scratch record.** Run \`node "\${CLAUDE_PLUGIN_ROOT}/ship/verify-scratch.cjs" ${feature}\` and read the JSON verdict it prints. The helper never throws and always exits 0; a verdict you cannot parse is a reject.
 
 - **\`valid: true\` with \`stage: "complete"\`:** the verification finished. Adopt its criteria verdicts, carried-finding outcomes, and tests verbatim, confirm \`.planning/features/${feature}/VERIFY.md\` is on disk, and report the result without re-running anything.
-- **\`valid: true\` with \`stage: "criteria"\` or \`"bughunt"\`:** a previous verifier died part-way through THIS build. Adopt every recorded criterion verdict and carried-finding outcome verbatim, resume at the first criterion the record does not cover, and do NOT re-author any test file the record's \`tests[]\` shows as already committed — re-writing a committed test file is the exact waste this record exists to prevent.
+- **\`valid: true\` with \`stage: "criteria"\` or \`"bughunt"\`:** a previous verifier died part-way through THIS build. Adopt every recorded criterion verdict and carried-finding outcome verbatim, resume at the first criterion the record does not cover, and do NOT re-author any test file the record's \`tests[]\` shows as already committed — re-writing a committed test file is the exact waste this record exists to prevent. Also adopt the record's \`checklist\` rows and its \`trial_merge\` verbatim: resume at the first checklist item the record has not decided, and do NOT repeat a trial merge the record has already decided.
 - **\`valid: false\`:** the record is not this build's. Ignore it and fall through to VERIFY.md below.
 
 **2. VERIFY.md.** Read \`.planning/features/${feature}/VERIFY.md\` and run \`git rev-parse HEAD\`.
@@ -808,13 +835,13 @@ const depthBlock = verifyDepth === 'criteria-only'
 
 ## Verification depth: criteria-only
 
-This run's profile${profileName ? ` (${profileName})` : ''} narrows Stage 2: skip test-framework discovery (2a), the discretionary risk-category adversarial tests, and the anti-pattern scan (2c). Stage 1 (every acceptance criterion, real commands) and Stage 3 (VERIFY.md + verdict) run in full, and the verdict rules are unchanged. EXCEPTION: any findings under 'Unresolved Review Findings' above remain mandatory Stage 2b targets at this depth — narrowing never waives them. Record the narrowing in VERIFY.md's Stage 2 section per your instructions.`
+This run's profile${profileName ? ` (${profileName})` : ''} narrows Stage 2: skip test-framework discovery (2a), the discretionary risk-category adversarial tests, and the anti-pattern scan (2c). Stage 1 (every acceptance criterion, real commands) and Stage 3 (VERIFY.md + verdict) run in full, and the verdict rules are unchanged. The trial merge with main and the repo checklist from .planning/verify-checklist.md still run at this depth; only the generic checklist items are skipped. EXCEPTION: any findings under 'Unresolved Review Findings' above remain mandatory Stage 2b targets at this depth — narrowing never waives them. Record the narrowing in VERIFY.md's Stage 2 section per your instructions.`
   : ''
 
 let verdict = null
 if (!stoppedAt) {
   phase('Verify')
-  const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}${depthBlock}`
+  const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}${depthBlock}`
   verdict = await safeAgent(verifyFull, {
     agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
     retryPrompt: salvageVerifyPrompt(verifyFull), salvageRecord: '.review-scratch/verify.json',

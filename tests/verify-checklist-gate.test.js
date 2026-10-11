@@ -239,3 +239,75 @@ describe('verify-checklist-gate: the VERIFY template carries the gates', () => {
     assert.match(note, /Trial Merge and the repo checklist rows remain mandatory/);
   });
 });
+
+const goSrc = () => readSrc('ship/workflows/go.workflow.js');
+
+/** The VERIFY_SCHEMA declaration text. */
+const verifySchemaText = () => {
+  const src = goSrc();
+  const start = src.indexOf('const VERIFY_SCHEMA = {');
+  assert.ok(start > -1, 'VERIFY_SCHEMA must exist');
+  return src.slice(start, src.indexOf('\n}\n', start));
+};
+
+/** Evaluate the depthBlock declaration the same way workflow-profiles-adversarial does. */
+const depthBlockFor = (verifyDepth, profileName) => {
+  const m = goSrc().match(/const depthBlock = verifyDepth === 'criteria-only'[\s\S]*?\n {2}: ''/);
+  assert.ok(m, 'depthBlock declaration not found');
+  // eslint-disable-next-line no-new-func
+  return new Function('verifyDepth', 'profileName', `${m[0]}\nreturn depthBlock`)(verifyDepth, profileName);
+};
+
+/** The salvageVerifyPrompt template text. */
+const salvageText = () => {
+  const src = goSrc();
+  const start = src.indexOf('const salvageVerifyPrompt =');
+  assert.ok(start > -1, 'salvageVerifyPrompt must exist');
+  return src.slice(start, src.indexOf('${fullPrompt}`', start));
+};
+
+describe('verify-checklist-gate: the go workflow carries the gates', () => {
+  it('VERIFY_SCHEMA declares checklist and trial_merge with their verdict enums', () => {
+    const t = verifySchemaText();
+    assert.ok(t.includes('checklist: {'), 'schema must declare checklist');
+    assert.ok(t.includes('trial_merge: {'), 'schema must declare trial_merge');
+    assert.ok(t.includes("source: { enum: ['generic', 'repo'] }"));
+    assert.ok(t.includes("verdict: { enum: ['PASS', 'FAIL', 'N/A'] }"));
+    assert.ok(t.includes("outcome: { enum: ['PASS', 'FAIL', 'NOT_RUNNABLE'] }"));
+    assert.ok(t.includes("type: ['object', 'null']"));
+    assert.match(t, /required: \['feature', 'status', 'criteria_total', 'criteria_passed'\]/,
+      'neither gate field may become required');
+  });
+
+  it('the verify prompt asks for the trial merge and the checklist', () => {
+    assert.match(goSrc(), /run the trial merge with main and the verify checklist \(generic items plus \.planning\/verify-checklist\.md if present\)/);
+  });
+
+  it('at criteria-only the depth block keeps the trial merge and repo checklist and skips the generic items', () => {
+    const block = depthBlockFor('criteria-only', 'quick');
+    assert.match(block, /trial merge with main and the repo checklist from \.planning\/verify-checklist\.md still run/);
+    assert.match(block, /generic checklist items are skipped/);
+    assert.match(block, /narrowing never waives them/);
+  });
+
+  it('the depth block stays empty at full depth', () => {
+    assert.equal(depthBlockFor('full', 'standard'), '');
+  });
+
+  it('the salvage prompt adopts checklist rows and a decided trial merge', () => {
+    const t = salvageText();
+    assert.match(t, /adopt the record's \\`checklist\\` rows and its \\`trial_merge\\` verbatim/);
+    assert.match(t, /first checklist item the record has not decided/);
+    assert.match(t, /do NOT repeat a trial merge/);
+  });
+
+  it('the agent Stage 0 and the salvage prompt agree on adopting checklist rows and the trial merge', () => {
+    const stage0 = agent().split('## Stage 0')[1].split('\n## ')[0];
+    const t = salvageText();
+    for (const src of [stage0, t]) {
+      assert.match(src, /checklist/);
+      assert.match(src, /trial merge|trial_merge/);
+      assert.match(src, /verbatim/);
+    }
+  });
+});
