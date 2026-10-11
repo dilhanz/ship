@@ -109,3 +109,104 @@ describe('verify-checklist-gate: verifier turn budget', () => {
     assert.ok(!/With 60 turns/.test(agent()));
   });
 });
+
+/** The agent's Stage 2b section, up to 2c. */
+const stage2b = () => {
+  const src = agent();
+  const start = src.indexOf('### 2b');
+  assert.ok(start > -1, 'the verifier must have a 2b section');
+  const end = src.indexOf('### 2c', start);
+  return src.slice(start, end > -1 ? end : undefined);
+};
+
+/** The agent's Verification Depth section. */
+const depthSection = () => agent().split('## Verification Depth')[1].split('\n## ')[0];
+
+describe('verify-checklist-gate: the verifier runs the checklist and trial merge', () => {
+  it('names the repo checklist file as an input and points at its format doc', () => {
+    const inputs = agent().split('## Inputs')[1].split('## Verification Depth')[0];
+    assert.ok(inputs.includes('.planning/verify-checklist.md'));
+    assert.ok(inputs.includes('ship/docs/verify-checklist.md'));
+  });
+
+  it('names the three generic checklist items', () => {
+    const s = stage2b();
+    assert.match(s, /docs\/manual\/user-facing claims in the diff match the code/);
+    assert.match(s, /tests that depend on the current date or time zone/);
+    assert.match(s, /concurrency on write paths/);
+  });
+
+  it('states "No repo checklist" when the file is absent', () => {
+    assert.ok(stage2b().includes('No repo checklist'));
+  });
+
+  it('a FAIL row is a bug at medium or above, never low', () => {
+    assert.match(stage2b(), /medium severity or above, never low/);
+  });
+
+  it('every row is decided with evidence, N/A carries a reason', () => {
+    const s = stage2b();
+    assert.match(s, /PASS \/ FAIL \/ N\/A/);
+    assert.match(s, /N\/A carries a one-line reason/);
+  });
+
+  it('the trial merge uses a throwaway worktree and removes it', () => {
+    const s = stage2b();
+    const at = s.indexOf('#### Trial merge with main');
+    assert.ok(at > -1, '2b must have a Trial merge with main subsection');
+    const section = s.slice(at, s.indexOf('\n#### ', at + 1));
+    assert.ok(section.includes('git worktree add --detach "$TRIAL" HEAD'));
+    assert.ok(section.includes('git worktree remove --force "$TRIAL"'));
+    assert.ok(section.includes('-C "$TRIAL"'));
+    assert.match(section, /never run `git merge` in the feature checkout/);
+    assert.ok(section.includes('NOT_RUNNABLE'));
+    assert.ok(section.includes('Merge main into the branch and fix the break'));
+  });
+
+  it('no line in the agent runs a bare git merge outside the trial worktree', () => {
+    const offenders = agent().split('\n').filter((line) =>
+      /git (-C \S+ )?(-c \S+ )*merge\b/.test(line)
+      && !line.includes('merge-base')
+      && !line.includes('never')
+      && !line.includes('-C "$TRIAL"'));
+    assert.deepEqual(offenders, [], 'every git merge must run with -C "$TRIAL"');
+  });
+
+  it('2b orders carried findings, then the gates, then the capped discretionary tests', () => {
+    const s = stage2b();
+    const order = [
+      'Unresolved review findings come first',
+      '#### Trial merge with main',
+      '#### Repo checklist',
+      '#### Generic checklist',
+      'capped at **3 test files**',
+    ].map((needle) => {
+      const i = s.indexOf(needle);
+      assert.ok(i > -1, `2b must contain "${needle}"`);
+      return i;
+    });
+    for (let k = 1; k < order.length; k++) {
+      assert.ok(order[k - 1] < order[k], `2b order broken at step ${k}`);
+    }
+  });
+
+  it('at criteria-only the trial merge and repo checklist run, the generic checklist is skipped', () => {
+    const d = depthSection();
+    assert.match(d, /trial merge and the repo checklist still run/i);
+    assert.match(d, /generic checklist is skipped/i);
+    assert.match(d, /build-command lookup/);
+  });
+
+  it('the incremental record and output block carry checklist and trial_merge', () => {
+    const src = agent();
+    const record = src.split('## The Incremental Record')[1].split('\n## ')[0];
+    assert.ok(record.includes('`checklist`'));
+    assert.ok(record.includes('`trial_merge`'));
+    const stage0 = src.split('## Stage 0')[1].split('\n## ')[0];
+    assert.match(stage0, /checklist rows/);
+    assert.match(stage0, /trial merge/);
+    const output = src.split('## Output')[1];
+    assert.ok(output.includes('"checklist"'));
+    assert.ok(output.includes('"trial_merge"'));
+  });
+});
