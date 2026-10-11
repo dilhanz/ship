@@ -846,6 +846,31 @@ if (!stoppedAt) {
     agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
     retryPrompt: salvageVerifyPrompt(verifyFull), salvageRecord: '.review-scratch/verify.json',
   })
+  // Trust the findings over the verdict: a PASS or INCONCLUSIVE that still
+  // carries an Open bug, a failed checklist item, or a failed trial merge is
+  // contradictory. #236 shipped PASS 7/7 with 4 Open bugs in its own report.
+  // The verifier's rules already say any Open bug fails; this enforces it
+  // mechanically, for fresh and salvaged verdicts alike. A FAIL or a clean
+  // PASS passes through as the same object.
+  if (verdict && (verdict.status === 'PASS' || verdict.status === 'INCONCLUSIVE')) {
+    const openBugs = (verdict.bugs || []).length
+    const failedItems = (verdict.checklist || []).filter((row) => row && row.verdict === 'FAIL').length
+    const mergeFailed = !!(verdict.trial_merge && verdict.trial_merge.outcome === 'FAIL')
+    if (openBugs > 0 || failedItems > 0 || mergeFailed) {
+      const parts = []
+      if (openBugs > 0) parts.push(`${openBugs} open bug(s)`)
+      if (failedItems > 0) parts.push(`${failedItems} failed checklist item(s)`)
+      if (mergeFailed) parts.push('trial merge failed')
+      const original = verdict.status
+      verdict = {
+        ...verdict,
+        status: 'FAIL',
+        downgraded_from: original,
+        downgrade_reason: `${parts.join(', ')} reported under a ${original} verdict`,
+      }
+      log(`Verify downgraded ${original} → FAIL: ${verdict.downgrade_reason}.`)
+    }
+  }
   // A verifier lost to the same outage is reported through the one
   // INFRASTRUCTURE rendering path — as a pseudo-phase, since `stoppedAt` is the
   // only channel the go skill renders — rather than as a bare null verdict the
