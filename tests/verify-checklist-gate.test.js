@@ -311,3 +311,115 @@ describe('verify-checklist-gate: the go workflow carries the gates', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// The workflow guard: a PASS/INCONCLUSIVE verdict that carries Open bugs, a
+// failed checklist row, or a failed trial merge is downgraded to FAIL. Run the
+// real workflow with a scripted agent (same harness as
+// go-path-reliability-carried.test.js).
+// ---------------------------------------------------------------------------
+
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
+const runWorkflowWithVerdict = async (verifierResult) => {
+  const run = new AsyncFunction(
+    'args', 'agent', 'log', 'phase',
+    goSrc().replace(/^export const meta/m, 'const meta'),
+  );
+  const logs = [];
+  const agent = async (prompt, opts) => {
+    const label = opts.label || '';
+    if (label.startsWith('build:')) {
+      return { feature: 'demo', status: 'COMPLETE', tasks_completed: 1, tasks_total: 1, commits: ['abc1234'] };
+    }
+    if (label.startsWith('review:')) {
+      return {
+        feature: 'demo', status: 'APPROVED', findings: [],
+        verify_runs: [{ command: 'node --test', exit_code: 0, verdict: 'pass' }],
+        files_reviewed: ['x'],
+      };
+    }
+    if (label === 'verify') return verifierResult;
+    throw new Error(`unexpected agent call: ${label}`);
+  };
+  const result = await run(
+    { feature: 'demo', phases: [{ id: '1', name: 'one' }] },
+    agent, (m) => logs.push(m), () => {},
+  );
+  return { result, logs };
+};
+
+const bug = (severity) => ({ severity, category: 'logic', description: `${severity} bug`, file: 'a.js', evidence: 'repro' });
+const base = { feature: 'demo', criteria_total: 7, criteria_passed: 7, criteria_failed: 0, criteria_inconclusive: 0 };
+
+describe('verify-checklist-gate: go.workflow downgrades a dishonest PASS', () => {
+  it('#236 shape — PASS 7/7 with 4 Open bugs becomes FAIL', async () => {
+    const { result } = await runWorkflowWithVerdict({
+      ...base, status: 'PASS', bugs: [bug('medium'), bug('low'), bug('low'), bug('low')],
+    });
+    assert.equal(result.verdict.status, 'FAIL');
+    assert.equal(result.verdict.downgraded_from, 'PASS');
+    assert.match(result.verdict.downgrade_reason, /\b4 open bug/);
+    assert.equal(result.verdict.bugs.length, 4, 'the bugs travel with the downgraded verdict');
+  });
+
+  it('INCONCLUSIVE with one low bug becomes FAIL', async () => {
+    const { result } = await runWorkflowWithVerdict({
+      ...base, criteria_passed: 6, criteria_inconclusive: 1, status: 'INCONCLUSIVE', bugs: [bug('low')],
+    });
+    assert.equal(result.verdict.status, 'FAIL');
+    assert.equal(result.verdict.downgraded_from, 'INCONCLUSIVE');
+    assert.match(result.verdict.downgrade_reason, /\b1 open bug/);
+  });
+
+  it('PASS with no bugs but a FAIL checklist row becomes FAIL', async () => {
+    const { result } = await runWorkflowWithVerdict({
+      ...base, status: 'PASS', bugs: [],
+      checklist: [
+        { item: 'docs match code', source: 'generic', verdict: 'PASS', evidence: 'ok' },
+        { item: 'migrations reversible', source: 'repo', verdict: 'FAIL', evidence: 'no down' },
+      ],
+    });
+    assert.equal(result.verdict.status, 'FAIL');
+    assert.equal(result.verdict.downgraded_from, 'PASS');
+    assert.match(result.verdict.downgrade_reason, /1 failed checklist item/);
+  });
+
+  it('PASS with a failed trial merge becomes FAIL', async () => {
+    const { result } = await runWorkflowWithVerdict({
+      ...base, status: 'PASS', bugs: [],
+      trial_merge: { outcome: 'FAIL', target: 'origin/main', command: 'npm test', evidence: 'conflict' },
+    });
+    assert.equal(result.verdict.status, 'FAIL');
+    assert.equal(result.verdict.downgraded_from, 'PASS');
+    assert.match(result.verdict.downgrade_reason, /trial merge failed/);
+  });
+
+  it('a clean PASS stays PASS, untouched', async () => {
+    const clean = {
+      ...base, status: 'PASS', bugs: [],
+      checklist: [{ item: 'docs match code', source: 'generic', verdict: 'PASS', evidence: 'ok' }],
+      trial_merge: { outcome: 'PASS', target: 'main', command: 'npm test', evidence: 'green' },
+    };
+    const { result } = await runWorkflowWithVerdict(clean);
+    assert.equal(result.verdict.status, 'PASS');
+    assert.equal(result.verdict.downgraded_from, undefined);
+    assert.equal(result.verdict, clean, 'a clean PASS is the same object');
+  });
+
+  it('a FAIL stays FAIL with no downgraded_from', async () => {
+    const failed = { ...base, criteria_passed: 6, criteria_failed: 1, status: 'FAIL', bugs: [bug('high')] };
+    const { result } = await runWorkflowWithVerdict(failed);
+    assert.equal(result.verdict.status, 'FAIL');
+    assert.equal(result.verdict.downgraded_from, undefined);
+    assert.equal(result.verdict, failed, 'a FAIL verdict is the same object');
+  });
+
+  it('the guard sits before the outage handling and cites #236', () => {
+    const src = goSrc();
+    const guard = src.indexOf('downgraded_from:');
+    const outage = src.indexOf('let verifyOutage = null');
+    assert.ok(guard > -1 && outage > -1 && guard < outage, 'the guard must run before the outage block');
+    assert.match(src, /#236/);
+  });
+});
