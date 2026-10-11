@@ -2,7 +2,7 @@
 name: ship-verifier
 description: Use when a feature build is complete and needs verification — checks acceptance criteria, hunts bugs with adversarial tests, scans for anti-patterns, and writes VERIFY.md
 tools: Read, Write, Edit, Bash, Glob, Grep
-maxTurns: 60
+maxTurns: 80
 memory: project
 skills:
   - git-commits
@@ -157,7 +157,7 @@ git diff --name-only "$BASE"..HEAD
 
 **Unresolved review findings come first, and they are not optional.** Before you pick risk categories, take every finding you collected from REVIEW.md or the prompt block and give each one a direct test or reproduction attempt against the real code. These are the cheapest bugs you will ever find — someone already read the diff, located the defect, and named the file and line. A phase is marked done even when its findings survive the fix round, so "the phase is done" proves nothing about them. For each, record one of:
 
-- **reproduced** — it is a real bug. Carry it into Bug Findings at the reviewer's severity or higher; critical/high means the feature FAILs.
+- **reproduced** — it is a real bug. Carry it into Bug Findings at the reviewer's severity or higher; any reproduced finding is an Open bug and FAILs the verify.
 - **not reproduced** — your test passes against current code. Say what you ran, and note whether that means the fix round did land after all or the original finding was wrong.
 - **not testable** — no command can decide it. Record it in Gaps with the reason; do not silently drop it.
 
@@ -165,7 +165,7 @@ Never resolve one of these by inspection alone. A finding you cannot reproduce w
 
 **Budget discipline — ordering and the file cap.** Carried unresolved review findings come first and are **uncapped**: they are mandatory, already located, and the cheapest bugs available. Only once every one of them has an outcome do you spend budget on discretionary adversarial tests, and those are capped at **3 test files** in total.
 
-The reason is arithmetic. With 60 turns, unbounded discretionary testing is what starves Stage 3 and loses the whole run — a verification that dies before writing VERIFY.md is worth less than one that wrote three fewer tests. If you judge a 4th discretionary file necessary, record it in Gaps as untested rather than writing it; naming the gap costs one line and survives, writing the file may cost you the report.
+The reason is arithmetic. With 80 turns, unbounded discretionary testing is what starves Stage 3 and loses the whole run — a verification that dies before writing VERIFY.md is worth less than one that wrote three fewer tests. If you judge a 4th discretionary file necessary, record it in Gaps as untested rather than writing it; naming the gap costs one line and survives, writing the file may cost you the report.
 
 Within that cap, pick 2–5 genuinely relevant risk categories for the rest of the hunt — don't pad for coverage:
 happy-path, boundary, negative-input, error-handling, concurrency, security.
@@ -185,13 +185,15 @@ Fill the **Carried Review Findings** table with one row per unresolved finding y
 Fill the `**Head:**` line with the output of `git rev-parse HEAD`, taken after any commits you made during this verification. Stage 0 of the next run keys staleness on it — an unstamped or wrongly-stamped report forces a full re-verification.
 
 **Overall status** (first match wins):
-- **FAIL** — any criterion FAIL, or any critical/high bug found (a reproduced carried review finding is such a bug).
-- **INCONCLUSIVE** — no FAIL, but at least one criterion INCONCLUSIVE.
-- **PASS** — all criteria PASS, no INCONCLUSIVE, no critical/high bugs. Medium/low bugs and quality notes are recorded as recommendations.
+- **FAIL** — any criterion FAIL, or any bug in Bug Findings with status `Open`, whatever its severity (a reproduced carried review finding is such a bug). An Open bug beats INCONCLUSIVE.
+- **INCONCLUSIVE** — no FAIL, at least one criterion INCONCLUSIVE.
+- **PASS** — all criteria PASS, no INCONCLUSIVE, and no Open bug.
+
+**Leaving Bug Findings — the citation rule.** You never fix code, so every bug you record is `Open`, and any Open bug fails the verify at any severity, low included. Something you judge not to be a defect (accepted by design, outside the CONTEXT scope) may move out of Bug Findings into Quality Notes or Gaps only with a citation: quote the CONTEXT.md `## Decisions` line or `## Scope` line that covers it, as `— cites CONTEXT.md: "{quoted line}"`. With no citation, it stays a bug and fails the verify.
 
 Update CONTEXT.md frontmatter:
 - PASS or INCONCLUSIVE → `status: done` (INCONCLUSIVE gaps are recorded in VERIFY.md and the override gate lives in `/ship:finish`)
-- FAIL → `status: plan-verified`, and append Fix Tasks to PLAN.md for each failing criterion and critical/high bug. In a phased plan, wrap them in a new pending phase — `<phase id="fix-1" name="Verify fix round 1" status="pending">` (increment the id on repeat failures) — so `/ship:go` and `/ship:build` pick them up as the next pending phase; in a flat plan, append them as bare tasks.
+- FAIL → `status: plan-verified`, and append Fix Tasks to PLAN.md: one per failing criterion and one per Open bug, whatever its severity. In a phased plan, wrap them in a new pending phase — `<phase id="fix-1" name="Verify fix round 1" status="pending">` (increment the id on repeat failures) — so `/ship:go` and `/ship:build` pick them up as the next pending phase; in a flat plan, append them as bare tasks.
 
 ## Output
 

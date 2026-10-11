@@ -43,6 +43,8 @@ Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over blo
 
 (If none: "No bugs found.")
 
+Any row with Status `Open` makes the Overall Status FAIL, whatever its severity. The verifier never fixes code, so every recorded bug is Open. Citation rule: something judged not to be a defect (accepted by design, outside scope) moves to Quality Notes or Gaps only with a citation quoting the CONTEXT.md `## Decisions` or `## Scope` line that covers it; an uncited item stays here and fails the verify.
+
 ### Anti-Pattern Scan
 
 - TODO/FIXME/placeholder/stub markers: [list files, or "None"]
@@ -52,6 +54,7 @@ Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over blo
 ### Quality Notes
 
 - [Convention adherence, unnecessary abstractions, error handling — observations only]
+- [Non-defect moved out of Bug Findings] — cites CONTEXT.md: "{quoted line}"
 
 (If clean: "No quality issues found.")
 
@@ -68,6 +71,7 @@ Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over blo
 [If FAIL or INCONCLUSIVE:]
 
 - [Gap description] — [Recommended fix]
+- [Non-defect moved out of Bug Findings] — cites CONTEXT.md: "{quoted line}"
 
 ## Fix Tasks
 

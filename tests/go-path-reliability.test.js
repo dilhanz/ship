@@ -35,21 +35,30 @@ const schemaBlock = (src, name) => {
 };
 
 describe('turn-cap parity across the long-running agents', () => {
-  it('all four schema-driven agents carry the same maxTurns, and it is 60', () => {
+  it('the verifier runs at 80 and the other three share a cap of 60', () => {
     // The verifier sat at 40 while the other three ran at 60 — the agent with
-    // the largest workload had the smallest budget. Assert on the *set*, not on
-    // four separate literals: the point is that the parity cannot drift again.
-    const agents = ['ship-verifier', 'ship-reviewer', 'ship-builder', 'ship-plan-reviewer'];
-    const caps = {};
-    for (const a of agents) {
+    // the largest workload had the smallest budget. Assert on the *set* of the
+    // other three, not on separate literals: the point is that their parity
+    // cannot drift again.
+    //
+    // The verifier is pinned separately at exactly 80 (verify-checklist-gate
+    // CONTEXT.md NFR, performance/budget): the trial merge and the verify
+    // checklist run before the discretionary tests, so its cap rises 60 → 80
+    // and those gates must not starve Stage 3.
+    const capOf = (a) => {
       const front = readSrc(`agents/${a}.md`).split('---')[1];
       const m = /^maxTurns:\s*(\d+)$/m.exec(front);
       assert.ok(m, `agents/${a}.md must declare maxTurns in its frontmatter`);
-      caps[a] = Number(m[1]);
-    }
+      return Number(m[1]);
+    };
+    assert.equal(capOf('ship-verifier'), 80,
+      'the verifier cap must be exactly 80 — its gates run before the discretionary tests');
+    const agents = ['ship-reviewer', 'ship-builder', 'ship-plan-reviewer'];
+    const caps = {};
+    for (const a of agents) caps[a] = capOf(a);
     const distinct = new Set(Object.values(caps));
     assert.equal(distinct.size, 1,
-      `the four long-running agents must share one turn cap, got ${JSON.stringify(caps)}`);
+      `the other three long-running agents must share one turn cap, got ${JSON.stringify(caps)}`);
     assert.equal([...distinct][0], 60,
       `the shared cap must be 60 — a real review costs ~33 turns, got ${JSON.stringify(caps)}`);
   });
