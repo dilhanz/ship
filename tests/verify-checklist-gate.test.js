@@ -238,6 +238,16 @@ describe('verify-checklist-gate: the VERIFY template carries the gates', () => {
     const note = t.slice(at, t.indexOf('\n', at));
     assert.match(note, /Trial Merge and the repo checklist rows remain mandatory/);
   });
+
+  it('the Bug Findings example row offers only Open, never Fixed', () => {
+    const t = template();
+    const at = t.indexOf('### Bug Findings');
+    assert.ok(at > -1, 'template must have ### Bug Findings');
+    const row = t.slice(at).split('\n').find((l) => l.startsWith('| 1 |'));
+    assert.ok(row, 'Bug Findings must have an example row');
+    assert.ok(!/Fixed/.test(row), 'the verifier never fixes code, so a bug row is never Fixed');
+    assert.match(row, /\| Open \|$/);
+  });
 });
 
 const goSrc = () => readSrc('ship/workflows/go.workflow.js');

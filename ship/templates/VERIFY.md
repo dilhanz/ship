@@ -58,7 +58,7 @@ One row per item, every row decided, none skipped. N/A needs a reason. A FAIL ro
 
 | # | Severity | Category | Description | File | Status |
 |---|----------|----------|-------------|------|--------|
-| 1 | critical/high/medium/low | [category] | [description] | [file:line] | [Open/Fixed] |
+| 1 | critical/high/medium/low | [category] | [description] | [file:line] | Open |
 
 (If none: "No bugs found.")
 
