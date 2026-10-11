@@ -187,7 +187,13 @@ From the returned result:
 5. **If `stoppedAt` is set** (a build phase returned `CHECKPOINT`, `NEEDS_CONTEXT`, `EXHAUSTED`, or `INFRASTRUCTURE`): leave CONTEXT.md `status: building` and report the blocker, including `stoppedAt.build.commits` — a stopped phase is usually partially built, and those commits are real. For `NEEDS_CONTEXT`, tell the user to run `/ship:build {name}` — the manual build handles interactive context collection (the unattended workflow cannot prompt mid-run). For `EXHAUSTED`, the phase outlived several builders without finishing: report `tasks_completed / tasks_total`, and suggest `/ship:build {name}` to continue or `/ship:plan {name}` to split the remaining tasks into smaller ones.
 
    **`INFRASTRUCTURE`** — the run lost its connection to the API, or its usage window ran out: several consecutive agents died on a transport error (`ENOTFOUND`, `ECONNRESET`, a 5xx, an overload, a session limit) having done no work. The workflow recognises this two ways — by the thrown message when the harness passes the cause through, and, because it usually does not, by the outage's *shape*: a builder and its read-only progress probe dying together in two consecutive rounds, or a verifier, its salvage retry, and a one-call `canary:verify` connection check all dying in a row. Either way the `reason` says which. Nothing about the plan is wrong and every committed task is preserved. Leave CONTEXT.md `status: building`, report `stoppedAt.build.reason` (it names the actual transport error) and the commits that landed, and recommend re-running `/ship:go {name}`. Do **NOT** suggest splitting tasks into smaller ones or running `/ship:plan {name}` — that is `EXHAUSTED`'s advice, and giving it here is the exact confusion this status exists to end: an outage was previously reported as a spent turn budget, and operators went off resizing tasks that were fine. `stoppedAt.phase.id` may be `verify`, meaning the outage took the verifier rather than a build phase; the recommendation is the same.
-6. **If a `verdict` is present:** the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE, `plan-verified` + fix tasks on FAIL). Report it.
+6. **If a `verdict` is present:**
+   - **If `verdict.downgraded_from` is set**, the workflow overrode the verifier's PASS/INCONCLUSIVE because the result still carried Open bugs, a failed checklist item, or a failed trial merge (`verdict.downgrade_reason` names the counts). The verifier has already written `status: done` and no fix tasks, so reconcile here:
+     1. Set CONTEXT.md `status: plan-verified`.
+     2. In VERIFY.md, replace the `**Overall Status:**` line with `**Overall Status:** FAIL (downgraded by go workflow from {downgraded_from}: {downgrade_reason})`.
+     3. Append to PLAN.md a pending fix phase, `<phase id="fix-{n}" name="Verify fix round {n}" status="pending">` with the next unused `n` (for a flat plan with no `<phase>` elements, append bare tasks instead). Add one task per `verdict.bugs` entry, plus one per failed `verdict.checklist` row or failed `verdict.trial_merge` only when no `verdict.bugs` entry already covers it (the verifier records every FAIL row and failed trial merge as a bug too, so most are already covered — never write two tasks for one defect). Each task: `<name>Fix: {description}</name>`, `<files>` from the bug's `file`, `<action>` from its description plus evidence, and a `<verify>` that runs a command reproducing the evidence (the project test command when none is given). Task ids continue from the highest existing id, each with `status="pending"`.
+     Then report it as a FAIL.
+   - **Otherwise**, the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE, `plan-verified` + fix tasks on FAIL). Report it.
 7. **If `verdict` is null and nothing stopped:** all phases built but the verifier produced no result (it crashed or was skipped — the workflow retries once, then degrades to null). Set CONTEXT.md `status: built`, check `git log` to confirm the build commits landed, and tell the user to run `/ship:verify {name}` manually.
 
 ```
@@ -197,7 +203,7 @@ Feature: {name}
 Final status: {status}
 [If the resolved profile is not `standard`:] Profile: {profile} (review gate: {on|off}, verify depth: {verifyDepth}, build rounds: {maxBuildRounds})
 Phases built: {N} / {total}   Review fixes applied: {count}
-Verify: {PASS | FAIL | INCONCLUSIVE — criteria_passed/criteria_total, bugs by severity}
+Verify: {PASS | FAIL | INCONCLUSIVE | FAIL (downgraded from {downgraded_from}) — criteria_passed/criteria_total, bugs by severity}
 
 [If any unresolved review findings:] Unresolved review findings (marked done anyway, one fix round only — handed to the verifier as mandatory targets):
 - {phase id}: [{severity}] {file} — {description} → {verifier outcome from VERIFY.md, or "not accounted for in VERIFY.md"}
@@ -209,7 +215,7 @@ Verify: {PASS | FAIL | INCONCLUSIVE — criteria_passed/criteria_total, bugs by 
 [If any phase's reviewStatus is `SKIPPED_BY_PROFILE`:] Review gate off by profile ({profile}): no reviewer ran for phase(s) {ids} — the verifier was the only gate.
 
 [If verdict PASS/INCONCLUSIVE:] Ready to finish — run /ship:finish (or I can run it now).
-[If FAIL:] Fix tasks were appended to PLAN.md as a pending fix phase. Review them, then /ship:go to continue (or /ship:build for manual control).
+[If FAIL, including a downgraded verdict:] Fix tasks were appended to PLAN.md as a pending fix phase. Review them, then /ship:go to continue (or /ship:build for manual control).
 [If stoppedAt:] Stopped at phase {id}. Reason: {status}{, tasks_completed/tasks_total if EXHAUSTED}. Commits landed: {stoppedAt.build.commits}. Next: {suggested action}.
    An `INFRASTRUCTURE` stop reports the transport cause from `stoppedAt.build.reason` and the `/ship:go {name}` re-run recommendation instead of task counts — the counts are not what stopped it.
 [If any phase has builderRounds > 1:] Note: phase {id} needed {builderRounds} builder rounds (tasks are large enough to outlive one turn budget).
@@ -235,7 +241,7 @@ Under `--headless`, EVERY terminal path in this skill — the resolution/`done` 
 | Build `stoppedAt` CHECKPOINT | `checkpoint` |
 | Build `stoppedAt` INFRASTRUCTURE | `infrastructure` — CONTEXT.md stays `building`; the `detail` names the transport cause from `stoppedAt.build.reason` and the `/ship:go {name}` re-run. Never `exhausted`: nothing needs resizing |
 | Verdict PASS / INCONCLUSIVE | `done` |
-| Verdict FAIL | `verify-fail` — fix tasks are already in PLAN.md; go never auto-retries, the caller decides |
+| Verdict FAIL, or a PASS/INCONCLUSIVE downgraded by the workflow (`downgraded_from` set) | `verify-fail` — fix tasks are already in PLAN.md (for a downgrade, the reconcile in section 6 wrote them); go never auto-retries, the caller decides |
 | Null verdict, nothing stopped | `error` — detail names the manual `/ship:verify {name}` follow-up |
 | Unrecoverable skill-level failure (workflow crash, unresolvable feature) | `error` |
 | Workflow still running at the 2-hour wait ceiling | `error` — call `TaskStop` on the Task ID first, then terminate |

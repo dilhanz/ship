@@ -15,6 +15,14 @@
 // commit in that range means the code moved under the verifier, so the record
 // describes a different build.
 //
+// Optional keys, validated only when present and non-null: `checklist`
+// (array of {item, source: generic|repo, verdict: PASS|FAIL|N/A, evidence})
+// and `trial_merge` ({outcome: PASS|FAIL|NOT_RUNNABLE, target?, command?,
+// evidence?} or null). They let a salvage adopt decided checklist rows and a
+// decided trial merge. Records without them are legacy and still valid. The
+// trial merge runs in a detached throwaway worktree, so it adds no commit to
+// `base_head..HEAD` and the ancestry rule is unchanged.
+//
 // Zero dependencies. Validation degrades, never dies: any failure — garbage
 // input, a non-git directory, a missing git binary, a nonexistent path —
 // yields a reject verdict, and the CLI always exits 0 with valid JSON. The safe
@@ -30,6 +38,15 @@ const { spawnSync } = require('child_process');
 
 /** The three stages a record can be stamped with, in the order they occur. */
 const RECORD_STAGES = Object.freeze(['criteria', 'bughunt', 'complete']);
+
+/** Verdicts a verify-checklist row can carry. */
+const CHECKLIST_VERDICTS = Object.freeze(['PASS', 'FAIL', 'N/A']);
+
+/** Where a checklist row came from: the verifier's built-ins or the repo file. */
+const CHECKLIST_SOURCES = Object.freeze(['generic', 'repo']);
+
+/** Outcomes a trial merge with main can have. */
+const TRIAL_MERGE_OUTCOMES = Object.freeze(['PASS', 'FAIL', 'NOT_RUNNABLE']);
 
 /**
  * Where the verifier's incremental record lives for a feature.
@@ -123,6 +140,53 @@ function parseRecord(text) {
     }
   }
 
+  if (Object.prototype.hasOwnProperty.call(record, 'checklist') && record.checklist !== null) {
+    if (!Array.isArray(record.checklist)) {
+      return { ok: false, reason: 'scratch record checklist is not an array' };
+    }
+    for (const entry of record.checklist) {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+        return { ok: false, reason: 'scratch record checklist entry is not an object' };
+      }
+      if (typeof entry.item !== 'string' || entry.item.trim() === '') {
+        return { ok: false, reason: 'scratch record checklist entry has no item string' };
+      }
+      if (CHECKLIST_SOURCES.indexOf(entry.source) === -1) {
+        return {
+          ok: false,
+          reason: `scratch record checklist entry has source '${String(entry.source)}' — not ${CHECKLIST_SOURCES.join('|')}`,
+        };
+      }
+      if (CHECKLIST_VERDICTS.indexOf(entry.verdict) === -1) {
+        return {
+          ok: false,
+          reason: `scratch record checklist entry has verdict '${String(entry.verdict)}' — not ${CHECKLIST_VERDICTS.join('|')}`,
+        };
+      }
+      if (typeof entry.evidence !== 'string' || entry.evidence.trim() === '') {
+        return { ok: false, reason: 'scratch record checklist entry has no evidence — every item is decided with evidence' };
+      }
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(record, 'trial_merge') && record.trial_merge !== null) {
+    const tm = record.trial_merge;
+    if (typeof tm !== 'object' || Array.isArray(tm)) {
+      return { ok: false, reason: 'scratch record trial_merge is not an object' };
+    }
+    if (TRIAL_MERGE_OUTCOMES.indexOf(tm.outcome) === -1) {
+      return {
+        ok: false,
+        reason: `scratch record trial_merge outcome '${String(tm.outcome)}' — not ${TRIAL_MERGE_OUTCOMES.join('|')}`,
+      };
+    }
+    for (const key of ['target', 'command', 'evidence']) {
+      if (Object.prototype.hasOwnProperty.call(tm, key) && typeof tm[key] !== 'string') {
+        return { ok: false, reason: `scratch record trial_merge ${key} is not a string` };
+      }
+    }
+  }
+
   return { ok: true, record };
 }
 
@@ -209,7 +273,15 @@ function validateRecord(featureSlug, cwd) {
   }
 }
 
-module.exports = { RECORD_STAGES, recordPath, parseRecord, validateRecord };
+module.exports = {
+  RECORD_STAGES,
+  CHECKLIST_VERDICTS,
+  CHECKLIST_SOURCES,
+  TRIAL_MERGE_OUTCOMES,
+  recordPath,
+  parseRecord,
+  validateRecord,
+};
 
 if (require.main === module) {
   let result;

@@ -354,3 +354,88 @@ describe('verify-scratch: CLI', { skip: !gitAvailable }, () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Checklist rows and trial merge (verify-checklist-gate)
+// ---------------------------------------------------------------------------
+
+describe('verify-scratch: checklist and trial_merge keys', () => {
+  const { CHECKLIST_VERDICTS, TRIAL_MERGE_OUTCOMES } = require(SCRIPT_PATH);
+
+  const base = () => ({ feature: SLUG, base_head: 'abc123', stage: 'bughunt' });
+  const row = (over = {}) => ({
+    item: 'docs/manual claims match the code',
+    source: 'generic',
+    verdict: 'PASS',
+    evidence: 'grep -n "flag" README.md',
+    ...over,
+  });
+  const rejectedMentioning = (record, needle) => {
+    const parsed = parseRecord(JSON.stringify(record));
+    assert.equal(parsed.ok, false, `expected rejection for ${JSON.stringify(record)}`);
+    assert.ok(parsed.reason.includes(needle), `reason should name ${needle}: ${parsed.reason}`);
+  };
+
+  it('exports frozen verdict and outcome enums', () => {
+    assert.deepEqual([...CHECKLIST_VERDICTS], ['PASS', 'FAIL', 'N/A']);
+    assert.deepEqual([...TRIAL_MERGE_OUTCOMES], ['PASS', 'FAIL', 'NOT_RUNNABLE']);
+    assert.ok(Object.isFrozen(CHECKLIST_VERDICTS));
+    assert.ok(Object.isFrozen(TRIAL_MERGE_OUTCOMES));
+  });
+
+  it('a valid record with checklist rows and a trial merge validates and keeps them intact', { skip: !gitAvailable }, () => {
+    const { dir, git, head } = makeRepo('ship-vs-checklist-');
+    try {
+      const checklist = [
+        row(),
+        row({ item: 'every route group is deny-by-default', source: 'repo', verdict: 'N/A', evidence: 'no routes touched — git diff --stat' }),
+      ];
+      const trial_merge = { outcome: 'PASS', target: 'main', command: 'npm test', evidence: 'merge clean; npm test exit 0' };
+      writeRecord(dir, { ...base(), base_head: head, tests: [], checklist, trial_merge });
+      const verdict = validateRecord(SLUG, dir);
+      assert.equal(verdict.valid, true, verdict.reason);
+      assert.deepEqual(verdict.record.checklist, checklist);
+      assert.deepEqual(verdict.record.trial_merge, trial_merge);
+      // no commit added to base_head..HEAD by the off-branch trial merge
+      assert.equal(git('rev-parse', 'HEAD'), head);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  it('a legacy record with neither key still validates', () => {
+    const parsed = parseRecord(JSON.stringify(base()));
+    assert.equal(parsed.ok, true, parsed.reason);
+  });
+
+  it('trial_merge: null validates', () => {
+    const parsed = parseRecord(JSON.stringify({ ...base(), trial_merge: null }));
+    assert.equal(parsed.ok, true, parsed.reason);
+  });
+
+  it('rejects a checklist that is not an array', () => {
+    rejectedMentioning({ ...base(), checklist: { item: 'x' } }, 'checklist');
+  });
+
+  it('rejects a checklist entry missing item', () => {
+    const r = row();
+    delete r.item;
+    rejectedMentioning({ ...base(), checklist: [r] }, 'checklist');
+  });
+
+  it('rejects a checklist entry with a bad verdict', () => {
+    rejectedMentioning({ ...base(), checklist: [row({ verdict: 'MAYBE' })] }, "verdict 'MAYBE'");
+  });
+
+  it('rejects a checklist entry with a bad source', () => {
+    rejectedMentioning({ ...base(), checklist: [row({ source: 'other' })] }, "source 'other'");
+  });
+
+  it('rejects a checklist entry with empty evidence', () => {
+    rejectedMentioning({ ...base(), checklist: [row({ evidence: '  ' })] }, 'evidence');
+  });
+
+  it('rejects a trial_merge with a bad outcome', () => {
+    rejectedMentioning({ ...base(), trial_merge: { outcome: 'SKIPPED' } }, "trial_merge outcome 'SKIPPED'");
+  });
+});

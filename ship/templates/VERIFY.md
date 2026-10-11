@@ -17,7 +17,7 @@ Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runn
 
 ## Stage 2 — Bug Hunt & Quality
 
-(If this run was narrowed by profile: open this section with the line "Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped." copied verbatim — audits grep for that exact string, so do not paraphrase or reword it. Extra context goes in a following sentence. The Carried Review Findings table remains mandatory.)
+(If this run was narrowed by profile: open this section with the line "Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped." copied verbatim — audits grep for that exact string, so do not paraphrase or reword it. Extra context goes in a following sentence. The Carried Review Findings table remains mandatory, and the Trial Merge and the repo checklist rows remain mandatory too; only the generic checklist rows are omitted.)
 
 ### Carried Review Findings
 
@@ -29,6 +29,25 @@ Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over blo
 
 (If none were carried: "None carried." An empty table must never mean the check was skipped.)
 
+### Trial Merge
+
+HEAD built alone in a detached throwaway worktree as a baseline, then main merged in and built again. The feature branch is never touched. Runs at every depth.
+
+- **Target:** [origin/main | main | master | none found]
+- **Command:** [build command] (source: verify-checklist.md Build line | discovered)
+- **Outcome:** PASS | FAIL | NOT_RUNNABLE
+- **Evidence:** [baseline exit code, merge output and post-merge build exit code; conflicting files or failing output on FAIL; the reason on NOT_RUNNABLE]
+
+(FAIL — a conflict, or a green baseline that goes red after the merge — is also a high-severity Open bug in Bug Findings. A red baseline means the environment, not main, broke the build (e.g. missing dependencies in the fresh worktree): that is NOT_RUNNABLE, never FAIL. NOT_RUNNABLE goes in Gaps with the reason.)
+
+### Verify Checklist
+
+| Item | Source | Verdict | Evidence |
+|------|--------|---------|----------|
+| [checklist item] | generic / repo | PASS / FAIL / N/A | [command run, or file:line; N/A needs a one-line reason] |
+
+One row per item, every row decided, none skipped. N/A needs a reason. A FAIL row also appears in Bug Findings at medium severity or above. Repo rows come from `.planning/verify-checklist.md`; when that file is absent, state "No repo checklist" here. At criteria-only, the generic rows are omitted and this section says so.
+
 ### Adversarial Tests
 
 - **Categories tested:** [e.g. boundary, negative-input, error-handling]
@@ -39,9 +58,11 @@ Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over blo
 
 | # | Severity | Category | Description | File | Status |
 |---|----------|----------|-------------|------|--------|
-| 1 | critical/high/medium/low | [category] | [description] | [file:line] | [Open/Fixed] |
+| 1 | critical/high/medium/low | [category] | [description] | [file:line] | Open |
 
 (If none: "No bugs found.")
+
+Any row with Status `Open` makes the Overall Status FAIL, whatever its severity. The verifier never fixes code, so every recorded bug is Open. Citation rule: something judged not to be a defect (accepted by design, outside scope) moves to Quality Notes or Gaps only with a citation quoting the CONTEXT.md `## Decisions` or `## Scope` line that covers it; an uncited item stays here and fails the verify.
 
 ### Anti-Pattern Scan
 
@@ -52,6 +73,7 @@ Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over blo
 ### Quality Notes
 
 - [Convention adherence, unnecessary abstractions, error handling — observations only]
+- [Non-defect moved out of Bug Findings] — cites CONTEXT.md: "{quoted line}"
 
 (If clean: "No quality issues found.")
 
@@ -68,6 +90,7 @@ Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over blo
 [If FAIL or INCONCLUSIVE:]
 
 - [Gap description] — [Recommended fix]
+- [Non-defect moved out of Bug Findings] — cites CONTEXT.md: "{quoted line}"
 
 ## Fix Tasks
 
