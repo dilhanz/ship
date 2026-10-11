@@ -15,6 +15,7 @@ Plain Markdown.
 - **Every line starting with `- `** (after optional indentation) is one checklist item. Nested bullets are separate items — a sub-bullet is its own row, not part of its parent.
 - **Headings and prose are ignored.** Use them freely to group and explain items; only bullets become rows.
 - **An optional `Build:` line** — a single line of the form ``Build: `<command>` `` (backticked command) — names the build/test command the trial merge runs. The first matching line wins; any later `Build:` line is ignored.
+- **Make the `Build:` command self-contained.** The trial merge runs in a fresh worktree holding only tracked files — no `node_modules`, virtualenv, vendor dir, `.env` or build cache. The verifier builds HEAD there first as a baseline; a red baseline is `NOT_RUNNABLE` (recorded in Gaps), and only a green baseline that goes red after the merge is a `FAIL`. If your build needs installed dependencies, install them in the command (e.g. ``Build: `npm ci && npm test` ``) or the trial merge will never run.
 
 ## 3. Semantics
 
