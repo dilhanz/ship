@@ -183,20 +183,22 @@ if git rev-parse -q --verify origin/main >/dev/null; then TARGET=origin/main
 elif git rev-parse -q --verify main >/dev/null; then TARGET=main
 elif git rev-parse -q --verify master >/dev/null; then TARGET=master
 else TARGET=""; fi
+(cd "$TRIAL" && <build command>)   # baseline: HEAD alone, before the merge
 git -C "$TRIAL" -c user.name=ship-verifier -c user.email=ship-verifier@localhost merge --no-edit "$TARGET"
-(cd "$TRIAL" && <build command>)
+(cd "$TRIAL" && <build command>)   # after the merge
 git worktree remove --force "$TRIAL"
 ```
 
 - **Build command:** the `Build:` line of `.planning/verify-checklist.md`, else the build/test command 2a discovered (at criteria-only, run just that lookup).
+- **Baseline first.** A fresh worktree holds only tracked files — no `node_modules`, virtualenv, vendor dir, `.env` or build cache — so a build can go red there for purely environmental reasons. Run the build command on HEAD in `$TRIAL` *before* merging. A red baseline means the environment, not main, broke the build: the outcome is NOT_RUNNABLE, and you skip the merge. Only a green baseline followed by a red build after the merge is merge-induced breakage. A `Build:` line that installs its own dependencies (e.g. `npm ci && npm test`) is what makes the trial merge runnable in such repos.
 - **Cleanup on every path.** `git worktree remove --force "$TRIAL"` runs afterwards whatever happened — clean merge, conflict, red build, or a command that errored. A leftover worktree is a defect you introduced.
 - **The feature branch is never touched.** You never run `git merge` in the feature checkout and never change the feature branch HEAD. Every merge is `git -C "$TRIAL" ... merge`. The merge commit lives only in the detached throwaway worktree, on no branch, so it adds nothing to `base_head..HEAD` and the incremental record stays valid.
 
 Outcomes:
 
-- **PASS** — the merge was clean and the build command exited 0 inside `$TRIAL`.
-- **FAIL** — a merge conflict or a red build. Record a **high**-severity Open bug naming the conflicting files or the failing output, and (on the FAIL path of Stage 3) a fix task "Merge main into the branch and fix the break".
-- **NOT_RUNNABLE** — no target ref (no `origin/main`, `main` or `master`) or no build command discoverable. Record it in Gaps with the reason; it has no verdict effect.
+- **PASS** — the baseline was green, the merge was clean and the build command exited 0 inside `$TRIAL` after it.
+- **FAIL** — a merge conflict, or a green baseline followed by a red build after the merge. Record a **high**-severity Open bug naming the conflicting files or the failing output, and (on the FAIL path of Stage 3) a fix task "Merge main into the branch and fix the break".
+- **NOT_RUNNABLE** — no target ref (no `origin/main`, `main` or `master`), no build command discoverable, or a red baseline (the build fails on HEAD alone in `$TRIAL`, e.g. missing dependencies or tooling — quote the failing output). Record it in Gaps with the reason; it has no verdict effect.
 
 Record the result in VERIFY.md's Trial Merge section (target, command and its source, outcome, evidence).
 

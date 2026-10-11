@@ -31,14 +31,14 @@ Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over blo
 
 ### Trial Merge
 
-Main merged into the branch in a detached throwaway worktree, then built there. The feature branch is never touched. Runs at every depth.
+HEAD built alone in a detached throwaway worktree as a baseline, then main merged in and built again. The feature branch is never touched. Runs at every depth.
 
 - **Target:** [origin/main | main | master | none found]
 - **Command:** [build command] (source: verify-checklist.md Build line | discovered)
 - **Outcome:** PASS | FAIL | NOT_RUNNABLE
-- **Evidence:** [merge output and build exit code; conflicting files or failing output on FAIL; the reason on NOT_RUNNABLE]
+- **Evidence:** [baseline exit code, merge output and post-merge build exit code; conflicting files or failing output on FAIL; the reason on NOT_RUNNABLE]
 
-(FAIL is also a high-severity Open bug in Bug Findings. NOT_RUNNABLE goes in Gaps with the reason.)
+(FAIL — a conflict, or a green baseline that goes red after the merge — is also a high-severity Open bug in Bug Findings. A red baseline means the environment, not main, broke the build (e.g. missing dependencies in the fresh worktree): that is NOT_RUNNABLE, never FAIL. NOT_RUNNABLE goes in Gaps with the reason.)
 
 ### Verify Checklist
 
