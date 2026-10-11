@@ -423,3 +423,32 @@ describe('verify-checklist-gate: go.workflow downgrades a dishonest PASS', () =>
     assert.match(src, /#236/);
   });
 });
+
+describe('verify-checklist-gate: the go skill reconciles a downgraded verdict', () => {
+  const go = () => readSrc('skills/go/SKILL.md');
+  const section6 = () => go().split('## 6. Reconcile & Report')[1].split('\n## ')[0];
+
+  it('section 6 branches on downgraded_from and sets plan-verified', () => {
+    const s = section6();
+    assert.ok(s.includes('verdict.downgraded_from'));
+    assert.match(s, /status: plan-verified/);
+  });
+
+  it('rewrites the VERIFY.md Overall Status line to a downgraded FAIL', () => {
+    assert.ok(section6().includes('**Overall Status:** FAIL (downgraded by go workflow from {downgraded_from}: {downgrade_reason})'));
+  });
+
+  it('appends a pending fix phase with one task per bug, failed checklist row, or failed trial merge', () => {
+    const s = section6();
+    assert.ok(s.includes('<phase id="fix-{n}" name="Verify fix round {n}" status="pending">'));
+    assert.match(s, /one task per `verdict\.bugs` entry/);
+    assert.match(s, /failed `verdict\.checklist` row or failed `verdict\.trial_merge`/);
+    assert.match(s, /Fix: \{description\}/);
+  });
+
+  it('the GO COMPLETE report and the headless table name the downgrade', () => {
+    const g = go();
+    assert.ok(g.includes('FAIL (downgraded from {downgraded_from})'));
+    assert.match(g, /\| Verdict FAIL, or a PASS\/INCONCLUSIVE downgraded[^\n]*`verify-fail`/);
+  });
+});
