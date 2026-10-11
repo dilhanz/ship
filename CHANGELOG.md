@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.25.1
+
+Patch release — `/ship:finish` no longer overwrites the `status:` line when invoked with more than one argument word.
+
+### Fixed
+
+- **`$<digit>` in skill bodies.** Claude Code substitutes `$0`, `$1`, … in a skill body with the individual argument words, as it does `$ARGUMENTS`. The finish skill's two `status:` stamps used a `$1` regex backreference, so `/ship:finish {name} — note` replaced the matched line with `—`. Both stamps now use a replacer function.
+- **Guard test.** `tests/skill-positional-placeholders.test.js` fails on any `$<digit>` in a `skills/*/SKILL.md`; CLAUDE.md records the rule next to the `$ARGUMENTS` note.
+
 ## 5.25.0
 
 Minor release — the verifier's verdict is honest, and it runs the checks the EM review kept catching. On #236 (`booking-inspections`) the verifier reported PASS 7/7 while its own Bug Findings table listed 4 bugs as `Open` (1 medium, 3 low), because only critical/high bugs failed a verify. The September–October retro (recommendation #1) found 81% of feature PRs drew review findings, with real defects reaching review: a 500 on every live invite, non-identical 404s, a merge with main that did not compile. None of those were checks the verifier ran.
