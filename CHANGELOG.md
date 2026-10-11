@@ -1,5 +1,23 @@
 # Changelog
 
+## 5.25.0
+
+Minor release — the verifier's verdict is honest, and it runs the checks the EM review kept catching. On #236 (`booking-inspections`) the verifier reported PASS 7/7 while its own Bug Findings table listed 4 bugs as `Open` (1 medium, 3 low), because only critical/high bugs failed a verify. The September–October retro (recommendation #1) found 81% of feature PRs drew review findings, with real defects reaching review: a 500 on every live invite, non-identical 404s, a merge with main that did not compile. None of those were checks the verifier ran.
+
+### Changed
+
+- **Any `Open` bug fails a verify, at any severity.** Stated in `agents/ship-verifier.md`, `skills/verify/SKILL.md` and `ship/templates/VERIFY.md`. A low bug the work can live with is fixed or explicitly ruled out — not shipped under a PASS.
+- **Citation rule.** A finding that is not a defect leaves Bug Findings only with a CONTEXT.md citation (a decision, a scope line, an out-of-scope item) saying why.
+- **The verifier runs at `maxTurns: 80`** (from 60) to pay for the new gates. The turn-cap parity test pins the verifier at exactly 80 and the other three long-running agents at 60.
+
+### Added
+
+- **Generic checklist** in Stage 2b: docs/manual claims vs code, date/time-zone-dependent tests, and concurrency on write paths. Every row is `PASS | FAIL | N/A` with evidence; a `FAIL` row is also a bug at medium or above. Skipped at criteria-only, where the verbatim narrowing line is unchanged.
+- **Repo checklist** from the optional `.planning/verify-checklist.md` — every bullet is a row, and an optional `` Build: `<command>` `` line names the trial-merge command. Runs at every depth, including criteria-only. The format is documented in the new `ship/docs/verify-checklist.md`.
+- **Trial merge of main** in a detached throwaway worktree (`git -C "$TRIAL" merge`, never a bare `git merge` on the feature branch), built against a green HEAD baseline and always removed. `PASS`, `FAIL` (a high bug plus a "merge main and fix the break" fix task) or `NOT_RUNNABLE` (recorded in Gaps). Runs at every depth.
+- **Workflow downgrade guard.** `go.workflow.js` replaces a `PASS` or `INCONCLUSIVE` verdict carrying any bug, a `FAIL` checklist row, or a failed trial merge with `FAIL`, adding `downgraded_from` and `downgrade_reason`; `tests/verify-checklist-gate.test.js` proves it on the #236 shape. The go skill §6 reconciles a downgrade: CONTEXT.md back to `plan-verified`, VERIFY.md's Overall Status rewritten, and a pending fix phase appended to PLAN.md.
+- **Scratch-record and schema keys.** `VERIFY_SCHEMA`, the verifier's `verify.json` record and `ship/verify-scratch.cjs` carry `checklist[]` and `trial_merge`; legacy records without them still validate, and the Stage 0 salvage prompt stays consistent with the agent.
+
 ## 5.24.0
 
 Minor release — a network outage or a spent session limit is finally reported as one. v5.11.0 taught the go workflow to tell a dropped connection from an exhausted turn budget by matching `ENOTFOUND`, `ECONNRESET` and friends in the thrown message, and a field audit of 114 runs (2026-09-08..18, across four projects) found that classification had **never fired once**: an agent that dies on an outage ends on a synthetic "API Error" message, and what the harness throws is the generic `subagent completed without calling StructuredOutput` — the same bytes a turn-cap death produces. All 29 logged throws read `[agent]`, across roughly 60 outage deaths. So the `INFRASTRUCTURE` status, the uncharged rounds and the skipped probe were dead code, and every outage fell into "retrying blind": three runs under a session limit spawned 41 agents burning every continuation round (`thorough` carries 8), an `ENOTFOUND` run burned 11 at three minutes each, and each would have ended `EXHAUSTED` with advice to split tasks that were fine — the exact misdiagnosis 5.11.0 existed to end.
