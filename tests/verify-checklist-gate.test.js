@@ -456,6 +456,14 @@ describe('verify-checklist-gate: the go skill reconciles a downgraded verdict', 
     assert.match(s, /Fix: \{description\}/);
   });
 
+  it('a failed checklist row or trial merge already covered by a bug gets no duplicate task', () => {
+    const s = section6();
+    assert.match(s, /only when no `verdict\.bugs` entry already covers it/);
+    assert.match(s, /records every FAIL row and failed trial merge as a bug too/);
+    assert.ok(!s.includes('Add one task per `verdict.bugs` entry and one per failed'),
+      'the undeduplicated wording must be gone');
+  });
+
   it('the GO COMPLETE report and the headless table name the downgrade', () => {
     const g = go();
     assert.ok(g.includes('FAIL (downgraded from {downgraded_from})'));
