@@ -210,3 +210,32 @@ describe('verify-checklist-gate: the verifier runs the checklist and trial merge
     assert.ok(output.includes('"trial_merge"'));
   });
 });
+
+describe('verify-checklist-gate: the VERIFY template carries the gates', () => {
+  it('has a Verify Checklist table with per-row verdicts', () => {
+    const t = template();
+    assert.ok(t.includes('### Verify Checklist'));
+    assert.ok(t.includes('| Item | Source | Verdict | Evidence |'));
+    assert.ok(t.includes('PASS / FAIL / N/A'));
+    assert.ok(t.includes('No repo checklist'));
+  });
+
+  it('has a Trial Merge section between Carried Review Findings and Adversarial Tests', () => {
+    const t = template();
+    const carried = t.indexOf('### Carried Review Findings');
+    const trial = t.indexOf('### Trial Merge');
+    const checklist = t.indexOf('### Verify Checklist');
+    const adversarial = t.indexOf('### Adversarial Tests');
+    assert.ok(trial > -1, 'template must have ### Trial Merge');
+    assert.ok(carried < trial && trial < adversarial && checklist < adversarial && carried < checklist,
+      'gates sit after Carried Review Findings and before Adversarial Tests');
+    assert.ok(t.includes('PASS | FAIL | NOT_RUNNABLE'));
+  });
+
+  it('the narrowing note keeps the Trial Merge and repo checklist rows mandatory', () => {
+    const t = template();
+    const at = t.indexOf('(If this run was narrowed by profile');
+    const note = t.slice(at, t.indexOf('\n', at));
+    assert.match(note, /Trial Merge and the repo checklist rows remain mandatory/);
+  });
+});

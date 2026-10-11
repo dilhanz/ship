@@ -17,7 +17,7 @@ Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runn
 
 ## Stage 2 — Bug Hunt & Quality
 
-(If this run was narrowed by profile: open this section with the line "Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped." copied verbatim — audits grep for that exact string, so do not paraphrase or reword it. Extra context goes in a following sentence. The Carried Review Findings table remains mandatory.)
+(If this run was narrowed by profile: open this section with the line "Stage 2 narrowed by profile: criteria-only — discretionary bug hunt and anti-pattern scan skipped." copied verbatim — audits grep for that exact string, so do not paraphrase or reword it. Extra context goes in a following sentence. The Carried Review Findings table remains mandatory, and the Trial Merge and the repo checklist rows remain mandatory too; only the generic checklist rows are omitted.)
 
 ### Carried Review Findings
 
@@ -28,6 +28,25 @@ Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over blo
 | critical/high | [phase id] | [file:line] | [what the reviewer found] | reproduced / not reproduced / not testable | [command run and what it showed] |
 
 (If none were carried: "None carried." An empty table must never mean the check was skipped.)
+
+### Trial Merge
+
+Main merged into the branch in a detached throwaway worktree, then built there. The feature branch is never touched. Runs at every depth.
+
+- **Target:** [origin/main | main | master | none found]
+- **Command:** [build command] (source: verify-checklist.md Build line | discovered)
+- **Outcome:** PASS | FAIL | NOT_RUNNABLE
+- **Evidence:** [merge output and build exit code; conflicting files or failing output on FAIL; the reason on NOT_RUNNABLE]
+
+(FAIL is also a high-severity Open bug in Bug Findings. NOT_RUNNABLE goes in Gaps with the reason.)
+
+### Verify Checklist
+
+| Item | Source | Verdict | Evidence |
+|------|--------|---------|----------|
+| [checklist item] | generic / repo | PASS / FAIL / N/A | [command run, or file:line; N/A needs a one-line reason] |
+
+One row per item, every row decided, none skipped. N/A needs a reason. A FAIL row also appears in Bug Findings at medium severity or above. Repo rows come from `.planning/verify-checklist.md`; when that file is absent, state "No repo checklist" here. At criteria-only, the generic rows are omitted and this section says so.
 
 ### Adversarial Tests
 
