@@ -135,7 +135,7 @@ node -e '
   let fm = m[1];
   fm = /^pr:/m.test(fm)
     ? fm.replace(/^pr:.*$/m, "pr: " + v)
-    : fm.replace(/^(status:.*)$/m, "$1\npr: " + v);
+    : fm.replace(/^status:.*$/m, (line) => line + "\npr: " + v);
   if (!/^pr:/m.test(fm)) fm += "\npr: " + v;
   fs.writeFileSync(p, s.slice(0, m.index) + "---\n" + fm + "\n---" + s.slice(m.index + m[0].length));
 ' "$CTX" "$PR_URL" && grep -n 'pr: ' "$CTX"
@@ -190,7 +190,7 @@ node -e '
   let fm = m[1];
   fm = /^outcome:/m.test(fm)
     ? fm.replace(/^outcome:.*$/m, "outcome: " + v)
-    : fm.replace(/^(status:.*)$/m, "$1\noutcome: " + v);
+    : fm.replace(/^status:.*$/m, (line) => line + "\noutcome: " + v);
   if (!/^outcome:/m.test(fm)) fm += "\noutcome: " + v;
   fs.writeFileSync(p, s.slice(0, m.index) + "---\n" + fm + "\n---" + s.slice(m.index + m[0].length));
 ' "$CTX" "$OUTCOME" && grep -n '^outcome:' "$CTX"
