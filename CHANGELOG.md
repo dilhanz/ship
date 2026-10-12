@@ -1,5 +1,24 @@
 # Changelog
 
+## 5.26.0
+
+Minor release — the per-phase review gate stops losing what its reviewers find. An audit of 123 REVIEW.md files (455 reviewed phases) and the Workflow engine's subagent transcripts for the last go runs found the reviewer agent itself healthy (19–46 turns, under 3.5 minutes, scratch written twice, no deaths) and the losses all downstream of it: 221 medium findings against 101 critical+high, every one routed to `recorded` and read by nothing; a phase-3 regression in `fix-live-prompt-conflicts` that the review approved because the broken sibling test was not in the task's `<verify>`; a re-review whose evidence was never checked or kept; and a manual build path that recorded an APPROVED-with-critical as `recorded`.
+
+### Changed
+
+- **Every review finding reaches the verifier.** `go.workflow.js` collects each phase's medium/low findings (review and re-review) as `recorded` and adds a `## Recorded Review Findings — located targets` block to the verify prompt beside the mandatory unresolved block; the go skill, build skill, verify skill, verifier and VERIFY.md template carry the same rule. The verifier gives each a reproduction attempt after the gates and before any discretionary test; a reproduced one is an Open bug at the reviewer's severity. The three most recent verifiers had already been doing this off-contract, and every medium they pulled in reproduced as a real bug.
+- **The re-review is held to the review's evidence standard.** A re-review with empty `verify_runs` and empty `files_reviewed` is treated as no re-review on both paths: findings stay `unresolved`, a concern is raised, and `introducedByFix` is empty. `completed[]` carries `rereviewStatus`, `rereviewFindings`, `rereviewVerifyRuns`, `rereviewFilesReviewed`, and the go skill writes a `(round 2)` REVIEW.md block with the re-review's own evidence lines whenever one ran; the build skill does the same.
+- **Reviewer severity guidance** no longer tells the reviewer that a medium is consequence-free: it says what each severity now triggers.
+- **The manual `/ship:build` review gate branches on the findings, not the verdict** (an APPROVED carrying a critical/high still gets the fix round, matching the workflow), and **salvages the reviewer's scratch record** — adopting a `complete` record directly, re-invoking once on a `verify-only` or missing one — before declaring a review skipped.
+- **The workflow's no-commits fallback** tells the reviewer to derive the range from PLAN.md's `commit=` attributes or diff against the merge-base, instead of `git diff HEAD`, which is empty on a committed phase.
+
+### Added
+
+- **Step 1b — Neighbouring tests** in `agents/ship-reviewer.md`: for each non-test source file in the diff, the tests beside it (same directory or matching basename) are run once with the project's runner, capped at the 10 closest, recorded in `verify_runs` with `task_id: null`. A test that fails at HEAD and passes at the range base is a `high` regression finding.
+- **Baseline check** for pre-existing failures: `not_runnable` on a non-zero exit requires the same command failing on the identical tests at the range base in a detached throwaway worktree (always removed); otherwise the verdict is `fail`. Four recent phases had improvised exactly this without a rule for it.
+- **Range coverage check**: the reviewer confirms every `commit=` on the phase's done tasks is inside the handed range and widens it when one is missing, raising a `low` finding that names the omitted commit.
+- `tests/review-gate-handoff.test.js` pins all of the above across the workflow, both skills, the reviewer, the verifier and the template.
+
 ## 5.25.1
 
 Patch release — `/ship:finish` no longer overwrites the `status:` line when invoked with more than one argument word.

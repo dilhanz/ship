@@ -404,7 +404,7 @@ const rangeInstruction = (range) => range
   ? `Diff range: \`${range}\` — already derived from the phase commits (oldest first). Use it directly with \`git diff ${range}\`; do not spend turns re-deriving it.
 
 Only if that range is unusable — \`git diff --stat ${range}\` errors or comes back empty, or \`${range.split('~')[0]}\` is the repository's root commit so \`~1\` does not resolve — fall back: \`git log --oneline -20\` to locate the true range, or \`git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD\` (the empty tree) when the phase starts at the root commit.`
-  : 'No commits were reported for this phase — review the uncommitted working-tree changes via `git diff HEAD`.'
+  : 'No commits were reported for this phase, so no range was precomputed. Derive it yourself: the `commit="..."` attributes on this phase\'s done tasks in PLAN.md give the oldest commit, and the range is `{oldest}~1..HEAD`. Only when no task records a commit is the work uncommitted — then review the working tree against the merge-base (`git diff $(git merge-base HEAD main)`, falling back to `master`). Never review a bare `git diff HEAD`: on a committed phase it is empty, and an empty diff is not a clean review.'
 
 const reviewPrompt = (ph, commits) => `Review feature: ${feature}
 ${phaseLine(ph)}Phase commits: ${commits.length ? commits.join(', ') : '(none reported)'}
@@ -449,7 +449,7 @@ A reviewer just completed this exact review, but its structured result was lost 
 Read \`.planning/features/${feature}/.review-scratch/${scope}.json\`.
 
 - **If it exists, its \`scope\` is \`${scope}\`, its \`head\` matches \`git rev-parse HEAD\`, and its \`stage\` is \`complete\`:** report its findings, \`verify_runs\`, and \`files_reviewed\` verbatim as your result and stop. Do NOT re-run verify commands, do NOT re-read the diff, do NOT revise the findings. An empty findings array is a valid result — report it as APPROVED.
-- **If it matches but its \`stage\` is \`verify-only\`:** the previous reviewer finished the verify re-runs and died before reviewing the diff. Carry its \`verify_runs\` forward verbatim, skip Step 1, and do Step 2 only.
+- **If it matches but its \`stage\` is \`verify-only\`:** the previous reviewer finished every verify run (Step 1 and the neighbouring tests of Step 1b) and died before reviewing the diff. Carry its \`verify_runs\` forward verbatim, skip Step 1 and 1b, and do Step 2 only.
 - **If it is missing, empty, malformed, stamped with a different scope or head, or carries no \`stage\` key at all:** it is not this review (an unstamped record predates this contract). Fall back to the full review below.
 
 Whichever branch you take, report a \`"salvaged"\` field in your structured result: \`"adopted"\` when you reused any recorded work, \`"rejected"\` when the record was absent or did not match and you redid the review from scratch.
@@ -716,6 +716,8 @@ for (let i = 0; i < phases.length; i++) {
       findings: [],
       verifyRuns: [], filesReviewed: [],
       fixApplied: false, unresolved: [], introducedByFix: [],
+      rereviewStatus: null, rereviewFindings: [], rereviewVerifyRuns: [], rereviewFilesReviewed: [],
+      recorded: [],
     })
     log(`Phase ${label}: per-phase review skipped by profile${profileName ? ` (${profileName})` : ''}.`)
     continue
@@ -763,17 +765,38 @@ for (let i = 0; i < phases.length; i++) {
   // If blocking findings existed but no re-review confirmed them resolved —
   // because it was skipped for want of fix commits, or because it produced no
   // result — report them as unresolved rather than claiming a clean phase.
+  // The re-review's own evidence. It is held to the same standard as the first
+  // review: a re-reviewer that re-ran nothing and read nothing has confirmed
+  // nothing, and its APPROVED would otherwise convert every blocking finding
+  // into "fixed in fix round" on no evidence at all — the one place a rubber
+  // stamp does the most damage. Such a re-review counts as no re-review.
+  const rereviewVerifyRuns = (rereview && rereview.verify_runs) || []
+  const rereviewFilesReviewed = (rereview && rereview.files_reviewed) || []
+  const rereviewUnsubstantiated = !!rereview && !rereviewVerifyRuns.length && !rereviewFilesReviewed.length
   const surviving = rereview
     ? rereview.findings.filter((f) => f.severity === 'critical' || f.severity === 'high')
     : []
-  const unresolved = blocking.length && !rereview ? blocking : surviving
+  const unresolved = blocking.length && (!rereview || rereviewUnsubstantiated) ? blocking : surviving
   // Subset of `unresolved`, for labelling only: problems the fix round created
   // rather than leftovers it failed to clear.
-  const introducedByFix = surviving.filter((f) => f.new_issue === true)
+  const introducedByFix = surviving.filter((f) => f.new_issue === true && !rereviewUnsubstantiated)
 
   const verifyRuns = (review && review.verify_runs) || []
   const filesReviewed = (review && review.files_reviewed) || []
   const notRunnable = verifyRuns.filter((v) => v.verdict === 'not_runnable').length
+
+  // Everything the reviewers found that did not gate the build: medium/low
+  // findings from the review, plus any medium/low the re-review raised about
+  // the fix commits. Nothing downstream used to read these — the fix round and
+  // the verifier's carried block were critical/high only — yet across 455
+  // reviewed phases they outnumbered critical+high two to one, and the last
+  // three verifiers that pulled them in on their own initiative reproduced
+  // every medium as a real bug. They travel to the verifier as located targets.
+  const isBlockingSeverity = (f) => f.severity === 'critical' || f.severity === 'high'
+  const recorded = [
+    ...(review ? review.findings.filter((f) => !isBlockingSeverity(f)) : []),
+    ...(rereview && !rereviewUnsubstantiated ? rereview.findings.filter((f) => !isBlockingSeverity(f)) : []),
+  ]
 
   // Everything here is a way the gate can report safety it does not have, so
   // each one travels the concerns channel the go skill already surfaces.
@@ -789,6 +812,9 @@ for (let i = 0; i < phases.length; i++) {
   if (fixSkipped) {
     reviewConcerns.push(`phase ${label} fix builder ${fixSkipped} — ${blocking.length} critical/high finding(s) left unresolved, no re-review ran`)
   }
+  if (rereviewUnsubstantiated) {
+    reviewConcerns.push(`phase ${label} re-review re-ran no verify commands and reviewed no files — its ${rereview.status} verdict confirms nothing, ${blocking.length} critical/high finding(s) kept unresolved`)
+  }
 
   completed.push({
     phaseId: ph.id, phaseName: ph.name,
@@ -802,6 +828,12 @@ for (let i = 0; i < phases.length; i++) {
     findings: review ? review.findings : [],
     verifyRuns, filesReviewed,
     fixApplied: !!fixRound && !fixSkipped, unresolved, introducedByFix,
+    // The re-review as its own record, so REVIEW.md can carry a round-2 block
+    // with the same evidence lines round 1 gets. Null status means none ran.
+    rereviewStatus: rereview ? rereview.status : null,
+    rereviewFindings: rereview ? rereview.findings : [],
+    rereviewVerifyRuns, rereviewFilesReviewed,
+    recorded,
   })
 }
 
@@ -817,7 +849,7 @@ const carried = completed.flatMap((p) =>
     return `- [${f.severity}] phase ${p.phaseId} — ${f.file}: ${f.description}${origin}`
   }))
 
-const carriedBlock = carried.length
+const unresolvedBlock = carried.length
   ? `
 
 ## Unresolved Review Findings — mandatory targets
@@ -826,6 +858,26 @@ The per-phase review gate found these critical/high defects and the single fix r
 
 ${carried.join('\n')}`
   : ''
+
+// The lower-severity findings travel too. REVIEW.md is written only after this
+// workflow returns, so on this path the prompt is the only way they reach the
+// verifier — a verifier that had to go and read the reviewers' scratch files to
+// find a medium that then turned out to be a real bug is how this block earned
+// its place.
+const recordedCarried = completed.flatMap((p) =>
+  (p.recorded || []).map((f) => `- [${f.severity}] phase ${p.phaseId} — ${f.file}: ${f.description}`))
+
+const recordedBlock = recordedCarried.length
+  ? `
+
+## Recorded Review Findings — located targets
+
+The per-phase reviewers also recorded these lower-severity findings. They did not gate the build and no fix round touched them, but each one is already located in the diff, so they are the cheapest bugs available to you. Give each a reproduction attempt in Stage 2b after the mandatory targets and the gates and before any discretionary test, and record its outcome in the Carried Review Findings table. A reproduced one is an Open bug at the reviewer's severity, and any Open bug fails the verify.
+
+${recordedCarried.join('\n')}`
+  : ''
+
+const carriedBlock = `${unresolvedBlock}${recordedBlock}`
 
 // Prompt-scoped narrowing of Stage 2. The verifier's contract permits it only
 // on an explicit instruction like this one — never on its own judgment — and
