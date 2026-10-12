@@ -187,7 +187,10 @@ describe('v4 — go workflow control flow', () => {
   }
 
   const COMPLETE = { feature: 'f', status: 'COMPLETE', tasks_completed: 2, tasks_total: 2, commits: ['abc1234'] };
-  const APPROVED = { feature: 'f', status: 'APPROVED', findings: [] };
+  // Carries the evidence fields the schema requires: a re-review with neither
+  // is treated as no re-review (v5.26.0), and this fixture stands in for one.
+  const APPROVED = { feature: 'f', status: 'APPROVED', findings: [],
+    verify_runs: [{ command: 'npm test', verdict: 'pass', exit_code: 0 }], files_reviewed: ['x.js'] };
   const NEEDS = { feature: 'f', status: 'NEEDS_FIXES', findings: [{ severity: 'high', file: 'x.js:1', description: 'bug' }] };
   const VERDICT = { feature: 'f', status: 'PASS', criteria_total: 3, criteria_passed: 3 };
   const CHECKPOINT = { feature: 'f', status: 'CHECKPOINT', tasks_completed: 0, tasks_total: 2, commits: [] };
