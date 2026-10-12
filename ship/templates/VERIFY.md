@@ -21,11 +21,12 @@ Per-criterion verdict ∈ {PASS, FAIL, INCONCLUSIVE}. INCONCLUSIVE means no runn
 
 ### Carried Review Findings
 
-Unresolved critical/high findings from REVIEW.md (or the prompt's carry-over block) — each needs a command, not an opinion.
+Every finding from REVIEW.md (or the prompt's carry-over blocks): the unresolved critical/high ones are mandatory, the recorded medium/low ones are located targets — each needs a command, not an opinion. Unresolved rows first.
 
 | Severity | Phase | File | Finding | Outcome | Evidence |
 |----------|-------|------|---------|---------|----------|
-| critical/high | [phase id] | [file:line] | [what the reviewer found] | reproduced / not reproduced / not testable | [command run and what it showed] |
+| critical/high | [phase id] | [file:line] | [what the reviewer found — unresolved] | reproduced / not reproduced / not testable | [command run and what it showed] |
+| medium/low | [phase id] | [file:line] | [what the reviewer found — recorded] | reproduced / not reproduced / not testable | [command run and what it showed] |
 
 (If none were carried: "None carried." An empty table must never mean the check was skipped.)
 

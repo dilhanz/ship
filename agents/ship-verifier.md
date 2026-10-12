@@ -24,10 +24,10 @@ Do not declare a criterion PASS without running a command that proves it. "Seems
 You are invoked with a feature name. Read:
 1. `.planning/features/{name}/CONTEXT.md` — acceptance criteria (your truths)
 2. `.planning/features/{name}/PLAN.md` — Must Deliver items, task list, file paths
-3. `.planning/features/{name}/REVIEW.md` — if present, the per-phase review log. Every finding marked `unresolved` is a defect a reviewer evidenced against the diff and the build's single fix round failed to clear. Collect them; Stage 2b makes them mandatory targets.
+3. `.planning/features/{name}/REVIEW.md` — if present, the per-phase review log. Every finding marked `unresolved` is a defect a reviewer evidenced against the diff and the build's single fix round failed to clear. Collect them; Stage 2b makes them mandatory targets. Every finding marked `recorded` (medium/low — they never gated the build) is a located target: collect those too, Stage 2b gives each a reproduction attempt after the gates.
 4. `.planning/verify-checklist.md` — if present, the repo's standing verify checklist (format: `${CLAUDE_PLUGIN_ROOT}/ship/docs/verify-checklist.md`). Every bullet is one item Stage 2b must decide; an optional `Build:` line names the trial-merge command.
 
-Your prompt may also carry an **Unresolved Review Findings** block. It exists because `/ship:go` persists REVIEW.md only after the build workflow returns, so on that path the file cannot yet hold this run's findings. Treat the block and the file as one list, deduplicated — whichever source you got them from, the obligation in Stage 2b is the same.
+Your prompt may also carry an **Unresolved Review Findings** block and a **Recorded Review Findings** block. They exist because `/ship:go` persists REVIEW.md only after the build workflow returns, so on that path the file cannot yet hold this run's findings. Treat the blocks and the file as one list, deduplicated — whichever source you got them from, the obligation in Stage 2b is the same: unresolved findings are mandatory, recorded ones are located targets.
 
 ## Verification Depth
 
@@ -100,7 +100,7 @@ The record's keys, exactly:
 - `base_head` — the SHA captured in Stage 0 (or adopted from a salvaged record). **Never updated.**
 - `stage` — `criteria` while Stage 1 is in flight, `bughunt` once Stage 1 is complete, `complete` once VERIFY.md is written
 - `criteria` — array of `{ criterion, verdict, evidence }`, one per criterion decided so far
-- `carried_findings` — array of `{ severity, phase, file, finding, outcome, evidence }`, one per unresolved review finding resolved so far
+- `carried_findings` — array of `{ severity, phase, file, finding, outcome, evidence }`, one per carried review finding (unresolved or recorded) resolved so far
 - `tests` — array of `{ file, commit }` for every test file you have committed; a short hash is accepted
 - `checklist` — array of `{ item, source, verdict, evidence }`, one per checklist row decided so far (`source` is `generic` or `repo`, `verdict` is `PASS`, `FAIL` or `N/A`); rewritten after each row
 - `trial_merge` — `{ outcome, target, command, evidence }` once the trial merge is decided (`outcome` is `PASS`, `FAIL` or `NOT_RUNNABLE`); absent or `null` until then
@@ -159,7 +159,7 @@ git diff --name-only "$BASE"..HEAD
 ```
 (If git fails **or the diff is empty** — e.g. the feature was built directly on main, making the merge-base HEAD itself — fall back to the files named in the feature's commits (`git log --grep "({name})" --format= --name-only | sort -u`) or PLAN.md's `<files>`, and note it.)
 
-**Unresolved review findings come first, and they are not optional.** Before you pick risk categories, take every finding you collected from REVIEW.md or the prompt block and give each one a direct test or reproduction attempt against the real code. These are the cheapest bugs you will ever find — someone already read the diff, located the defect, and named the file and line. A phase is marked done even when its findings survive the fix round, so "the phase is done" proves nothing about them. For each, record one of:
+**Unresolved review findings come first, and they are not optional.** Before you pick risk categories, take every *unresolved* finding you collected from REVIEW.md or the prompt block (the recorded ones have their own slot after the gates, below) and give each one a direct test or reproduction attempt against the real code. These are the cheapest bugs you will ever find — someone already read the diff, located the defect, and named the file and line. A phase is marked done even when its findings survive the fix round, so "the phase is done" proves nothing about them. For each, record one of:
 
 - **reproduced** — it is a real bug. Carry it into Bug Findings at the reviewer's severity or higher; any reproduced finding is an Open bug and FAILs the verify.
 - **not reproduced** — your test passes against current code. Say what you ran, and note whether that means the fix round did land after all or the original finding was wrong.
@@ -167,7 +167,9 @@ git diff --name-only "$BASE"..HEAD
 
 Never resolve one of these by inspection alone. A finding you cannot reproduce with a command is `not testable`, not fixed.
 
-**2b order, stated once:** carried findings (uncapped) → **Trial merge with main** → **Repo checklist** → **Generic checklist** → discretionary adversarial tests (capped at 3 test files). The gates run before any discretionary work, so when the budget gets tight it is the discretionary tests that absorb the squeeze, never a gate.
+**Recorded review findings come after the gates and before any discretionary test.** The reviewers' medium and low findings never gated the build, but each one is already located in the diff, which makes them cheaper than any adversarial test you could invent — and in practice they have been real: a steer typed for one task posting to another's live agent, a pane that stops following its tail, an eval case that hard-fails a correct answer, every one a reviewer's `medium`. Give each the same reproduction attempt and the same three outcomes, in the same table. A reproduced one is an Open bug at the reviewer's severity.
+
+**2b order, stated once:** carried unresolved findings (uncapped) → **Trial merge with main** → **Repo checklist** → **Generic checklist** → recorded review findings (uncapped) → discretionary adversarial tests (capped at 3 test files). The gates run before any discretionary work, so when the budget gets tight it is the discretionary tests that absorb the squeeze, never a gate.
 
 #### Trial merge with main
 
@@ -216,7 +218,7 @@ Three built-in items, source `generic`, skipped at criteria-only:
 
 **Every row is decided with evidence** — repo and generic alike. Each row gets PASS / FAIL / N/A plus evidence: a command you ran, or `file:line`. N/A carries a one-line reason. No row is left empty or skipped. A FAIL row is also recorded in Bug Findings at **medium severity or above, never low**, so it fails the verify like any Open bug.
 
-**Budget discipline — ordering and the file cap.** Carried unresolved review findings come first and are **uncapped**: they are mandatory, already located, and the cheapest bugs available. The trial merge and the checklist rows come next, and are mandatory too. Only once every one of them has an outcome do you spend budget on discretionary adversarial tests, and those are capped at **3 test files** in total.
+**Budget discipline — ordering and the file cap.** Carried unresolved review findings come first and are **uncapped**: they are mandatory, already located, and the cheapest bugs available. The trial merge and the checklist rows come next, and are mandatory too. Then the recorded review findings, also uncapped — located, and usually a one-command reproduction each. Only once every one of them has an outcome do you spend budget on discretionary adversarial tests, and those are capped at **3 test files** in total.
 
 The reason is arithmetic. With 80 turns, unbounded discretionary testing is what starves Stage 3 and loses the whole run — a verification that dies before writing VERIFY.md is worth less than one that wrote three fewer tests. If you judge a 4th discretionary file necessary, record it in Gaps as untested rather than writing it; naming the gap costs one line and survives, writing the file may cost you the report.
 
@@ -233,7 +235,7 @@ On the changed files, look for: TODO/FIXME/HACK/XXX/placeholder/stub/not-impleme
 
 Read the template at `${CLAUDE_PLUGIN_ROOT}/ship/templates/VERIFY.md` and write `.planning/features/{name}/VERIFY.md` following it. The criteria table must show actual evidence (command output, grep results) — not opinion. List every test written and every bug/anti-pattern found.
 
-Fill the **Carried Review Findings** table with one row per unresolved finding you collected, showing the outcome and the command behind it. If nothing was carried, write "None carried" — that section empty must mean nothing was handed to you, never that you skipped the check.
+Fill the **Carried Review Findings** table with one row per finding you collected — unresolved rows first, then recorded ones — showing the outcome and the command behind it. If nothing was carried, write "None carried" — that section empty must mean nothing was handed to you, never that you skipped the check.
 
 Fill the `**Head:**` line with the output of `git rev-parse HEAD`, taken after any commits you made during this verification. Stage 0 of the next run keys staleness on it — an unstamped or wrongly-stamped report forces a full re-verification.
 

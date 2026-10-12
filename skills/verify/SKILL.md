@@ -34,7 +34,9 @@ failing criterion block a PASS.
 Also read .planning/features/{name}/REVIEW.md if it exists. Every finding marked
 unresolved there is a defect the per-phase review gate evidenced and the build's one
 fix round did not clear — each is a mandatory Stage 2b target, and a reproduced
-one is a FAIL.
+one is a FAIL. Every finding marked recorded (medium/low) is a located target: give
+each a reproduction attempt after the gates, before any discretionary test, and a
+reproduced one is an Open bug at the reviewer's severity.
 ```
 
 ## Clean Up the Scratch Record
