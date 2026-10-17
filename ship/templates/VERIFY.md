@@ -59,11 +59,12 @@ One row per item, every row decided, none skipped. N/A needs a reason. A FAIL ro
 
 | # | Severity | Category | Description | File | Status |
 |---|----------|----------|-------------|------|--------|
-| 1 | critical/high/medium/low | [category] | [description] | [file:line] | Open |
+| 1 | critical/high/medium | [category] | [description] | [file:line] | Open |
+| 2 | low | [category] | [description] | [file:line] | Left open |
 
 (If none: "No bugs found.")
 
-Any row with Status `Open` makes the Overall Status FAIL, whatever its severity. The verifier never fixes code, so every recorded bug is Open. Citation rule: something judged not to be a defect (accepted by design, outside scope) moves to Quality Notes or Gaps only with a citation quoting the CONTEXT.md `## Decisions` or `## Scope` line that covers it; an uncited item stays here and fails the verify.
+Any row with Status `Open` makes the Overall Status FAIL. The verifier never fixes code, so every critical, high, or medium bug is Open. A low bug is `Left open`: recorded with its evidence, but it does not decide the verdict and gets no fix task. Citation rule: something judged not to be a defect (accepted by design, outside scope) moves to Quality Notes or Gaps only with a citation quoting the CONTEXT.md `## Decisions` or `## Scope` line that covers it; an uncited item stays here and fails the verify.
 
 ### Anti-Pattern Scan
 

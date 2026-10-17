@@ -28,15 +28,15 @@ Verify feature: {name}
 Read .planning/features/{name}/CONTEXT.md and PLAN.md, then follow your verification
 instructions: verify acceptance criteria with the gate function, write and run
 adversarial tests for the relevant risk categories, scan the changed files for
-anti-patterns, and write VERIFY.md. Any bug left Open — at any severity — and any
-failing criterion block a PASS.
+anti-patterns, and write VERIFY.md. Any Open bug (critical, high, or medium) and any
+failing criterion block a PASS. A reproduced low is recorded as Left open and does not.
 
 Also read .planning/features/{name}/REVIEW.md if it exists. Every finding marked
 unresolved there is a defect the per-phase review gate evidenced and the build's one
 fix round did not clear — each is a mandatory Stage 2b target, and a reproduced
 one is a FAIL. Every finding marked recorded (medium/low) is a located target: give
-each a reproduction attempt after the gates, before any discretionary test, and a
-reproduced one is an Open bug at the reviewer's severity.
+each a reproduction attempt after the gates, before any discretionary test. A
+reproduced medium is an Open bug; a reproduced low is recorded as Left open.
 ```
 
 ## Clean Up the Scratch Record

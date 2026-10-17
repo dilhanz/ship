@@ -872,7 +872,7 @@ const recordedBlock = recordedCarried.length
 
 ## Recorded Review Findings — located targets
 
-The per-phase reviewers also recorded these lower-severity findings. They did not gate the build and no fix round touched them, but each one is already located in the diff, so they are the cheapest bugs available to you. Give each a reproduction attempt in Stage 2b after the mandatory targets and the gates and before any discretionary test, and record its outcome in the Carried Review Findings table. A reproduced one is an Open bug at the reviewer's severity, and any Open bug fails the verify.
+The per-phase reviewers also recorded these lower-severity findings. They did not gate the build and no fix round touched them, but each one is already located in the diff, so they are the cheapest bugs available to you. Give each a reproduction attempt in Stage 2b after the mandatory targets and the gates and before any discretionary test, and record its outcome in the Carried Review Findings table. A reproduced one goes into Bug Findings at the reviewer's severity: a medium is an Open bug and fails the verify, a low is recorded as Left open and does not.
 
 ${recordedCarried.join('\n')}`
   : ''
@@ -903,9 +903,12 @@ if (!stoppedAt) {
   // contradictory. #236 shipped PASS 7/7 with 4 Open bugs in its own report.
   // The verifier's rules already say any Open bug fails; this enforces it
   // mechanically, for fresh and salvaged verdicts alike. A FAIL or a clean
-  // PASS passes through as the same object.
+  // PASS passes through as the same object. A low bug is Left open, not Open:
+  // each fix round is reviewed again and a reviewer can always find one more
+  // low, so letting lows fail the verify looped one feature through four FAILs
+  // with every criterion passing.
   if (verdict && (verdict.status === 'PASS' || verdict.status === 'INCONCLUSIVE')) {
-    const openBugs = (verdict.bugs || []).length
+    const openBugs = (verdict.bugs || []).filter((b) => !b || b.severity !== 'low').length
     const failedItems = (verdict.checklist || []).filter((row) => row && row.verdict === 'FAIL').length
     const mergeFailed = !!(verdict.trial_merge && verdict.trial_merge.outcome === 'FAIL')
     if (openBugs > 0 || failedItems > 0 || mergeFailed) {

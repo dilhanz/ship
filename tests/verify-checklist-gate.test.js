@@ -1,5 +1,6 @@
 // Doctrine and behavior tests for verify-checklist-gate: the verifier's verdict
-// is honest (any Open bug fails, whatever its severity), a non-defect leaves
+// is honest (any Open bug fails — critical, high, or medium; a low is Left
+// open and recorded without failing), a non-defect leaves
 // Bug Findings only with a CONTEXT.md citation, and the verifier runs at 80
 // turns.
 //
@@ -29,19 +30,26 @@ const stage3 = () => {
 };
 
 describe('verify-checklist-gate: any Open bug fails the verify', () => {
-  it('the agent states Open → FAIL at any severity', () => {
+  it('the agent states Open → FAIL for critical, high, and medium', () => {
     const s3 = stage3();
-    assert.match(s3, /any bug in Bug Findings with status `Open`, whatever its severity/);
+    assert.match(s3, /any bug in Bug Findings with status `Open` — every critical, high, or medium bug/);
     assert.match(s3, /An Open bug beats INCONCLUSIVE/);
     assert.match(s3, /no Open bug/);
   });
 
-  it('the skill states Open → FAIL at any severity', () => {
-    assert.match(skill(), /Any bug left Open — at any severity —/);
+  it('the skill states Open → FAIL for critical, high, and medium', () => {
+    assert.match(skill(), /Any Open bug \(critical, high, or medium\)/);
   });
 
-  it('the template states Open → FAIL at any severity', () => {
-    assert.match(template(), /Any row with Status `Open` makes the Overall Status FAIL, whatever its severity/);
+  it('the template states Open → FAIL', () => {
+    assert.match(template(), /Any row with Status `Open` makes the Overall Status FAIL\./);
+  });
+
+  it('no file still says a low fails the verify', () => {
+    for (const [name, src] of [['agent', agent()], ['skill', skill()], ['template', template()]]) {
+      assert.ok(!/whatever its severity|at any severity|low included/.test(src),
+        `${name} must not fail the verify on a low bug`);
+    }
   });
 
   it('no file still uses critical/high as the fail rule', () => {
@@ -61,6 +69,33 @@ describe('verify-checklist-gate: any Open bug fails the verify', () => {
 
   it('a reproduced carried finding is an Open bug that fails the verify', () => {
     assert.match(agent(), /any reproduced finding is an Open bug and FAILs the verify/);
+  });
+});
+
+describe('verify-checklist-gate: a low bug is Left open', () => {
+  it('the agent records a reproduced low as Left open, with no fix task', () => {
+    const s3 = stage3();
+    const i = s3.indexOf('**Low bugs are `Left open`, not `Open`.**');
+    assert.ok(i > -1, 'Stage 3 must state the Left-open rule');
+    const para = s3.slice(i, s3.indexOf('\n\n', i));
+    for (const needle of ['own hunt', 'does not decide the verdict', 'no fix task', "reviewer's severity or higher"]) {
+      assert.ok(para.includes(needle), `Left-open paragraph must mention "${needle}"`);
+    }
+    assert.match(s3, /none for a `Left open` low/);
+  });
+
+  it('a recorded carried low reproduces as Left open, a medium as Open', () => {
+    assert.match(agent(), /a `medium` is an Open bug, a `low` is `Left open`/);
+    assert.match(skill(), /reproduced medium is an Open bug; a reproduced low is recorded as Left open/);
+    assert.match(goSrc(), /a low is recorded as Left open and does not/);
+  });
+
+  it('the template gives Bug Findings a Left open status for lows', () => {
+    assert.match(template(), /\| low \| \[category\] \| \[description\] \| \[file:line\] \| Left open \|/);
+  });
+
+  it('the go skill writes no fix task for a low on a downgrade', () => {
+    assert.match(readSrc('skills/go/SKILL.md'), /entry whose severity is not `low`/);
   });
 });
 
@@ -363,23 +398,40 @@ const bug = (severity) => ({ severity, category: 'logic', description: `${severi
 const base = { feature: 'demo', criteria_total: 7, criteria_passed: 7, criteria_failed: 0, criteria_inconclusive: 0 };
 
 describe('verify-checklist-gate: go.workflow downgrades a dishonest PASS', () => {
-  it('#236 shape — PASS 7/7 with 4 Open bugs becomes FAIL', async () => {
+  it('#236 shape — PASS 7/7 with a medium and 3 lows becomes FAIL on the medium', async () => {
     const { result } = await runWorkflowWithVerdict({
       ...base, status: 'PASS', bugs: [bug('medium'), bug('low'), bug('low'), bug('low')],
     });
     assert.equal(result.verdict.status, 'FAIL');
     assert.equal(result.verdict.downgraded_from, 'PASS');
-    assert.match(result.verdict.downgrade_reason, /\b4 open bug/);
+    assert.match(result.verdict.downgrade_reason, /\b1 open bug/);
     assert.equal(result.verdict.bugs.length, 4, 'the bugs travel with the downgraded verdict');
   });
 
-  it('INCONCLUSIVE with one low bug becomes FAIL', async () => {
+  it('INCONCLUSIVE with one medium bug becomes FAIL', async () => {
     const { result } = await runWorkflowWithVerdict({
-      ...base, criteria_passed: 6, criteria_inconclusive: 1, status: 'INCONCLUSIVE', bugs: [bug('low')],
+      ...base, criteria_passed: 6, criteria_inconclusive: 1, status: 'INCONCLUSIVE', bugs: [bug('medium')],
     });
     assert.equal(result.verdict.status, 'FAIL');
     assert.equal(result.verdict.downgraded_from, 'INCONCLUSIVE');
     assert.match(result.verdict.downgrade_reason, /\b1 open bug/);
+  });
+
+  it('PASS 7/7 with only Left-open lows stays PASS, lows kept on the verdict', async () => {
+    const lowsOnly = { ...base, status: 'PASS', bugs: [bug('low'), bug('low')] };
+    const { result } = await runWorkflowWithVerdict(lowsOnly);
+    assert.equal(result.verdict.status, 'PASS');
+    assert.equal(result.verdict.downgraded_from, undefined);
+    assert.equal(result.verdict, lowsOnly, 'a lows-only PASS is the same object');
+    assert.equal(result.verdict.bugs.length, 2, 'the lows are still reported');
+  });
+
+  it('INCONCLUSIVE with only a low stays INCONCLUSIVE', async () => {
+    const { result } = await runWorkflowWithVerdict({
+      ...base, criteria_passed: 6, criteria_inconclusive: 1, status: 'INCONCLUSIVE', bugs: [bug('low')],
+    });
+    assert.equal(result.verdict.status, 'INCONCLUSIVE');
+    assert.equal(result.verdict.downgraded_from, undefined);
   });
 
   it('PASS with no bugs but a FAIL checklist row becomes FAIL', async () => {
