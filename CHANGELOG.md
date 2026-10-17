@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.27.0
+
+Minor release — a low-severity finding can no longer fail a verify forever. Since 5.26.0 every recorded reviewer finding reaches the verifier, and any reproduced one was an Open bug that failed the run at any severity. A fix round is reviewed like any phase, and a reviewer can always find one more edge case in code it just changed, so lows fed a loop with no exit: `externalized-strings-i18n-ready` (rpfs) failed four verifies with 7/7 criteria passing, the last two on nothing but test-only `low` findings, and was parked when the caller's retry cap ran out.
+
+### Changed
+
+- **A reproduced `low` is `Left open`, not `Open`.** It stays in Bug Findings with its evidence, at the new status `Left open`, whether carried from a reviewer or found by the verifier's own hunt. It does not decide the verdict and gets no fix task. Critical, high and medium bugs still fail the verify. A carried finding keeps the reviewer's severity or higher, and a defect a user or CI can hit is `medium` at least, so the rule cannot be dodged by rating down. Applied across `agents/ship-verifier.md`, `skills/verify/SKILL.md`, `ship/templates/VERIFY.md` and the workflow's verify prompt.
+- **The go workflow's downgrade guard ignores lows.** A PASS or INCONCLUSIVE carrying only lows is no longer forced to FAIL — without this the prompt change alone would not have broken the loop on the `/ship:go` path. The go skill's downgrade reconcile writes no fix task for a low.
+
 ## 5.26.0
 
 Minor release — the per-phase review gate stops losing what its reviewers find. An audit of 123 REVIEW.md files (455 reviewed phases) and the Workflow engine's subagent transcripts for the last go runs found the reviewer agent itself healthy (19–46 turns, under 3.5 minutes, scratch written twice, no deaths) and the losses all downstream of it: 221 medium findings against 101 critical+high, every one routed to `recorded` and read by nothing; a phase-3 regression in `fix-live-prompt-conflicts` that the review approved because the broken sibling test was not in the task's `<verify>`; a re-review whose evidence was never checked or kept; and a manual build path that recorded an APPROVED-with-critical as `recorded`.

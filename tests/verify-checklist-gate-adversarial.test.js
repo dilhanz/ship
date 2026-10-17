@@ -54,7 +54,7 @@ const runWorkflow = async (verifyCalls) => {
 };
 
 const base = { feature: 'demo', criteria_total: 7, criteria_passed: 7, criteria_failed: 0, criteria_inconclusive: 0 };
-const bug = { severity: 'low', category: 'logic', description: 'low bug', file: 'a.js', evidence: 'repro' };
+const bug = { severity: 'medium', category: 'logic', description: 'medium bug', file: 'a.js', evidence: 'repro' };
 
 describe('adversarial: downgrade guard', () => {
   it('a salvaged PASS carrying a bug (first verifier lost) is still downgraded', async () => {
