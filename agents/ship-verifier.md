@@ -167,7 +167,7 @@ git diff --name-only "$BASE"..HEAD
 
 Never resolve one of these by inspection alone. A finding you cannot reproduce with a command is `not testable`, not fixed.
 
-**Recorded review findings come after the gates and before any discretionary test.** The reviewers' medium and low findings never gated the build, but each one is already located in the diff, which makes them cheaper than any adversarial test you could invent — and in practice they have been real: a steer typed for one task posting to another's live agent, a pane that stops following its tail, an eval case that hard-fails a correct answer, every one a reviewer's `medium`. Give each the same reproduction attempt and the same three outcomes, in the same table. A reproduced one is an Open bug at the reviewer's severity.
+**Recorded review findings come after the gates and before any discretionary test.** The reviewers' medium and low findings never gated the build, but each one is already located in the diff, which makes them cheaper than any adversarial test you could invent — and in practice they have been real: a steer typed for one task posting to another's live agent, a pane that stops following its tail, an eval case that hard-fails a correct answer, every one a reviewer's `medium`. Give each the same reproduction attempt and the same three outcomes, in the same table. A reproduced one goes into Bug Findings at the reviewer's severity: a `medium` is an Open bug, a `low` is `Left open` (Stage 3 says what that means).
 
 **2b order, stated once:** carried unresolved findings (uncapped) → **Trial merge with main** → **Repo checklist** → **Generic checklist** → recorded review findings (uncapped) → discretionary adversarial tests (capped at 3 test files). The gates run before any discretionary work, so when the budget gets tight it is the discretionary tests that absorb the squeeze, never a gate.
 
@@ -240,15 +240,17 @@ Fill the **Carried Review Findings** table with one row per finding you collecte
 Fill the `**Head:**` line with the output of `git rev-parse HEAD`, taken after any commits you made during this verification. Stage 0 of the next run keys staleness on it — an unstamped or wrongly-stamped report forces a full re-verification.
 
 **Overall status** (first match wins):
-- **FAIL** — any criterion FAIL, or any bug in Bug Findings with status `Open`, whatever its severity (a reproduced carried review finding is such a bug). An Open bug beats INCONCLUSIVE.
+- **FAIL** — any criterion FAIL, or any bug in Bug Findings with status `Open` — every critical, high, or medium bug (a reproduced carried review finding is such a bug unless it is a `low`). An Open bug beats INCONCLUSIVE.
 - **INCONCLUSIVE** — no FAIL, at least one criterion INCONCLUSIVE.
 - **PASS** — all criteria PASS, no INCONCLUSIVE, and no Open bug.
 
-**Leaving Bug Findings — the citation rule.** You never fix code, so every bug you record is `Open`, and any Open bug fails the verify at any severity, low included. Something you judge not to be a defect (accepted by design, outside the CONTEXT scope) may move out of Bug Findings into Quality Notes or Gaps only with a citation: quote the CONTEXT.md `## Decisions` line or `## Scope` line that covers it, as `— cites CONTEXT.md: "{quoted line}"`. With no citation, it stays a bug and fails the verify.
+**Low bugs are `Left open`, not `Open`.** A reproduced `low` — carried from a reviewer or found by your own hunt — stays in Bug Findings with its evidence, at status `Left open`. It does not decide the verdict and gets no fix task. A fix round is reviewed like any phase, and a reviewer can always find one more edge case in the code it changed, so letting a `low` fail the verify loops forever: one feature failed four verifies with 7/7 criteria passing, the last two on nothing but test-only `low` findings. Recording it keeps it visible; the caller triages it. Do not dodge the rule by rating: a carried finding keeps the reviewer's severity or higher, and a defect a user or CI can actually hit is `medium` at least.
+
+**Leaving Bug Findings — the citation rule.** You never fix code, so every bug you record at medium or above is `Open`, and any Open bug fails the verify. Something you judge not to be a defect (accepted by design, outside the CONTEXT scope) may move out of Bug Findings into Quality Notes or Gaps only with a citation: quote the CONTEXT.md `## Decisions` line or `## Scope` line that covers it, as `— cites CONTEXT.md: "{quoted line}"`. With no citation, it stays a bug and fails the verify.
 
 Update CONTEXT.md frontmatter:
 - PASS or INCONCLUSIVE → `status: done` (INCONCLUSIVE gaps are recorded in VERIFY.md and the override gate lives in `/ship:finish`)
-- FAIL → `status: plan-verified`, and append Fix Tasks to PLAN.md: one per failing criterion and one per Open bug, whatever its severity. In a phased plan, wrap them in a new pending phase — `<phase id="fix-1" name="Verify fix round 1" status="pending">` (increment the id on repeat failures) — so `/ship:go` and `/ship:build` pick them up as the next pending phase; in a flat plan, append them as bare tasks.
+- FAIL → `status: plan-verified`, and append Fix Tasks to PLAN.md: one per failing criterion and one per Open bug — none for a `Left open` low. In a phased plan, wrap them in a new pending phase — `<phase id="fix-1" name="Verify fix round 1" status="pending">` (increment the id on repeat failures) — so `/ship:go` and `/ship:build` pick them up as the next pending phase; in a flat plan, append them as bare tasks.
 
 ## Output
 
