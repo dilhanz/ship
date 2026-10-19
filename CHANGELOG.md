@@ -1,5 +1,14 @@
 # Changelog
 
+## 5.28.0
+
+Minor release: a headless verify FAIL builds its own fix phase before reporting. In facility-compass, 11 of 14 unattended features in the ten days to 2026-10-19 ended at least one run `verify-fail`. Each one sat idle until the caller's next hourly poll re-ran `/ship:go` to build the fix phase the run had just written. That came to 17.6 hours of waiting against 27.3 hours of work.
+
+### Changed
+
+- **`/ship:go --headless` runs bounded fix rounds** (new section 6b in the go skill). After a FAIL it rebuilds the pending fix phase and verifies again, up to `--fix-rounds {n}` times (default 2, `0` restores the old behavior). Every round after the first runs only while the failing set shrinks: FAIL criteria, non-`low` open bugs, FAIL checklist rows and a FAIL trial merge. A stop, a null verdict, or a FAIL with no fix task ends the loop. `verify-fail` is reported only after that, and its `detail` names the rounds used and the failing-set trend. Interactive runs are unchanged.
+- `ship/docs/headless.md` §1, §3 and §8 now describe the fix rounds instead of "go never auto-retries".
+
 ## 5.27.0
 
 Minor release — a low-severity finding can no longer fail a verify forever. Since 5.26.0 every recorded reviewer finding reaches the verifier, and any reproduced one was an Open bug that failed the run at any severity. A fix round is reviewed like any phase, and a reviewer can always find one more edge case in code it just changed, so lows fed a loop with no exit: `externalized-strings-i18n-ready` (rpfs) failed four verifies with 7/7 criteria passing, the last two on nothing but test-only `low` findings, and was parked when the caller's retry cap ran out.
