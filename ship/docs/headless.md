@@ -12,6 +12,7 @@ The contract of record for `/ship:go --headless`. The go skill conforms to this 
 
 - **Explicit flag only.** There is no environment-variable detection (`SHIP_HEADLESS` does not exist). The caller controls its own invocation and passes the flag deliberately.
 - **`--headless` implies `--auto`.** A run with nobody present cannot answer "Ready to build?" either; one flag expresses the whole unattended contract.
+- **`--fix-rounds {n}`** (0–3, default 2 under `--headless`) bounds how many fix rounds go runs after a verify FAIL before reporting `verify-fail` — see §8.
 - **Any argument order.** `--headless`, `--auto`, and the feature name may appear in any order; flags are stripped before the feature name is resolved.
 - **`--auto` alone keeps its attended-but-hands-off meaning**: the build gate is skipped but NEEDS_INPUT is still asked interactively. Only `--headless` degrades the interactive points.
 
@@ -42,7 +43,7 @@ Every headless run terminates with exactly one of these 11 outcomes. Build-stop 
 | `stuck` | Plan loop convergence guard fired — a round's CRITICAL set repeated. | `planned` |
 | `unresolved` | Plan loop exhausted its 5 rounds without approval. | `planned` |
 | `blocked` | Plan loop reviewer returned BLOCKED. | `planned` |
-| `verify-fail` | Verifier verdict FAIL — fix tasks are already in PLAN.md; go never auto-retries. | `plan-verified` |
+| `verify-fail` | Verifier verdict FAIL after go's own fix rounds (§8) were spent or refused — fix tasks for the last FAIL are already in PLAN.md. | `plan-verified` |
 | `needs-context` | Builder stopped with NEEDS_CONTEXT — a task needs information not in the plan or codebase. | `building` |
 | `exhausted` | Builder rounds exhausted with no forward progress — tasks likely need to be smaller. | `building` |
 | `infrastructure` | A sustained transport outage — several consecutive agents died on connection errors (`ENOTFOUND`, `ECONNRESET`, a 5xx, an overload) having done no work. Distinct from `exhausted`: `exhausted` means the tasks need to be smaller, `infrastructure` means nothing is wrong with the plan and no work was lost. Fully resumable by re-running `/ship:go`. | `building` |
@@ -174,7 +175,7 @@ The caller (or a human) fills each `**Answer:**` line and re-invokes `/ship:go -
 ## 8. Never-headless actions
 
 - **`/ship:finish` is never invoked.** Routing on status `done` reports a `done` outcome instead of finishing; after a passing verify, the post-verify finish offer is suppressed and the run terminates as `done` with a `detail` noting `/ship:finish` is the manual next step. PR/merge is outward-facing and stays human-gated.
-- **Verify FAIL terminates as `verify-fail`.** Fix tasks are already in PLAN.md; go never auto-retries a FAIL — the caller owns the retry decision.
+- **Verify FAIL gets bounded fix rounds, then terminates as `verify-fail`.** Since 5.28.0 a headless FAIL does not end the run straight away. Go builds the fix phase it just wrote and verifies again, up to `--fix-rounds {n}` times (default **2**, `0` restores the old single-verify behavior). Every round after the first runs only while the failing set shrinks: FAIL criteria, non-`low` open bugs, FAIL checklist rows and a FAIL trial merge, counted. It stops early on a stop, a null verdict, or a FAIL that wrote no fix task. Only then does it terminate as `verify-fail`, and its `detail` carries `fix rounds {used}/{budget}, failing set {trend}` so the caller can count the rounds already spent. The retry decision after that stays the caller's. Each round's workflow keeps its own 2-hour wait ceiling (§2), so a caller's overall timeout should allow for `1 + n` build→verify spines.
 
 ## 9. Compatibility
 

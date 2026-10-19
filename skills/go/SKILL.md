@@ -3,7 +3,7 @@ name: go
 description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, TaskOutput, TaskStop, ToolSearch, Skill, AskUserQuestion
-argument-hint: "[feature-name] [--auto] [--headless] [--profile <quick|standard|thorough>]"
+argument-hint: "[feature-name] [--auto] [--headless] [--profile <quick|standard|thorough>] [--fix-rounds <n>]"
 ---
 
 Auto-run all remaining steps for the active feature. Round-1 planning and the finish step run inline here; the plan revision loop and the build→verify spine each run in a Workflow, so per-agent output never enters this conversation.
@@ -34,7 +34,7 @@ The structured result you then reconcile is unchanged — only *when* you receiv
 
 First parse flags out of `$ARGUMENTS`: strip `--auto` and `--headless` (recording whether each was present, in any argument order) *before* resolving the feature name, so `/ship:go my-feature --auto`, `/ship:go --auto my-feature`, `/ship:go --headless my-feature`, and `/ship:go --auto` all work. `--headless` sets `--auto`.
 
-Also strip `--profile {value}` in the same pass — both the `--profile quick` and `--profile=quick` forms, in any argument order — recording the value for section 1b. Whatever remains after all flags are stripped is the feature name.
+Also strip `--profile {value}` in the same pass — both the `--profile quick` and `--profile=quick` forms, in any argument order — recording the value for section 1b. Strip `--fix-rounds {n}` the same way (both forms), recording `n` for section 6b; it must be a whole number 0–3, and any other value is treated as absent. Whatever remains after all flags are stripped is the feature name.
 
 Feature state is injected at session start ("SHIP ACTIVE FEATURES"). If the remaining `$ARGUMENTS` names a feature, use it. Otherwise pick the one feature whose CONTEXT.md `status` is not `done`. If several are unfinished, ask which. If none exist, tell the user to run `/ship:start`. Under `--headless`, resolution must never ask: if several features are unfinished and none was named, or none exist, terminate with outcome `error` and a detail line naming the problem (per the headless termination rule in section 6).
 
@@ -198,6 +198,27 @@ From the returned result:
    - **Otherwise**, the verifier already set CONTEXT.md status (`done` on PASS/INCONCLUSIVE, `plan-verified` + fix tasks on FAIL). Report it.
 7. **If `verdict` is null and nothing stopped:** all phases built but the verifier produced no result (it crashed or was skipped — the workflow retries once, then degrades to null). Set CONTEXT.md `status: built`, check `git log` to confirm the build commits landed, and tell the user to run `/ship:verify {name}` manually.
 
+## 6b. Headless Fix Rounds
+
+Applies only under `--headless`, and only when the reconciled verdict is a FAIL (including a downgrade). Interactive runs skip this section: there a person reads the fix tasks before anything builds them.
+
+A headless FAIL used to end the run at once, leaving the fix phase it had just written for the caller to start in a new run. Nearly every unattended feature needed at least one such round, and each one cost the caller a full poll interval of idle time before the fix phase was even picked up. So a headless run builds its own fix phase and verifies again, a bounded number of times, before it reports `verify-fail`.
+
+**Budget.** `--fix-rounds {n}` when given (0 turns this off and restores the old single-verify behavior), otherwise **2**. A fix round is one more pass through sections 4–6 against the pending fix phase that section 6 (or the verifier) just appended.
+
+**The failing set** of a verdict is its count of: FAIL acceptance criteria, `verdict.bugs` entries whose severity is not `low`, FAIL `verdict.checklist` rows, and a FAIL `verdict.trial_merge`. Record it after every verify, starting with the first.
+
+**Before each fix round**, all of these must hold — otherwise go terminates as `verify-fail` exactly as before:
+
+1. A budget round remains.
+2. `stoppedAt` is not set and the verdict is not null.
+3. PLAN.md has at least one pending task. A FAIL that wrote no fix task has nothing for a round to build.
+4. The failing set is strictly smaller than at the previous verify. The first fix round is exempt, since there is no previous verify to compare against. A round that does not shrink the set is not converging, and the decision belongs to the caller.
+
+Then go back to section 4: rebuild the pending phase list (it is now the fix phase), set `status: building`, run section 5's workflow with the same args (and the same headless wait), and reconcile with section 6. Each workflow invocation has its own 2-hour wait ceiling.
+
+**Reporting.** Write the GO COMPLETE report once, after the last round, and in it add `Fix rounds: {used} of {budget} — failing set {first}→…→{last}` with the reason the loop stopped (passed, budget spent, not shrinking, no fix task, or stopped). The OUTCOME.json `detail` carries the same `fix rounds {used}/{budget}, failing set {trend}` clause, so a caller can count the rounds already spent without reading VERIFY.md. A run that passes on a fix round terminates as `done` as normal.
+
 ```
 ## GO COMPLETE
 
@@ -243,7 +264,7 @@ Under `--headless`, EVERY terminal path in this skill — the resolution/`done` 
 | Build `stoppedAt` CHECKPOINT | `checkpoint` |
 | Build `stoppedAt` INFRASTRUCTURE | `infrastructure` — CONTEXT.md stays `building`; the `detail` names the transport cause from `stoppedAt.build.reason` and the `/ship:go {name}` re-run. Never `exhausted`: nothing needs resizing |
 | Verdict PASS / INCONCLUSIVE | `done` |
-| Verdict FAIL, or a PASS/INCONCLUSIVE downgraded by the workflow (`downgraded_from` set) | `verify-fail` — fix tasks are already in PLAN.md (for a downgrade, the reconcile in section 6 wrote them); go never auto-retries, the caller decides |
+| Verdict FAIL, or a PASS/INCONCLUSIVE downgraded by the workflow (`downgraded_from` set) | `verify-fail` — fix tasks are already in PLAN.md (for a downgrade, the reconcile in section 6 wrote them). Terminal only once section 6b's fix rounds are spent or refused; the `detail` carries the rounds used and the failing-set trend |
 | Null verdict, nothing stopped | `error` — detail names the manual `/ship:verify {name}` follow-up |
 | Unrecoverable skill-level failure (workflow crash, unresolvable feature) | `error` |
 | Workflow still running at the 2-hour wait ceiling | `error` — call `TaskStop` on the Task ID first, then terminate |
