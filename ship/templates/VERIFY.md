@@ -64,6 +64,8 @@ One row per item, every row decided, none skipped. N/A needs a reason. A FAIL ro
 
 (If none: "No bugs found.")
 
+One row per defect class, not per call site: the Description starts with the pattern and the File cell lists every site (`a.cs:12, b.cs:40`), so the fix task covers them all in one round.
+
 Any row with Status `Open` makes the Overall Status FAIL. The verifier never fixes code, so every critical, high, or medium bug is Open. A low bug is `Left open`: recorded with its evidence, but it does not decide the verdict and gets no fix task. Citation rule: something judged not to be a defect (accepted by design, outside scope) moves to Quality Notes or Gaps only with a citation quoting the CONTEXT.md `## Decisions` or `## Scope` line that covers it; an uncited item stays here and fails the verify.
 
 ### Anti-Pattern Scan

@@ -227,8 +227,8 @@ describe('depends is enforced on the build path', () => {
 });
 
 describe('salvage events are reported, not just performed', () => {
-  it('the workflow returns them as a fifth field', () => {
-    assert.match(wf(), /return \{ feature, stoppedAt, completed, verdict, salvageEvents \}/,
+  it('the workflow returns them as a result field', () => {
+    assert.match(wf(), /return \{ feature, stoppedAt, completed, verdict, salvageEvents, sync \}/,
       'the events must reach the go skill through the workflow result');
     assert.match(wf(), /salvageEvents\.push\(\{ agent: labelDisplay, record: salvageRecord, outcome \}\)/,
       'safeAgent must record one event per salvage retry, naming the agent and the record');
