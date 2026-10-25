@@ -8,7 +8,8 @@ export const meta = {
 }
 
 // args: { feature: string, phases: [{ id, name }], keyFileContext?: string,
-//         profile?: string, reviewGate?: boolean, verifyDepth?: string, maxBuildRounds?: number }
+//         profile?: string, reviewGate?: boolean, verifyDepth?: string, maxBuildRounds?: number,
+//         syncMain?: boolean }
 // `phases` is the list of pending phases the go skill extracted from PLAN.md, in order.
 // A flat (unphased) plan is passed as a single pseudo-phase { id: 'all', name: 'all' }.
 // The policy knobs arrive pre-resolved from the go skill's profile resolution;
@@ -43,6 +44,25 @@ const reviewGate = !(parsedArgs && (parsedArgs.reviewGate === false || parsedArg
 
 // 'criteria-only' narrows Stage 2 of verification; anything else is full depth.
 const verifyDepth = (parsedArgs && parsedArgs.verifyDepth) === 'criteria-only' ? 'criteria-only' : 'full'
+
+// Explicit true only — merge main into the branch before verifying. A trial
+// merge that conflicts fails the verify, and on rpfs 7 of the FAILs in two
+// weeks were nothing but rows both sides appended to the same shared file;
+// each one cost a fix round and a full re-verify to resolve what a sync step
+// resolves for a few thousand tokens. The go skill always passes it; absent
+// means the previous behavior, like every other knob here.
+const syncMain = !!(parsedArgs && (parsedArgs.syncMain === true || parsedArgs.syncMain === 'true'))
+
+// What gates a phase. A critical or high finding always does. A medium does
+// when the reviewer reproduced it with a command: the verifier reproduced 195
+// carried findings across 64 rpfs features, and every reproduced medium failed
+// the verify, so it went through a fix round and a full re-verify instead of
+// the in-phase fix round that costs a tenth of that while the builder still has
+// the context. An unreproduced medium keeps travelling to the verifier as a
+// located target — about 40% of carried findings did not reproduce, and gating
+// on those would spend fix rounds on non-bugs.
+const isBlocking = (f) => !!f && (f.severity === 'critical' || f.severity === 'high' ||
+  (f.severity === 'medium' && f.reproduced === true))
 
 const BUILD_SCHEMA = {
   type: 'object',
@@ -107,6 +127,14 @@ const REVIEW_SCHEMA = {
           // Re-reviews only: true marks a problem the fix round introduced, so
           // the reconcile records it as new rather than as a leftover.
           new_issue: { type: 'boolean' },
+          // True only when the reviewer ran a command that demonstrated the
+          // defect at HEAD. A reproduced medium gates the phase (isBlocking).
+          reproduced: { type: 'boolean' },
+          // The defect class, and every place in the diff it occurs. One
+          // finding per pattern, so a fix covers the class instead of the
+          // one call site the reviewer happened to read first.
+          pattern: { type: 'string' },
+          sites: { type: 'array', items: { type: 'string' } },
         },
       },
     },
@@ -175,6 +203,10 @@ const VERIFY_SCHEMA = {
           description: { type: 'string' },
           file: { type: 'string' },
           evidence: { type: 'string' },
+          // See REVIEW_SCHEMA findings — one bug per defect class, every
+          // instance listed, so the fix task sweeps them all in one round.
+          pattern: { type: 'string' },
+          sites: { type: 'array', items: { type: 'string' } },
         },
       },
     },
@@ -209,6 +241,19 @@ const VERIFY_SCHEMA = {
     },
     // See REVIEW_SCHEMA.salvaged — same channel, same reason.
     salvaged: { enum: ['adopted', 'rejected'] },
+  },
+}
+
+const SYNC_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['outcome'],
+  properties: {
+    outcome: { enum: ['up-to-date', 'merged', 'conflict-aborted', 'not-runnable'] },
+    target: { type: ['string', 'null'] },
+    commit: { type: ['string', 'null'] },
+    conflicted_files: { type: 'array', items: { type: 'string' } },
+    notes: { type: ['string', 'null'] },
   },
 }
 
@@ -413,29 +458,62 @@ ${rangeInstruction(diffRange(commits))}
 
 Re-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md.`
 
+// One finding line, shared by every prompt that hands findings on. The pattern
+// and sites travel with it: a fix that sees only the first call site fixes only
+// that one, and the next verify finds the second.
+const findingTags = (f) => [f.severity, f.reproduced === true ? 'reproduced' : null].filter(Boolean).join(', ')
+const findingExtras = (f) => `${f.pattern ? ` Pattern: ${f.pattern}.` : ''}${Array.isArray(f.sites) && f.sites.length ? ` Sites: ${f.sites.join(', ')}.` : ''}`
+const findingLine = (f) => `[${findingTags(f)}] ${f.file} — ${f.description}${findingExtras(f)}`
+
+// The sweep rule, stated once for the fix builder. On rpfs, 16 verify FAILs in
+// two weeks were the same defect at a call site the previous fix had not
+// touched — workorder-photos-closure-label fixed last-writer-wins saves one
+// method per round, through five verifies.
+const sweepInstruction = `Fix the defect class, not the instance. Before you change anything for a finding, search this feature's changed files (\`git diff --name-only $(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master)..HEAD\`) for every other occurrence of the same pattern — the listed sites are where the reviewer found it, not a promise there are no others. Fix every occurrence, and cover each one with a test (one parametrized test is fine). Name every site you fixed in the commit body. An occurrence outside the changed files is pre-existing: leave it, and record it in your concerns.`
+
 const fixPrompt = (ph, findings) => `Fix review findings for feature: ${feature}
 ${phaseLine(ph)}
-The phase reviewer found critical/high issues. Fix ONLY these — do not refactor beyond them:
+The phase reviewer found blocking issues — critical/high, or a medium it reproduced with a command. Fix ONLY these — do not refactor beyond them:
 
-${findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.file} — ${f.description}${f.recommendation ? ` (fix: ${f.recommendation})` : ''}`).join('\n')}
+${findings.map((f, i) => `${i + 1}. ${findingLine(f)}${f.recommendation ? ` (fix: ${f.recommendation})` : ''}`).join('\n')}
+
+${sweepInstruction}
 
 For each fix: implement it, re-run the affected task's verify command, and commit with "fix(${feature}): {short description}". Emit an updated build_result.`
 
 // Each agent() call is a fresh agent — the re-reviewer has no memory of the
 // original review, so the findings must be embedded in the prompt.
 const rereviewPrompt = (ph, findings, fixCommits) => `Re-review feature: ${feature}
-${phaseLine(ph)}A previous review found these critical/high issues, and a builder has applied fixes${fixCommits.length ? ` (fix commits: ${fixCommits.join(', ')})` : ''}:
+${phaseLine(ph)}A previous review found these blocking issues, and a builder has applied fixes${fixCommits.length ? ` (fix commits: ${fixCommits.join(', ')})` : ''}:
 
-${findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.file} — ${f.description}`).join('\n')}
+${findings.map((f, i) => `${i + 1}. ${findingLine(f)}`).join('\n')}
 
 ${rangeInstruction(diffRange(fixCommits))}
 
 You have no memory of that review — verify from the code. Two jobs, per the Re-Reviews section of your instructions:
 
-1. Re-run the affected verify commands and confirm from the code whether each finding above is actually resolved. Report every one that is not, at its original severity.
+1. Re-run the affected verify commands and confirm from the code whether each finding above is actually resolved — at every site, not just the first. Search the phase's changed files for the finding's pattern: an occurrence the fix missed means the finding is not resolved. Report every one that is not, at its original severity, with the missed sites in \`sites\`. A medium you report as unresolved keeps \`"reproduced": true\` only if you reproduced it again.
 2. Review the fix commits as a diff in their own right and report any NEW critical/high problem the fixes introduced, marked \`"new_issue": true\`.
 
 Do not re-review the rest of the phase.`
+
+// Sync main into the branch before verifying, so the verifier's trial merge is
+// a check that passes rather than the cheapest way to fail. A builder does it:
+// the verifier must never touch the branch, and the reviewer is read-only.
+const syncPrompt = `Sync feature branch with main before verification: ${feature}
+
+You are not executing PLAN.md tasks. Do NOT edit PLAN.md or CONTEXT.md, do not run the task loop, never rebase, never push, never force anything. Your only job is to bring main into this branch with a merge commit, or to leave the branch exactly as it was.
+
+1. **Preconditions.** If \`git rev-parse -q --verify MERGE_HEAD\` resolves, a previous sync died mid-merge: run \`git merge --abort\` first and carry on from a clean branch. Then run \`git status --porcelain\` and \`git rev-parse --abbrev-ref HEAD\`. If the tree is dirty, HEAD is detached, or the current branch IS the default branch (main/master), report \`not-runnable\` with the reason and stop — do not stash, do not switch branches. Also stop with \`not-runnable\` when \`.planning/features/${feature}/.review-scratch/verify.json\` exists: a verification of this head is part-way done, and moving HEAD would void the record its salvage resumes from.
+2. **Target.** Fetch and pick the target exactly as the verifier's trial merge does:
+   \`git remote get-url origin >/dev/null 2>&1 && git fetch -q origin main || true\`, then the first of \`origin/main\`, \`main\`, \`master\` that resolves. None → \`not-runnable\`.
+3. **Already contained?** \`git merge-base --is-ancestor {target} HEAD\` exiting 0 → report \`up-to-date\` and stop. Nothing else to do.
+4. **Merge.** \`git merge --no-edit {target}\`.
+   - **Clean** → report \`merged\` with the merge commit's short hash. Do not run the build: the verifier's gates run next, against this exact head.
+   - **Conflicts** → resolve ONLY mechanical ones: both sides appended separate rows, entries, imports, registrations, footnotes or changelog lines at the same spot, and the honest resolution keeps both, in a sensible order. If ANY conflicted hunk needs you to choose between two behaviours, two wordings of the same row, or to understand what either side intended, run \`git merge --abort\` and report \`conflict-aborted\` with every conflicted file — the verifier's trial merge will report it, and a wrong resolution here would land silently.
+   - After resolving mechanical conflicts, run the \`Build:\` line of \`.planning/verify-checklist.md\` (else the project's build/test command). Red → \`git merge --abort\` and report \`conflict-aborted\` with the failing output tail in \`notes\`. Green → stage each resolved file by name (never a bulk add) and commit the merge with \`git commit --no-edit\` in the same command, then report \`merged\` with the hash, listing the files you resolved in \`conflicted_files\`.
+
+Your structured result is NOT a build_result. Call StructuredOutput with exactly these fields and nothing else: \`outcome\`, \`target\`, \`commit\` (or null), \`conflicted_files\`, \`notes\`.`
 
 // Salvage retry: a lost structured result is a transport failure, not proof the
 // review never happened. The previous reviewer wrote its findings to a scratch
@@ -734,10 +812,8 @@ for (let i = 0; i < phases.length; i++) {
   let rereview = null
   let fixSkipped = null
   // Trust the findings over the verdict: an APPROVED review that still lists
-  // critical/high findings is contradictory and must not skip the fix round.
-  const blocking = review
-    ? review.findings.filter((f) => f.severity === 'critical' || f.severity === 'high')
-    : []
+  // a blocking finding is contradictory and must not skip the fix round.
+  const blocking = review ? review.findings.filter(isBlocking) : []
 
   if (blocking.length) {
     fixRound = await safeAgent(fixPrompt(ph, blocking), {
@@ -773,9 +849,7 @@ for (let i = 0; i < phases.length; i++) {
   const rereviewVerifyRuns = (rereview && rereview.verify_runs) || []
   const rereviewFilesReviewed = (rereview && rereview.files_reviewed) || []
   const rereviewUnsubstantiated = !!rereview && !rereviewVerifyRuns.length && !rereviewFilesReviewed.length
-  const surviving = rereview
-    ? rereview.findings.filter((f) => f.severity === 'critical' || f.severity === 'high')
-    : []
+  const surviving = rereview ? rereview.findings.filter(isBlocking) : []
   const unresolved = blocking.length && (!rereview || rereviewUnsubstantiated) ? blocking : surviving
   // Subset of `unresolved`, for labelling only: problems the fix round created
   // rather than leftovers it failed to clear.
@@ -792,10 +866,11 @@ for (let i = 0; i < phases.length; i++) {
   // reviewed phases they outnumbered critical+high two to one, and the last
   // three verifiers that pulled them in on their own initiative reproduced
   // every medium as a real bug. They travel to the verifier as located targets.
-  const isBlockingSeverity = (f) => f.severity === 'critical' || f.severity === 'high'
+  // A reproduced medium is not among them: it gated the phase (isBlocking), so
+  // it is either fixed or carried as unresolved.
   const recorded = [
-    ...(review ? review.findings.filter((f) => !isBlockingSeverity(f)) : []),
-    ...(rereview && !rereviewUnsubstantiated ? rereview.findings.filter((f) => !isBlockingSeverity(f)) : []),
+    ...(review ? review.findings.filter((f) => !isBlocking(f)) : []),
+    ...(rereview && !rereviewUnsubstantiated ? rereview.findings.filter((f) => !isBlocking(f)) : []),
   ]
 
   // Everything here is a way the gate can report safety it does not have, so
@@ -810,10 +885,10 @@ for (let i = 0; i < phases.length; i++) {
     reviewConcerns.push(`phase ${label}: ${notRunnable} of ${verifyRuns.length} verify command(s) could not be re-run in this environment`)
   }
   if (fixSkipped) {
-    reviewConcerns.push(`phase ${label} fix builder ${fixSkipped} — ${blocking.length} critical/high finding(s) left unresolved, no re-review ran`)
+    reviewConcerns.push(`phase ${label} fix builder ${fixSkipped} — ${blocking.length} blocking finding(s) left unresolved, no re-review ran`)
   }
   if (rereviewUnsubstantiated) {
-    reviewConcerns.push(`phase ${label} re-review re-ran no verify commands and reviewed no files — its ${rereview.status} verdict confirms nothing, ${blocking.length} critical/high finding(s) kept unresolved`)
+    reviewConcerns.push(`phase ${label} re-review re-ran no verify commands and reviewed no files — its ${rereview.status} verdict confirms nothing, ${blocking.length} blocking finding(s) kept unresolved`)
   }
 
   completed.push({
@@ -837,7 +912,7 @@ for (let i = 0; i < phases.length; i++) {
   })
 }
 
-// A phase is marked done even when its critical/high findings survive the one
+// A phase is marked done even when its blocking findings survive the one
 // fix round, on the stated grounds that the verifier is the backstop. That only
 // holds if the verifier is told what to catch. It cannot read this run's
 // REVIEW.md — the go skill persists that after this workflow returns — so the
@@ -846,7 +921,7 @@ for (let i = 0; i < phases.length; i++) {
 const carried = completed.flatMap((p) =>
   (p.unresolved || []).map((f) => {
     const origin = (p.introducedByFix || []).includes(f) ? ' (introduced by the fix round)' : ''
-    return `- [${f.severity}] phase ${p.phaseId} — ${f.file}: ${f.description}${origin}`
+    return `- [${findingTags(f)}] phase ${p.phaseId} — ${f.file}: ${f.description}${findingExtras(f)}${origin}`
   }))
 
 const unresolvedBlock = carried.length
@@ -854,7 +929,7 @@ const unresolvedBlock = carried.length
 
 ## Unresolved Review Findings — mandatory targets
 
-The per-phase review gate found these critical/high defects and the single fix round did not clear them. They are not speculation: a reviewer read the diff and evidenced each one. Target every finding below directly in Stage 2b — write a test or attempt a reproduction — and record the outcome for each in VERIFY.md, including the ones you cannot reproduce. A phase carrying unresolved findings is still marked done, so "the phase is done" is not evidence that any of these were fixed.
+The per-phase review gate found these blocking defects — critical/high, or a medium the reviewer reproduced — and the single fix round did not clear them. They are not speculation: a reviewer read the diff and evidenced each one. Target every finding below directly in Stage 2b — write a test or attempt a reproduction — and record the outcome for each in VERIFY.md, including the ones you cannot reproduce. A phase carrying unresolved findings is still marked done, so "the phase is done" is not evidence that any of these were fixed.
 
 ${carried.join('\n')}`
   : ''
@@ -865,7 +940,7 @@ ${carried.join('\n')}`
 // find a medium that then turned out to be a real bug is how this block earned
 // its place.
 const recordedCarried = completed.flatMap((p) =>
-  (p.recorded || []).map((f) => `- [${f.severity}] phase ${p.phaseId} — ${f.file}: ${f.description}`))
+  (p.recorded || []).map((f) => `- [${findingTags(f)}] phase ${p.phaseId} — ${f.file}: ${f.description}${findingExtras(f)}`))
 
 const recordedBlock = recordedCarried.length
   ? `
@@ -890,10 +965,26 @@ const depthBlock = verifyDepth === 'criteria-only'
 This run's profile${profileName ? ` (${profileName})` : ''} narrows Stage 2: skip test-framework discovery (2a), the discretionary risk-category adversarial tests, and the anti-pattern scan (2c). Stage 1 (every acceptance criterion, real commands) and Stage 3 (VERIFY.md + verdict) run in full, and the verdict rules are unchanged. The trial merge with main and the repo checklist from .planning/verify-checklist.md still run at this depth; only the generic checklist items are skipped. EXCEPTION: any findings under 'Unresolved Review Findings' above remain mandatory Stage 2b targets at this depth — narrowing never waives them. Record the narrowing in VERIFY.md's Stage 2 section per your instructions.`
   : ''
 
+// The verifier sweeps each bug for its siblings, so one fix task covers the
+// class. Stated in the prompt as well as the agent file because the go path is
+// where the repeated rounds happened.
+const sweepBlock = `
+
+## One bug per defect class
+
+For every bug you record at medium or above, name its defect class in \`pattern\` and search the feature's changed files for every other occurrence before you write the fix task. List each occurrence in \`sites\` (file:line). One bug — and one fix task — per pattern, covering every site. A fix round that repairs one call site of a class and leaves the rest for the next verify is the most expensive loop this workflow has.`
+
 let verdict = null
+let sync = null
 if (!stoppedAt) {
   phase('Verify')
-  const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}${depthBlock}`
+  if (syncMain) {
+    sync = await safeAgent(syncPrompt, {
+      agentType: 'ship:ship-builder', schema: SYNC_SCHEMA, label: 'sync:main', phase: 'Verify',
+    })
+    log(`sync:main → ${sync ? sync.outcome : 'no result'}${sync && sync.commit ? ` (${sync.commit})` : ''}`)
+  }
+  const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}${depthBlock}${sweepBlock}`
   verdict = await safeAgent(verifyFull, {
     agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
     retryPrompt: salvageVerifyPrompt(verifyFull), salvageRecord: '.review-scratch/verify.json',
@@ -972,4 +1063,4 @@ if (!stoppedAt) {
   }
 }
 
-return { feature, stoppedAt, completed, verdict, salvageEvents }
+return { feature, stoppedAt, completed, verdict, salvageEvents, sync }

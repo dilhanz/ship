@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.29.0
+
+Minor release: fewer verify-fail → fix-round → re-verify loops, without dropping a check. Over two weeks of rpfs go runs (32 features, 89 verifier runs), re-verifications cost more than first verifications — 58 re-verify runs against 31 — and fix builders, fix reviews and re-verifies together came to about a fifth of all Ship output. Most of those rounds had a cause the spine could prevent: a medium the phase reviewer had already reproduced, a fix that repaired one call site of a defect class per round, a trial merge that conflicted on rows both sides appended to a shared file, and checklist items the builder never saw.
+
+### Changed
+
+- **A reproduced medium gates the phase.** A review finding may carry `reproduced: true` when the reviewer demonstrated it with a command, run outside the checkout. Such a medium triggers the in-phase fix round and re-review like a critical/high finding (`isBlocking` in `go.workflow.js`; the manual build skill uses the same set). An unreproduced medium is still handed to the verifier as a located target, since about 40% of carried findings did not reproduce. The reviewer spends at most two or three turns per reproduction and never sets the flag on reasoning alone.
+- **Fixes cover the defect class.** Review findings and verifier bugs carry an optional `pattern` and `sites`, with one finding per pattern. The fix prompt, the build skill's fix round and every verify fix task list every site, and tell the builder to sweep the feature's changed files for further occurrences, each with a test. The re-review and the next verify re-run the pattern search. One rpfs feature had fixed last-writer-wins saves one method per round through five verifies.
+- **The builder and the reviewer read `.planning/verify-checklist.md`.** The builder self-checks each task against the bullets it touches, plus the three generic items, before committing. It fixes them inside the task's files and records anything outside as a concern. The reviewer checks the phase diff against the same list. On rpfs, date-rollover tests and docs/manual drift caused 24 failed verifies that the checklist already named.
+- REVIEW.md keeps the `[{severity}]` tag unchanged and appends ` (reproduced)` and ` — sites: …` to the description.
+
+### Added
+
+- **`sync:main` before verify.** With `syncMain: true` (the go skill always passes it), one builder merges main into the feature branch between the last phase and the verifier. It resolves only mechanical conflicts, runs the `Build:` line after resolving any, and aborts on anything that needs a judgement. It never rebases, pushes, runs on the default branch, or moves HEAD while a verification's scratch record exists. The workflow returns its result as `sync`, and GO COMPLETE prints it. Seven rpfs verify FAILs in two weeks were trial-merge conflicts, and each one cost a fix round and a full re-verify. An absent `syncMain` is off.
+- `tests/fix-loop-reduction.test.js` pins all of the above.
+
 ## 5.28.0
 
 Minor release: a headless verify FAIL builds its own fix phase before reporting. In facility-compass, 11 of 14 unattended features in the ten days to 2026-10-19 ended at least one run `verify-fail`. Each one sat idle until the caller's next hourly poll re-ran `/ship:go` to build the fix phase the run had just written. That came to 17.6 hours of waiting against 27.3 hours of work.

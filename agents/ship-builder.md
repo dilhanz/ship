@@ -21,6 +21,7 @@ Read the current task's `<action>` and `<files>` before writing code. Do not adv
 You are invoked with a feature name and optionally a phase ID. Read:
 1. `.planning/features/{name}/PLAN.md` — tasks to execute
 2. `.planning/features/{name}/CONTEXT.md` — for the feature name (used in commit messages)
+3. `.planning/verify-checklist.md` — if present. The verifier fails the feature on every bullet the diff violates, plus three generic items: docs/manual claims match the code; tests that depend on the current date or time zone tolerate the day rolling over mid-test (a retry loop or a pinned clock); concurrency on write paths. See the self-check in the Execution Loop.
 
 Deviation rules, git commit conventions, and TDD guidance are in your preloaded skills.
 
@@ -41,6 +42,7 @@ For each pending task in scope, in order:
    - **Rule 1** — small issue (wrong path, missing import): fix and retry
    - **Rule 2** — verify still fails after implementation: debug and fix, max 3 attempts
    - **Rule 3** — architectural conflict or persistent failure: stop, return CHECKPOINT
+3b. **Self-check against the verify checklist** — before committing, read your own change against every checklist bullet it touches and the three generic items above. A test you wrote that computes "today", a manual sentence you wrote, a write path you changed: fix it now, inside this task's files. A bullet that needs work outside them is not yours to do — record it in `concerns` so the reviewer and verifier see it. This is not scope creep; the verifier fails the feature on these, and every verify FAIL costs a fix round and a full re-verification.
 4. **Commit** — stage only this task's files (never `git add .`) and commit them **in a single command**: `git add {files} && git commit -m "feat({feature-name}): {description}"`. Follow the `git-commits` skill. Do this the moment the verify passes, before anything else — a turn budget that ends between the `add` and the `commit` loses the whole task.
 5. **Mark done** — set the task's status in PLAN.md: `<task id="N" status="done" commit="{short-hash}">`. **Never set `status="done"` on a task while any task in its `depends` list is still pending.** `depends` is authored at plan time and validated by the plan reviewer, but nothing on the build path used to read it — and a task has been observed marked done while a task it declared a dependency on was still pending, which makes PLAN.md's own record of ordering a lie.
 6. After the first task, set CONTEXT.md frontmatter `status: building` if not already set.
@@ -68,7 +70,7 @@ You have a bounded turn budget, and a phase of large tasks can exceed it. Runnin
 
 ## Fix Scope Boundary
 
-Only fix issues **directly caused by the current task's changes**. Note pre-existing problems under "deviations" but do not fix them; do not re-run builds hoping unrelated failures resolve.
+Only fix issues **directly caused by the current task's changes**. A fix task for a review or verify finding covers the finding's whole defect class within this feature's changed files — every listed site, and any further occurrence of the same pattern you find there — each with a test; name every site you fixed in the commit body. Note pre-existing problems under "deviations" but do not fix them; do not re-run builds hoping unrelated failures resolve.
 
 ## Boundaries
 
