@@ -169,6 +169,8 @@ Never resolve one of these by inspection alone. A finding you cannot reproduce w
 
 **Recorded review findings come after the gates and before any discretionary test.** The reviewers' medium and low findings never gated the build, but each one is already located in the diff, which makes them cheaper than any adversarial test you could invent — and in practice they have been real: a steer typed for one task posting to another's live agent, a pane that stops following its tail, an eval case that hard-fails a correct answer, every one a reviewer's `medium`. Give each the same reproduction attempt and the same three outcomes, in the same table. A reproduced one goes into Bug Findings at the reviewer's severity: a `medium` is an Open bug, a `low` is `Left open` (Stage 3 says what that means).
 
+**One bug per defect class.** For every bug at medium or above — carried or your own — name its class in `pattern` and search the feature's changed files (the `$BASE..HEAD` list above) for every other occurrence before you record it. List each occurrence in `sites` (`file:line`), the first one also in File. One bug, and one fix task, per pattern. When this verification follows a fix round, re-run the pattern search for each bug the previous round fixed: an occurrence it missed is an Open bug at the original severity, with the missed sites listed. Fixing a class one call site per round is the most expensive loop Ship has — one rpfs feature fixed last-writer-wins saves one method at a time through five verifies, each a full re-verification.
+
 **2b order, stated once:** carried unresolved findings (uncapped) → **Trial merge with main** → **Repo checklist** → **Generic checklist** → recorded review findings (uncapped) → discretionary adversarial tests (capped at 3 test files). The gates run before any discretionary work, so when the budget gets tight it is the discretionary tests that absorb the squeeze, never a gate.
 
 #### Trial merge with main
@@ -250,7 +252,7 @@ Fill the `**Head:**` line with the output of `git rev-parse HEAD`, taken after a
 
 Update CONTEXT.md frontmatter:
 - PASS or INCONCLUSIVE → `status: done` (INCONCLUSIVE gaps are recorded in VERIFY.md and the override gate lives in `/ship:finish`)
-- FAIL → `status: plan-verified`, and append Fix Tasks to PLAN.md: one per failing criterion and one per Open bug — none for a `Left open` low. In a phased plan, wrap them in a new pending phase — `<phase id="fix-1" name="Verify fix round 1" status="pending">` (increment the id on repeat failures) — so `/ship:go` and `/ship:build` pick them up as the next pending phase; in a flat plan, append them as bare tasks.
+- FAIL → `status: plan-verified`, and append Fix Tasks to PLAN.md: one per failing criterion and one per Open bug — none for a `Left open` low. A bug's fix task names **every** site in its `sites`: each file in `<files>`, each `file:line` in `<action>`, and a `<verify>` that runs a test covering all of them. In a phased plan, wrap them in a new pending phase — `<phase id="fix-1" name="Verify fix round 1" status="pending">` (increment the id on repeat failures) — so `/ship:go` and `/ship:build` pick them up as the next pending phase; in a flat plan, append them as bare tasks.
 
 ## Output
 
@@ -274,7 +276,7 @@ After writing VERIFY.md, emit a fenced block tagged `verify_result` as your fina
   "tests_passed": {number},
   "tests_failed": {number},
   "bugs": [
-    {"severity": "critical"|"high"|"medium"|"low", "category": "{category}", "description": "{what}", "file": "{file:line}", "evidence": "{test or analysis}"}
+    {"severity": "critical"|"high"|"medium"|"low", "category": "{category}", "description": "{what}", "file": "{file:line}", "evidence": "{test or analysis}", "pattern": "{defect class}", "sites": ["{file:line}", "..."]}
   ],
   "anti_patterns": {number},
   "checklist": [

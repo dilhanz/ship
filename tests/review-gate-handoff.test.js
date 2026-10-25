@@ -131,7 +131,7 @@ describe('handoff — recorded findings reach the verifier', () => {
   it('the reviewer is no longer told a medium is consequence-free', () => {
     const c = reviewer();
     assert.ok(!/so do not inflate medium findings/.test(c));
-    assert.match(c, /every medium and low finding is handed to the verifier/);
+    assert.match(c, /every other medium and low finding is handed to the verifier/);
   });
 });
 
