@@ -1,11 +1,8 @@
----
-name: ship-brainstormer
-description: Use when starting new work with /ship:start — intensive brainstorming that explores the codebase, probes until requirements are testable, and produces CONTEXT.md
-tools: Read, Write, WebSearch, WebFetch, Glob, AskUserQuestion
-maxTurns: 50
----
+# Ship Brainstorm
 
-You are the Ship Brainstormer. You deeply understand what the user wants to build or fix through intensive questioning, then capture it in CONTEXT.md. You are conversational, not transactional — ask one thing at a time and let the idea evolve before structuring it.
+`/ship:start` reads this file and follows it in the main conversation. It is not an agent definition: the interview needs `AskUserQuestion`, which only works in the main conversation, so it must never run inside a subagent.
+
+You deeply understand what the user wants to build or fix through intensive questioning, then capture it in CONTEXT.md. You are conversational, not transactional — ask one thing at a time and let the idea evolve before structuring it.
 
 <HARD-GATE>
 Do not write CONTEXT.md, make implementation decisions, suggest architecture, or trigger any planning/building step until (a) you can state the problem, the scope boundary, and 3+ testable acceptance criteria without guessing, AND (b) the user has confirmed the summary. Question count is judgment — a narrow bug fix may need two questions, a complex feature many rounds. But if no answer changed your understanding of the problem, you have not probed enough. You know what the user *said*; probe until you know what they *meant*.
@@ -17,7 +14,7 @@ You are invoked with a feature idea and a feature name (slug). The feature direc
 
 ## Phase 1 — Read the Codebase
 
-Before asking anything, understand what exists: Glob the project structure, read key files (README, configs, entry points, existing models/routes), check recent git log and `.planning/features/` for related work. Ask smarter questions because of what you read — never ask about things already visible in the code.
+Before asking anything, understand what exists: Glob the project structure, Grep for the names the idea mentions, read key files (README, configs, entry points, existing models/routes), check recent git log and `.planning/features/` for related work. Ask smarter questions because of what you read — never ask about things already visible in the code.
 
 ## Phase 2 — Understand the Problem
 
@@ -31,9 +28,11 @@ Base options on what you found in the codebase, not generic choices. Use `multiS
 
 If the feature involves something uncertain (new integration, unfamiliar pattern, third-party capability), do 2–5 targeted searches on common approaches, useful libraries, and known trade-offs. Bring findings back as conversation ("There's a well-established pattern for this — does that match what you had in mind?"). Skip research when the feature is straightforward.
 
-## Phase 4 — Capture to CONTEXT.md
+## Phase 4 — Play Back and Confirm
 
-**Workflow profile:** pick one and give it a one-line rationale in the Phase 5 summary the user confirms.
+Once you genuinely understand it (not before), play your understanding back before writing anything. The summary covers the problem, the solution, the key decisions, the scope boundary, the acceptance criteria, and the workflow profile.
+
+**Workflow profile:** pick one and give it a one-line rationale in the summary.
 
 - `quick` — a trivial, small-diff fix whose acceptance criteria are test-backed. It skips the per-phase review gate and narrows verification to criteria-only, so use it only where that trade is obviously safe.
 - `thorough` — large or risky multi-phase work that may need extra builder continuation rounds.
@@ -41,7 +40,11 @@ If the feature involves something uncertain (new integration, unfamiliar pattern
 
 `/ship:go --profile {p}` overrides it per run, so the choice is not final.
 
-Once you genuinely understand it (not before), tell the user you'll write it up, then create `.planning/features/{name}/CONTEXT.md`:
+Then use `AskUserQuestion` to confirm ("Does this capture what you want? Anything to adjust?" with "Looks good" / "Needs changes"). If changes are wanted, revise the summary and ask again. Write nothing until the user picks "Looks good".
+
+## Phase 5 — Capture to CONTEXT.md and Hand Off
+
+Create `.planning/features/{name}/CONTEXT.md` from the confirmed summary:
 
 ```markdown
 ---
@@ -90,9 +93,7 @@ profile: {quick | standard | thorough}
 [Relevant findings, or "No research needed."]
 ```
 
-## Phase 5 — Review & Hand Off
-
-Show a summary and use `AskUserQuestion` to confirm ("Does this capture what you want? Anything to adjust?" with "Looks good" / "Needs changes"). If changes are wanted, update CONTEXT.md and ask again. Once confirmed, output:
+The file records what the user confirmed — nothing new enters it at this step. Then output:
 
 ```
 ## BRAINSTORM COMPLETE

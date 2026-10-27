@@ -13,7 +13,7 @@ skills/git-commits/        Reference skill preloaded into builder + verifier age
 skills/tdd/                Reference skill preloaded into builder agent (test-driven development)
 ship/workflows/go.workflow.js   Workflow-engine script for the /ship:go build→verify spine
 ship/workflows/plan.workflow.js Workflow-engine script for the /ship:go plan revision loop
-agents/*.md                6 specialized agents (brainstormer, plan-reviewer, replanner, builder, reviewer, verifier)
+agents/*.md                5 specialized agents (plan-reviewer, replanner, builder, reviewer, verifier)
 ```
 
 **Skills** define frontmatter fields like `model` and `allowed-tools`. Some skills delegate to agents via the Agent tool; others run inline with full instructions embedded in the skill body.
@@ -21,7 +21,7 @@ agents/*.md                6 specialized agents (brainstormer, plan-reviewer, re
 **Workflow:** `/ship:go` runs two non-interactive spines through the Claude Code Workflow engine — the plan revision loop (`ship/workflows/plan.workflow.js`) and the build→verify spine (`ship/workflows/go.workflow.js`) — where schema-validated `agent()` calls keep per-agent output out of the main conversation context. The interactive steps (round-1 planning, the plan-loop `NEEDS_INPUT` questions, the build-approval gate, finish) run inline in the `go` skill.
 
 **Agents** define `name`, `description`, `tools`, `model`, `maxTurns`, `memory`, and `skills` in frontmatter. Each agent has a single responsibility:
-- `ship-brainstormer` — probes until requirements are testable and confirmed → CONTEXT.md
+- (the brainstorm is not an agent — `skills/start/references/brainstorm.md` runs inline in `/ship:start`, since `AskUserQuestion` fails inside a subagent)
 - `ship-plan-reviewer` — read-only plan review against the codebase → plan_review_result findings
 - `ship-replanner` — revises PLAN.md against CRITICAL findings (PLAN.md plus its own `replan-round-{n}.json` scratch record) → replan_result
 - `ship-builder` — task execution with atomic commits
