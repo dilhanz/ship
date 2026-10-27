@@ -176,7 +176,7 @@ const goWorkflow = () => readSrc('ship/workflows/go.workflow.js');
 const planWorkflow = () => readSrc('ship/workflows/plan.workflow.js');
 const goSkill = () => readSrc('skills/go/SKILL.md');
 const verifier = () => readSrc('agents/ship-verifier.md');
-const brainstormer = () => readSrc('agents/ship-brainstormer.md');
+const brainstormer = () => readSrc('skills/start/references/brainstorm.md');
 
 describe('doctrine — workflow scripts read knobs from args and default to today', () => {
   it('go.workflow.js takes the builder-round cap from args, defaulting to 5', () => {

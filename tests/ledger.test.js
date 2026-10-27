@@ -229,9 +229,9 @@ describe('5.20.0 — the PM layer is gone and stays gone', () => {
     }
   });
 
-  it('the agent roster is six, with no ship-pm', () => {
+  it('the agent roster is five, with no ship-pm', () => {
     const agents = fs.readdirSync(path.join(repoRoot, 'agents')).filter((f) => f.endsWith('.md')).sort();
-    assert.equal(agents.length, 6, 'six agents survive the PM removal');
+    assert.equal(agents.length, 5, 'five agents: the PM agent is gone and the brainstorm moved into /ship:start');
     assert.ok(!agents.includes('ship-pm.md'), 'the PM agent is gone');
   });
 

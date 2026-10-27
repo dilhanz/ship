@@ -2,7 +2,7 @@
 name: start
 description: Use when beginning new feature work, adding functionality, or fixing a bug — runs intensive brainstorming to capture requirements before planning
 effort: high
-allowed-tools: Read, Write, Edit, WebSearch, WebFetch, Glob, Bash, AskUserQuestion, EnterWorktree
+allowed-tools: Read, Write, Edit, WebSearch, WebFetch, Glob, Grep, Bash, AskUserQuestion, EnterWorktree
 argument-hint: "[feature description]"
 ---
 
@@ -36,11 +36,11 @@ Start a new feature brainstorming session.
 
 **IMPORTANT: Do NOT launch a subagent for brainstorming.** The brainstorming process requires interactive user input via `AskUserQuestion`, which only works correctly in the main conversation — not inside a subagent.
 
-Read `${CLAUDE_PLUGIN_ROOT}/agents/ship-brainstormer.md` and follow its instructions **directly in this conversation** with:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/start/references/brainstorm.md` and follow its instructions **directly in this conversation** with:
 - Feature name: `{name}`
 - Feature idea: `$ARGUMENTS`
 
-Explore the codebase, then probe with `AskUserQuestion` until the problem, scope boundary, and 3+ testable acceptance criteria can be stated without guessing and the user has confirmed the summary, then write `.planning/features/{name}/CONTEXT.md`.
+Explore the codebase, then probe with `AskUserQuestion` until the problem, scope boundary, and 3+ testable acceptance criteria can be stated without guessing and the user has confirmed the summary, then write `.planning/features/{name}/CONTEXT.md` — confirmation comes first, the file second.
 
 ## Ledger Row
 

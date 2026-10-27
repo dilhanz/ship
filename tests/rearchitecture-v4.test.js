@@ -52,10 +52,9 @@ describe('v4 — removed pieces', () => {
 // ---------------------------------------------------------------------------
 
 describe('v4 — agent roster', () => {
-  it('exactly the 6 expected agents exist', () => {
+  it('exactly the 5 expected agents exist', () => {
     const agents = fs.readdirSync(path.join(repoRoot, 'agents')).filter((f) => f.endsWith('.md')).sort();
     assert.deepEqual(agents, [
-      'ship-brainstormer.md',
       'ship-builder.md',
       'ship-plan-reviewer.md',
       'ship-replanner.md',
@@ -65,8 +64,9 @@ describe('v4 — agent roster', () => {
   });
 
   it('agents are slimmed — no rationalization / forbidden-responses scaffolding', () => {
-    for (const a of ['ship-brainstormer', 'ship-builder', 'ship-reviewer', 'ship-verifier']) {
-      const c = readSrc(`agents/${a}.md`);
+    for (const a of ['agents/ship-builder.md', 'agents/ship-reviewer.md', 'agents/ship-verifier.md',
+      'skills/start/references/brainstorm.md']) {
+      const c = readSrc(a);
       assert.ok(!/Rationalization Table/i.test(c), `${a} should not carry a Rationalization Table`);
       assert.ok(!/Forbidden Responses/i.test(c), `${a} should not carry a Forbidden Responses section`);
     }
@@ -138,7 +138,7 @@ describe('v4 — surviving behaviours', () => {
   });
 
   it('brainstormer NFR probing is judgment-based', () => {
-    const c = readSrc('agents/ship-brainstormer.md');
+    const c = readSrc('skills/start/references/brainstorm.md');
     assert.ok(!c.includes('INFRA_DETECTED'), 'brainstormer must not carry the infra-signal flag');
     assert.ok(/NFR/i.test(c), 'brainstormer keeps NFR judgment guidance');
   });

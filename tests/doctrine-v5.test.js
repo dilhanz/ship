@@ -32,10 +32,10 @@ const skillFiles = fs.readdirSync(path.join(repoRoot, 'skills'))
 
 describe('v5 — quotas removed', () => {
   it('no question quotas in start skill or brainstormer', () => {
-    for (const f of ['skills/start/SKILL.md', 'agents/ship-brainstormer.md']) {
+    for (const f of ['skills/start/SKILL.md', 'skills/start/references/brainstorm.md']) {
       assert.ok(!readSrc(f).includes('5-10+'), `${f} must not carry the 5-10+ question quota`);
     }
-    const b = readSrc('agents/ship-brainstormer.md');
+    const b = readSrc('skills/start/references/brainstorm.md');
     assert.ok(!b.includes('5+ for features'), 'brainstormer must not carry the feature question floor');
     assert.ok(!b.includes('3+ for bug fixes'), 'brainstormer must not carry the bug-fix question floor');
   });
@@ -74,7 +74,7 @@ describe('v5 — quotas removed', () => {
 
 describe('v5 — outcome gates present', () => {
   it('brainstormer gates CONTEXT.md on testable, confirmed requirements', () => {
-    const c = readSrc('agents/ship-brainstormer.md');
+    const c = readSrc('skills/start/references/brainstorm.md');
     assert.ok(c.includes('testable acceptance criteria'), 'brainstormer gate requires testable acceptance criteria');
     assert.ok(c.includes('the user has confirmed'), 'brainstormer gate requires user confirmation');
     assert.ok(c.includes('Codebase Notes'), 'brainstormer template offers Codebase Notes for the planner');
