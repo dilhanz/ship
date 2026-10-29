@@ -63,6 +63,7 @@ const LEGACY_FILES = [
   path.join('hooks', 'ship-safety-gate.js'),
   path.join('hooks', 'ship-statusline.js'),
   // Agents
+  path.join('agents', 'ship-brainstormer.md'),
   path.join('agents', 'ship-executor.md'),
   path.join('agents', 'ship-roadmapper.md'),
   path.join('agents', 'ship-plan-checker.md'),

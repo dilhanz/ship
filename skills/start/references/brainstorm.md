@@ -40,7 +40,7 @@ Once you genuinely understand it (not before), play your understanding back befo
 
 `/ship:go --profile {p}` overrides it per run, so the choice is not final.
 
-Then use `AskUserQuestion` to confirm ("Does this capture what you want? Anything to adjust?" with "Looks good" / "Needs changes"). If changes are wanted, revise the summary and ask again. Write nothing until the user picks "Looks good".
+Then use `AskUserQuestion` to confirm ("Does this capture what you want? Anything to adjust?" with "Looks good" / "Needs changes"). If changes are wanted, revise the summary and ask again. Write nothing until the user approves — by that option, an approving option you added, or approval typed into "Other". An approval that comes with an amendment ("looks good, but also…") folds the amendment into the summary first.
 
 ## Phase 5 — Capture to CONTEXT.md and Hand Off
 
@@ -93,7 +93,7 @@ profile: {quick | standard | thorough}
 [Relevant findings, or "No research needed."]
 ```
 
-The file records what the user confirmed — nothing new enters it at this step. Then output:
+Every requirement in the file — problem, solution, decisions, scope, acceptance criteria, profile — is one the user confirmed; none enters at this step. `## Codebase Notes` and `## Research Notes` are the exception: they record what you found while exploring and researching, not requirements, so fill them in even though the summary did not play them back. Then output:
 
 ```
 ## BRAINSTORM COMPLETE
