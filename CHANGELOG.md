@@ -1,5 +1,16 @@
 # Changelog
 
+## 5.29.1
+
+Patch release: the `/ship:start` brainstorm runs only inline, and it asks before it writes.
+
+### Fixed
+
+- **The brainstorm is no longer a spawnable agent.** Its instructions moved from `agents/ship-brainstormer.md` to `skills/start/references/brainstorm.md`, because `AskUserQuestion` fails inside a subagent. The legacy installer now deletes the old agent file on reinstall.
+- **Confirmation comes before CONTEXT.md.** The hard gate said the file waits for the user's confirmation, but the old Phase 4 wrote it and Phase 5 asked afterwards. Approval counts in any form: the offered option, an approving option the model added, or approval typed into Other. Codebase Notes and Research Notes still reach the file, so `/ship:plan` keeps skipping re-exploration.
+- **An abandoned brainstorm no longer strands its slug.** `/ship:start` created the feature directory before the interview, so walking away left an empty folder that start sent to `/ship:resume` and resume could not see. The directory is now created by writing CONTEXT.md, and a leftover folder without one is treated as fresh.
+- `/ship:start` gains `Grep` for codebase exploration.
+
 ## 5.29.0
 
 Minor release: fewer verify-fail → fix-round → re-verify loops, without dropping a check. Over two weeks of rpfs go runs (32 features, 89 verifier runs), re-verifications cost more than first verifications — 58 re-verify runs against 31 — and fix builders, fix reviews and re-verifies together came to about a fifth of all Ship output. Most of those rounds had a cause the spine could prevent: a medium the phase reviewer had already reproduced, a fix that repaired one call site of a defect class per round, a trial merge that conflicted on rows both sides appended to a shared file, and checklist items the builder never saw.
