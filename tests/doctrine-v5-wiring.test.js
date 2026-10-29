@@ -26,9 +26,52 @@ describe('v5 wiring — residual scaffolding gone', () => {
     assert.ok(!c.includes('Clean Architecture'), 'design must not carry the Clean Architecture philosophy');
   });
 
-  it('brainstormer has no model pin', () => {
-    const fm = readSrc('agents/ship-brainstormer.md').split('---')[1];
-    assert.ok(!/^model:/m.test(fm), 'brainstormer frontmatter must not pin a model');
+  it('brainstorm has no model pin', () => {
+    // The brainstorm runs inline in /ship:start, so the start skill's model applies.
+    const c = readSrc('skills/start/references/brainstorm.md');
+    assert.ok(!/^model:/m.test(c), 'the brainstorm reference must not pin a model');
+    const fm = readSrc('skills/start/SKILL.md').split('---')[1];
+    assert.ok(!/^model:/m.test(fm), 'the start skill must not pin a model');
+  });
+
+  it('brainstorm is a start-skill reference, not a spawnable agent', () => {
+    // AskUserQuestion fails inside a subagent, so the interview must not be
+    // discoverable as one.
+    assert.ok(!fs.existsSync(path.join(repoRoot, 'agents/ship-brainstormer.md')),
+      'agents/ship-brainstormer.md must not exist');
+    const start = readSrc('skills/start/SKILL.md');
+    assert.ok(start.includes('skills/start/references/brainstorm.md'), 'start reads the brainstorm reference');
+    assert.match(start.split('---')[1], /^allowed-tools:.*\bGrep\b/m, 'start can Grep while exploring');
+  });
+
+  it('brainstorm confirms the summary before writing CONTEXT.md', () => {
+    const c = readSrc('skills/start/references/brainstorm.md');
+    const confirm = c.indexOf('## Phase 4 — Play Back and Confirm');
+    const write = c.indexOf('## Phase 5 — Capture to CONTEXT.md');
+    assert.ok(confirm > 0 && write > confirm, 'the confirm phase precedes the write phase');
+    assert.ok(!c.slice(confirm, write).includes('```markdown'), 'no CONTEXT.md template before confirmation');
+    assert.match(c.slice(confirm, write), /use `AskUserQuestion` to confirm/, 'the confirm question lives in Phase 4');
+  });
+
+  it('brainstorm accepts approval in any form and keeps exploration notes', () => {
+    const c = readSrc('skills/start/references/brainstorm.md');
+    assert.ok(!c.includes('until the user picks "Looks good"'), 'the gate must not hinge on one option label');
+    assert.match(c, /approval typed into "Other"/, 'typed approval counts');
+    assert.match(c, /`## Codebase Notes` and `## Research Notes` are the exception/,
+      'exploration notes still reach CONTEXT.md for the planner');
+  });
+
+  it('an abandoned brainstorm does not strand its slug', () => {
+    // The directory used to be created before the interview, so walking away
+    // left an empty folder that start sent to /ship:resume and resume could not see.
+    const start = readSrc('skills/start/SKILL.md');
+    assert.ok(!start.includes('5. Create the feature directory'), 'start must not create the directory before the brainstorm');
+    assert.match(start, /directory exists without a CONTEXT\.md/, 'a leftover empty directory is treated as fresh');
+  });
+
+  it('legacy reinstall removes the retired brainstormer agent', () => {
+    assert.match(readSrc('install.js'), /LEGACY_FILES = \[[\s\S]*path\.join\('agents', 'ship-brainstormer\.md'\)/,
+      'LEGACY_FILES must delete agents/ship-brainstormer.md');
   });
 
   it('plan-verify no longer format-polices the plan document', () => {
