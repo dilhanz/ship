@@ -53,7 +53,7 @@ Step 7 and the display below carry the replan-mode branches; Step 8 is unchanged
 
 Scale exploration to uncertainty — the gate is the output, not the process:
 
-- **Read CONTEXT.md `## Codebase Notes` first, if present.** When the brainstormer already mapped the territory, do not re-explore it — verify with spot-checks only.
+- **Read CONTEXT.md `## Codebase Notes` first, if present.** When the brainstorm already mapped the territory, do not re-explore it — verify with spot-checks only.
 - **Small or familiar surface:** explore inline with Glob/Read/Grep.
 - **Large or unfamiliar surface:** fan out parallel Explore agents — you choose how many and what each investigates. Similar features, architecture, and conventions remain useful lenses, not mandatory slots.
 

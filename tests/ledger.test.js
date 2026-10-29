@@ -229,9 +229,9 @@ describe('5.20.0 — the PM layer is gone and stays gone', () => {
     }
   });
 
-  it('the agent roster is six, with no ship-pm', () => {
+  it('the agent roster is five, with no ship-pm', () => {
     const agents = fs.readdirSync(path.join(repoRoot, 'agents')).filter((f) => f.endsWith('.md')).sort();
-    assert.equal(agents.length, 6, 'six agents survive the PM removal');
+    assert.equal(agents.length, 5, 'five agents: the PM agent is gone and the brainstorm moved into /ship:start');
     assert.ok(!agents.includes('ship-pm.md'), 'the PM agent is gone');
   });
 
@@ -308,11 +308,11 @@ describe('5.20.0 — the DEFERRED verdict went with it', () => {
   });
 });
 
-describe('5.29.0 — version agreement', () => {
-  it('VERSION, package.json, and plugin.json all read 5.29.0', () => {
-    assert.equal(readSrc('ship/VERSION').trim(), '5.29.0');
-    assert.equal(JSON.parse(readSrc('package.json')).version, '5.29.0');
-    assert.equal(JSON.parse(readSrc('.claude-plugin/plugin.json')).version, '5.29.0');
+describe('5.29.1 — version agreement', () => {
+  it('VERSION, package.json, and plugin.json all read 5.29.1', () => {
+    assert.equal(readSrc('ship/VERSION').trim(), '5.29.1');
+    assert.equal(JSON.parse(readSrc('package.json')).version, '5.29.1');
+    assert.equal(JSON.parse(readSrc('.claude-plugin/plugin.json')).version, '5.29.1');
   });
 
   it('the CHANGELOG documents the release', () => {
