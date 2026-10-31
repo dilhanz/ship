@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.29.2
+
+Patch release: `/ship:go` has a defined path when the session has no Workflow tool.
+
+### Fixed
+
+- **`/ship:go` no longer improvises without the Workflow tool.** Some sessions (worktree sessions most often, since Claude Code 2.1.312) start without it, and each run then made up its own fallback: Ship agents hand-run from the main conversation, a plan-loop `### Outcome` block or OUTCOME.json written by hand, none of the workflows' guards applied. The new section 1c checks with `ToolSearch select:Workflow` before routing. When the tool is missing, the run says so and switches to **manual mode**: `/ship:plan-verify`, `/ship:build`, and `/ship:verify` via the Skill tool, at full ceremony. Under `--headless` each stop ends with an existing outcome (`unresolved`, `verify-fail`, `needs-context`, `checkpoint`, `exhausted`).
+
 ## 5.29.1
 
 Patch release: the `/ship:start` brainstorm runs only inline, and it asks before it writes.
