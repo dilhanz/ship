@@ -981,6 +981,8 @@ if (!stoppedAt) {
   if (syncMain) {
     sync = await safeAgent(syncPrompt, {
       agentType: 'ship:ship-builder', schema: SYNC_SCHEMA, label: 'sync:main', phase: 'Verify',
+      // A mechanical merge that aborts on anything needing judgement does not need Opus.
+      model: 'sonnet',
     })
     log(`sync:main → ${sync ? sync.outcome : 'no result'}${sync && sync.commit ? ` (${sync.commit})` : ''}`)
   }
