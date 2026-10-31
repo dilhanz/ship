@@ -79,3 +79,23 @@ describe('go workflow — every agent call names a model (static)', () => {
     assert.match(missing[0], /sync:main/);
   });
 });
+
+describe('go workflow — per-task builders follow the docs-only routing', () => {
+  const src = fs.readFileSync(WORKFLOW, 'utf8');
+
+  it('a docs-only task builder runs on sonnet, a code task builder on opus, the rest by the map', async () => {
+    const tasks = [{ id: '1', name: 'code', docsOnly: false }, { id: '2', name: 'docs', docsOnly: true }];
+    const { calls } = await run(src, { feature: 'demo', phases: [{ id: 'p1', name: 'A', tasks }] }, (label) => {
+      if (label === 'build:p1:t1') return null;
+      if (label === 'progress:p1:t1') return { tasks_done: 0, tasks_pending: 1, tasks_total: 1, commits: [], working_tree_clean: true };
+      if (label.startsWith('build:p1:t')) return { feature: 'demo', status: 'COMPLETE', tasks_completed: 1, tasks_total: 1, commits: ['abc1234'] };
+      if (label === 'review:p1') return { feature: 'demo', status: 'APPROVED', findings: [], verify_runs: [], files_reviewed: ['a'] };
+      if (label === 'verify') return { feature: 'demo', status: 'PASS', criteria_total: 1, criteria_passed: 1 };
+      return null;
+    });
+    const expected = (label) => (label.startsWith('build:p1:t2') ? 'sonnet' : expectedModel(label));
+    assert.ok(calls.some((c) => c.label === 'build:p1:t2'));
+    assert.ok(calls.some((c) => c.label === 'progress:p1:t1'));
+    for (const c of calls) assert.equal(c.model, expected(c.label), c.label);
+  });
+});

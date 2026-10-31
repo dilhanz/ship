@@ -9,9 +9,17 @@ export const meta = {
 
 // args: { feature: string, phases: [{ id, name }], keyFileContext?: string,
 //         profile?: string, reviewGate?: boolean, verifyDepth?: string, maxBuildRounds?: number,
-//         syncMain?: boolean }
+//         syncMain?: boolean, buildMode?: 'per-task' | 'per-phase', shipRoot?: string }
 // `phases` is the list of pending phases the go skill extracted from PLAN.md, in order.
 // A flat (unphased) plan is passed as a single pseudo-phase { id: 'all', name: 'all' }.
+// A phase may carry `tasks: [{ id, name, docsOnly }]` — its pending tasks, from
+// ship/plan-tasks.cjs. With a non-empty task list and buildMode not 'per-phase',
+// the phase is built by one fresh builder per task, each fed a brief file it
+// generates with ship/task-brief.cjs and ticked done with ship/tick.cjs. A phase
+// without a task list builds exactly as before (one builder for the phase).
+// `buildMode: 'per-phase'` is the rollback knob: it ignores every task list.
+// `shipRoot` is the absolute plugin root the script paths hang off; absent, the
+// literal ${CLAUDE_PLUGIN_ROOT} is written into prompts for the agent's shell.
 // The policy knobs arrive pre-resolved from the go skill's profile resolution;
 // every one of them defaults to today's behavior when absent.
 //
@@ -53,6 +61,13 @@ const verifyDepth = (parsedArgs && parsedArgs.verifyDepth) === 'criteria-only' ?
 // means the previous behavior, like every other knob here.
 const syncMain = !!(parsedArgs && (parsedArgs.syncMain === true || parsedArgs.syncMain === 'true'))
 
+// 'per-phase' only on an exact match — anything else, absent included, is the
+// per-task default. Whether a phase actually runs per task also needs a task
+// list on it (see the build loop).
+const buildMode = (parsedArgs && parsedArgs.buildMode) === 'per-phase' ? 'per-phase' : 'per-task'
+
+const shipRoot = (parsedArgs && typeof parsedArgs.shipRoot === 'string' && parsedArgs.shipRoot) || '${CLAUDE_PLUGIN_ROOT}'
+
 // What gates a phase. A critical or high finding always does. A medium does
 // when the reviewer reproduced it with a command: the verifier reproduced 195
 // carried findings across 64 rpfs features, and every reproduced medium failed
@@ -81,6 +96,22 @@ const BUILD_SCHEMA = {
     stopped_at: { type: ['string', 'null'] },
     reason: { type: ['string', 'null'] },
     recommendation: { type: ['string', 'null'] },
+    // Per-task builders record the verify they ran, so the phase reviewer can
+    // skip re-running it. Optional: a per-phase builder never reports it.
+    verify_evidence: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['task_id', 'command', 'exit_code'],
+        properties: {
+          task_id: { type: 'string' },
+          command: { type: 'string' },
+          exit_code: { type: ['number', 'null'] },
+          output_tail: { type: 'string' },
+        },
+      },
+    },
   },
 }
 
@@ -440,6 +471,58 @@ Read .planning/features/${feature}/PLAN.md and count the tasks ${ph.id === 'all'
 - out_of_order — any task marked status="done" whose depends list names a task that is NOT marked done, as "task {id} depends on {unmet ids}"; empty array when the ordering is clean
 - notes — anything odd (uncommitted work, a done task with no commit), else null`
 
+// Per-task prompts. A per-task builder's whole input is the brief file it
+// generates — never the plan or context files, which is the context the per-task
+// path exists to stop paying for. The brief is generated at dispatch time so it
+// sees the commits earlier tasks in this same run just ticked.
+const taskLine = (task) => `Task: ${task.id} — ${task.name}`
+const briefCommand = (task) => `node "${shipRoot}/ship/task-brief.cjs" ${feature} ${task.id}`
+const briefPath = (task) => `.planning/features/${feature}/.review-scratch/briefs/task-${task.id}.md`
+const tickInstruction = (task) => `mark it done with \`node "${shipRoot}/ship/tick.cjs" ${feature} ${task.id} {short-hash}\` (one line of output; a \`refused\` line means a dependency is not done — return CHECKPOINT naming it).`
+const commitInstruction = `commit in one command (\`git add {files} && git commit -m "feat(${feature}): …"\`)`
+const evidenceInstruction = 'Record `verify_evidence` for this task: the exact verify command, its exit code, and the last ≤20 lines of its output.'
+
+const taskBuildPrompt = (ph, task) => `Build feature: ${feature}
+${phaseLine(ph)}${taskLine(task)}
+
+Your input is one brief file. Generate it with \`${briefCommand(task)}\` — it writes \`${briefPath(task)}\` and prints that path — then read it. The brief is your whole input: the task XML, the feature's decisions and scope, what the tasks it depends on committed, and the verify checklist. Do not open the feature's plan or context files.
+
+Execute only this task. Run its \`<verify>\` command, and once it passes ${commitInstruction}.
+
+Then ${tickInstruction(task)}
+
+${evidenceInstruction}
+
+Follow the Output Discipline section of your instructions.`
+
+const taskContinuePrompt = (ph, task, state) => `Continue building feature: ${feature}
+${phaseLine(ph)}${taskLine(task)}
+
+A previous builder for this task stopped before finishing it. You are a fresh agent with no memory of that run.
+
+${state}
+
+Regenerate your brief the same way: \`${briefCommand(task)}\` — it writes \`${briefPath(task)}\` and prints that path — then read it. The brief is your whole input. Do not open the feature's plan or context files.
+
+Run \`git status\` and \`git diff\` first: uncommitted changes are this task's interrupted work. Finish the task, run its \`<verify>\` command, and once it passes ${commitInstruction}. Then ${tickInstruction(task)} If the task is already committed and ticked, report it COMPLETE.
+
+${evidenceInstruction}
+
+Follow the Output Discipline section of your instructions.`
+
+const taskProgressPrompt = (ph, task) => `Report build progress for one task of feature: ${feature}
+${phaseLine(ph)}${taskLine(task)}
+READ-ONLY — do not edit, write, or commit anything. Read and report only.
+
+Read .planning/features/${feature}/PLAN.md and find <task id="${task.id}">. Report on that task alone, as a scope of one:
+- tasks_done — 1 if it has status="done", else 0
+- tasks_pending — 1 if it is not marked done, else 0
+- tasks_total — 1
+- commits — its commit="..." short hash as a one-element array when it is done, else an empty array
+- working_tree_clean — true when \`git status --porcelain\` prints nothing
+- out_of_order — if this task is marked done but its depends list names a task that is NOT marked done, "task ${task.id} depends on {unmet ids}"; else an empty array
+- notes — anything odd (uncommitted work, done with no commit), else null`
+
 // The builder reports its commits oldest-first (one atomic commit per task, in
 // task order), so the range is computable here. Handing the reviewer a finished
 // range saves it the turns it used to spend re-deriving one with `git log`.
@@ -575,7 +658,18 @@ const uniq = (list) => Array.from(new Set(list.filter((c) => typeof c === 'strin
 // an explicit PARTIAL result, or no structured result at all (the agent died
 // mid-turn). Both continue; we only stop when a whole round lands nothing,
 // which is the real "stuck" signal.
-const buildPhase = async (ph, label) => {
+//
+// With `task` set, the same loop builds that one task: its own labels, prompts,
+// probe and model, and every piece of the machinery below (PARTIAL, transport
+// deaths, blind rounds, dirty-tree salvage, MAX_BUILD_ROUNDS) applies to it.
+// With `task` null, every prompt, label and return value is the per-phase one.
+const buildPhase = async (ph, label, task = null) => {
+  const tag = task ? `${label}:t${task.id}` : label
+  const scope = task ? `task:${task.id}` : (ph.id === 'all' ? 'all' : `phase:${ph.id}`)
+  const builderModel = task ? (task.docsOnly === true ? 'sonnet' : 'opus') : 'opus'
+  // Task mode only: which event sent us to a continuation. Never mentions
+  // PLAN.md, which a per-task builder is told not to open.
+  let taskState = null
   const priorCommits = []
   // Concerns raised by this phase's own machinery (as opposed to the builder's
   // own). They must reach every exit: the builder that corrupted the ordering is
@@ -594,9 +688,11 @@ const buildPhase = async (ph, label) => {
 
   for (let round = 1; round <= MAX_BUILD_ROUNDS; round++) {
     const suffix = round === 1 ? '' : `:cont${round - 1}`
-    const base = lastDone === null
-      ? `Committed so far this phase: ${priorCommits.length ? priorCommits.join(', ') : '(none reported)'}.`
-      : `PLAN.md showed ${lastDone} of ${lastTotal} task(s) done in this scope when the previous builder stopped.`
+    const base = task
+      ? (taskState || 'The previous builder for this task stopped without reporting.')
+      : lastDone === null
+        ? `Committed so far this phase: ${priorCommits.length ? priorCommits.join(', ') : '(none reported)'}.`
+        : `PLAN.md showed ${lastDone} of ${lastTotal} task(s) done in this scope when the previous builder stopped.`
     // The salvage round exists for the dirty tree, so say so rather than
     // leaving the builder to find it: this round is the work's last chance.
     const state = salvageNotePending
@@ -604,9 +700,12 @@ const buildPhase = async (ph, label) => {
       : base
     salvageNotePending = false
 
-    const build = await safeAgent(round === 1 ? buildPrompt(ph) : continuePrompt(ph, state), {
+    const prompt = task
+      ? (round === 1 ? taskBuildPrompt(ph, task) : taskContinuePrompt(ph, task, state))
+      : (round === 1 ? buildPrompt(ph) : continuePrompt(ph, state))
+    const build = await safeAgent(prompt, {
       agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, phase: 'Build', retry: false,
-      label: `build:${label}${suffix}`, model: 'opus',
+      label: `build:${tag}${suffix}`, model: builderModel,
     })
 
     if (build && build.status !== 'PARTIAL') {
@@ -629,7 +728,8 @@ const buildPhase = async (ph, label) => {
       priorCommits.push(...(build.commits || []))
       priorTasks += build.tasks_completed || 0
       lastTotal = build.tasks_total || lastTotal
-      log(`build:${label} round ${round} returned PARTIAL — ${build.tasks_completed || 0} task(s) landed, continuing with a fresh builder`)
+      taskState = "This task's previous builder reported PARTIAL."
+      log(`build:${tag} round ${round} returned PARTIAL — ${build.tasks_completed || 0} task(s) landed, continuing with a fresh builder`)
     } else if (lastFailure && lastFailure.transport) {
       // The builder died on the connection, not on its turn budget. It never
       // ran, so this round is not charged against MAX_BUILD_ROUNDS — and the
@@ -637,27 +737,27 @@ const buildPhase = async (ph, label) => {
       // die the same way. The transport cap is what stops this looping forever,
       // so it is checked first and returns rather than falling through.
       if (consecutiveTransportDeaths >= MAX_TRANSPORT_RETRIES) {
-        log(`build:${label} stopping: ${consecutiveTransportDeaths} consecutive transport failure(s) — this is an outage, not an exhausted budget`)
+        log(`build:${tag} stopping: ${consecutiveTransportDeaths} consecutive transport failure(s) — this is an outage, not an exhausted budget`)
         return {
-          feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
+          feature, scope,
           status: 'INFRASTRUCTURE',
           tasks_completed: priorTasks, tasks_total: lastTotal,
           commits: uniq(priorCommits),
-          stopped_at: `phase ${label}`,
+          stopped_at: `phase ${tag}`,
           reason: `${consecutiveTransportDeaths} consecutive agent(s) died on a transport error: ${lastFailure.message}`,
           recommendation: infraRecommendation,
           concerns: [...phaseConcerns],
           rounds: round,
         }
       }
-      log(`build:${label} round ${round} died on a transport error (${lastFailure.message}) — not charging the round, retrying`)
+      log(`build:${tag} round ${round} died on a transport error (${lastFailure.message}) — not charging the round, retrying`)
       round -= 1
       continue
     } else {
       // No result at all — ask PLAN.md what actually landed before deciding.
-      const progress = await safeAgent(progressPrompt(ph), {
+      const progress = await safeAgent(task ? taskProgressPrompt(ph, task) : progressPrompt(ph), {
         agentType: 'Explore', schema: PROGRESS_SCHEMA, phase: 'Build', effort: 'low',
-        label: `progress:${label}${suffix}`, model: 'sonnet',
+        label: `progress:${tag}${suffix}`, model: 'sonnet',
       })
       if (!progress) {
         // Blind round: the builder and the probe both failed. The probe reads
@@ -670,13 +770,13 @@ const buildPhase = async (ph, label) => {
         // not even read PLAN.md has no evidence of that.
         blindRounds += 1
         if (blindRounds >= MAX_BLIND_ROUNDS || round >= MAX_BUILD_ROUNDS) {
-          log(`build:${label} stopping: builder and progress probe both died in ${blindRounds} consecutive round(s) — this is an outage, not an exhausted budget`)
+          log(`build:${tag} stopping: builder and progress probe both died in ${blindRounds} consecutive round(s) — this is an outage, not an exhausted budget`)
           return {
-            feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
+            feature, scope,
             status: 'INFRASTRUCTURE',
             tasks_completed: priorTasks, tasks_total: lastTotal,
             commits: uniq(priorCommits),
-            stopped_at: `phase ${label}`,
+            stopped_at: `phase ${tag}`,
             reason: `the builder and the read-only progress probe both died in ${blindRounds} consecutive round(s) — a probe has no turn budget to exhaust, so the connection or the usage limit failed, not the plan${lastFailure ? ` (last error: ${lastFailure.message})` : ''}`,
             recommendation: infraRecommendation,
             concerns: [...phaseConcerns],
@@ -684,26 +784,28 @@ const buildPhase = async (ph, label) => {
           }
         }
         landed = true
-        log(`build:${label} round ${round} returned no result and the progress probe failed — retrying blind (${blindRounds} of ${MAX_BLIND_ROUNDS})`)
+        taskState = null
+        log(`build:${tag} round ${round} returned no result and the progress probe failed — retrying blind (${blindRounds} of ${MAX_BLIND_ROUNDS})`)
       } else {
         blindRounds = 0
+        taskState = 'The progress check found this task not yet done.'
         priorCommits.push(...(progress.commits || []))
         // The probe reads PLAN.md's declared ordering, so it can see a task
         // marked done ahead of a dependency it declared. Surface it: the
         // builder that did it is gone, and an already-corrupted plan must not
         // become invisible just because nobody is left to report it.
         for (const entry of progress.out_of_order || []) {
-          const concern = `phase ${label}: PLAN.md ordering violated — ${entry}`
+          const concern = `phase ${tag}: PLAN.md ordering violated — ${entry}`
           if (!phaseConcerns.includes(concern)) phaseConcerns.push(concern)
         }
         if (progress.tasks_pending === 0) {
-          log(`build:${label} round ${round} returned no result, but PLAN.md shows every task done — treating the phase as complete`)
+          log(`build:${tag} round ${round} returned no result, but PLAN.md shows every task done — treating the phase as complete`)
           return {
-            feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
+            feature, scope,
             status: 'COMPLETE_WITH_CONCERNS',
             tasks_completed: progress.tasks_done, tasks_total: progress.tasks_total,
             commits: uniq(priorCommits),
-            concerns: [`phase ${label}: a builder exhausted its turn budget without reporting; completion confirmed from PLAN.md task status${progress.working_tree_clean === false ? ' (working tree not clean — check for uncommitted leftovers)' : ''}`, ...phaseConcerns],
+            concerns: [`phase ${tag}: a builder exhausted its turn budget without reporting; completion confirmed from PLAN.md task status${progress.working_tree_clean === false ? ' (working tree not clean — check for uncommitted leftovers)' : ''}`, ...phaseConcerns],
             rounds: round,
           }
         }
@@ -726,15 +828,15 @@ const buildPhase = async (ph, label) => {
           salvagedDirtyTree = true
           salvageNotePending = true
           landed = true
-          const concern = `phase ${label}: a builder died leaving uncommitted work in the tree; granted one salvage round to commit it`
+          const concern = `phase ${tag}: a builder died leaving uncommitted work in the tree; granted one salvage round to commit it`
           if (!phaseConcerns.includes(concern)) phaseConcerns.push(concern)
-          log(`build:${label} round ${round} landed no new done tasks, but the working tree is dirty — granting one salvage round to commit the interrupted task`)
+          log(`build:${tag} round ${round} landed no new done tasks, but the working tree is dirty — granting one salvage round to commit the interrupted task`)
         }
 
         lastDone = progress.tasks_done
         lastTotal = progress.tasks_total
         priorTasks = progress.tasks_done
-        log(`build:${label} round ${round} returned no result — PLAN.md shows ${progress.tasks_done}/${progress.tasks_total} done, ${progress.tasks_pending} pending; ${landed ? 'continuing with a fresh builder' : 'no progress since the last round'}`)
+        log(`build:${tag} round ${round} returned no result — PLAN.md shows ${progress.tasks_done}/${progress.tasks_total} done, ${progress.tasks_pending} pending; ${landed ? 'continuing with a fresh builder' : 'no progress since the last round'}`)
       }
     }
 
@@ -746,11 +848,11 @@ const buildPhase = async (ph, label) => {
   // unconditionally is what sent operators off splitting healthy tasks.
   const endedOnTransport = !!(lastFailure && lastFailure.transport)
   return {
-    feature, scope: ph.id === 'all' ? 'all' : `phase:${ph.id}`,
+    feature, scope,
     status: 'EXHAUSTED',
     tasks_completed: priorTasks, tasks_total: lastTotal,
     commits: uniq(priorCommits),
-    stopped_at: `phase ${label}`,
+    stopped_at: `phase ${tag}`,
     reason: endedOnTransport
       ? `builders stopped making progress after ${MAX_BUILD_ROUNDS} round(s); the last agent died on a transport error: ${lastFailure.message}`
       : `builders stopped making progress after ${MAX_BUILD_ROUNDS} round(s) — turn budget exhausted with tasks still pending`,
@@ -762,6 +864,60 @@ const buildPhase = async (ph, label) => {
   }
 }
 
+// A status that ends the phase — and, from the phase loop, the run.
+const STOP_STATUSES = ['EXHAUSTED', 'NEEDS_CONTEXT', 'CHECKPOINT', 'INFRASTRUCTURE']
+
+// Build a phase one task at a time, each task through the full round loop of
+// buildPhase. The aggregate has the shape of a per-phase build result, so the
+// review gate and the `completed` entry consume it unchanged.
+const buildPhaseByTask = async (ph, label) => {
+  const scope = ph.id === 'all' ? 'all' : `phase:${ph.id}`
+  const commits = []
+  const concerns = []
+  const deviations = []
+  const evidence = []
+  let finished = 0
+  let rounds = 1
+  let anyConcerns = false
+
+  for (const task of ph.tasks) {
+    const result = await buildPhase(ph, label, task)
+    commits.push(...(result.commits || []))
+    rounds = Math.max(rounds, result.rounds || 1)
+    if (STOP_STATUSES.includes(result.status)) {
+      log(`build:${label} stopped at task ${task.id}: ${result.status}`)
+      return {
+        feature, scope,
+        status: result.status,
+        tasks_completed: finished, tasks_total: ph.tasks.length,
+        commits: uniq(commits),
+        missing: result.missing || null,
+        stopped_at: `phase ${label} task ${task.id}`,
+        reason: result.reason || null,
+        recommendation: result.recommendation || null,
+        concerns: [...concerns, ...(result.concerns || [])],
+        deviations: [...deviations, ...(result.deviations || [])],
+        verify_evidence: [...evidence, ...(result.verify_evidence || [])],
+        rounds,
+      }
+    }
+    finished += 1
+    concerns.push(...(result.concerns || []))
+    deviations.push(...(result.deviations || []))
+    evidence.push(...(result.verify_evidence || []))
+    if (result.status === 'COMPLETE_WITH_CONCERNS' || (result.concerns || []).length) anyConcerns = true
+  }
+
+  return {
+    feature, scope,
+    status: anyConcerns ? 'COMPLETE_WITH_CONCERNS' : 'COMPLETE',
+    tasks_completed: finished, tasks_total: ph.tasks.length,
+    commits: uniq(commits),
+    concerns, deviations, verify_evidence: evidence,
+    rounds,
+  }
+}
+
 phase('Build')
 const completed = []
 let stoppedAt = null
@@ -770,9 +926,12 @@ for (let i = 0; i < phases.length; i++) {
   const ph = phases[i]
   const label = ph.id === 'all' ? 'all' : ph.id
 
-  const build = await buildPhase(ph, label)
+  // Per task only when the knob allows it AND the go skill handed us the
+  // phase's task list; anything else is the per-phase build, unchanged.
+  const perTask = buildMode !== 'per-phase' && Array.isArray(ph.tasks) && ph.tasks.length > 0
+  const build = perTask ? await buildPhaseByTask(ph, label) : await buildPhase(ph, label)
 
-  if (!build || build.status === 'EXHAUSTED' || build.status === 'NEEDS_CONTEXT' || build.status === 'CHECKPOINT' || build.status === 'INFRASTRUCTURE') {
+  if (!build || STOP_STATUSES.includes(build.status)) {
     stoppedAt = { phase: ph, build: build || { status: 'NO_RESULT' } }
     log(`Build stopped at phase ${label}: ${build ? build.status : 'no result'} — surfacing to the user.`)
     break
@@ -796,6 +955,9 @@ for (let i = 0; i < phases.length; i++) {
       fixApplied: false, unresolved: [], introducedByFix: [],
       rereviewStatus: null, rereviewFindings: [], rereviewVerifyRuns: [], rereviewFilesReviewed: [],
       recorded: [],
+      // What the per-task builders ran and recorded. A per-phase builder
+      // reports none, so its entry carries an empty list.
+      builderEvidence: build.verify_evidence || [],
     })
     log(`Phase ${label}: per-phase review skipped by profile${profileName ? ` (${profileName})` : ''}.`)
     continue
@@ -909,6 +1071,7 @@ for (let i = 0; i < phases.length; i++) {
     rereviewFindings: rereview ? rereview.findings : [],
     rereviewVerifyRuns, rereviewFilesReviewed,
     recorded,
+    builderEvidence: build.verify_evidence || [],
   })
 }
 
