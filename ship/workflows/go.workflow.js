@@ -19,7 +19,7 @@ export const meta = {
 // without a task list builds exactly as before (one builder for the phase).
 // `buildMode: 'per-phase'` is the rollback knob: it ignores every task list.
 // `shipRoot` is the absolute plugin root the script paths hang off; absent, the
-// literal ${CLAUDE_PLUGIN_ROOT} is written into prompts for the agent's shell.
+// literal \${CLAUDE_PLUGIN_ROOT} is written into prompts for the agent's shell.
 // The policy knobs arrive pre-resolved from the go skill's profile resolution;
 // every one of them defaults to today's behavior when absent.
 //
@@ -66,7 +66,9 @@ const syncMain = !!(parsedArgs && (parsedArgs.syncMain === true || parsedArgs.sy
 // list on it (see the build loop).
 const buildMode = (parsedArgs && parsedArgs.buildMode) === 'per-phase' ? 'per-phase' : 'per-task'
 
-const shipRoot = (parsedArgs && typeof parsedArgs.shipRoot === 'string' && parsedArgs.shipRoot) || '${CLAUDE_PLUGIN_ROOT}'
+// Escaped even in a plain string: tests/structured-output-salvage.test.js bans
+// any bare plugin-root reference, since one inside a template literal throws.
+const shipRoot = (parsedArgs && typeof parsedArgs.shipRoot === 'string' && parsedArgs.shipRoot) || '\${CLAUDE_PLUGIN_ROOT}'
 
 // What gates a phase. A critical or high finding always does. A medium does
 // when the reviewer reproduced it with a command: the verifier reproduced 195
@@ -541,6 +543,54 @@ ${rangeInstruction(diffRange(commits))}
 
 Re-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md.`
 
+// Per-task phases: the builders already ran every task's verify and recorded
+// it, so the reviewer reads one package file (log, stat, diff) and re-runs only
+// what nobody evidenced green. Step 1b still runs — nobody ran those tests.
+const evidenceExit = (e) => (typeof e.exit_code === 'number' ? e.exit_code : 'null')
+const evidenceLine = (e) => {
+  const head = `- task ${e.task_id}: \`${e.command}\` → exit ${evidenceExit(e)}`
+  const tail = typeof e.output_tail === 'string' ? e.output_tail.replace(/\s+$/, '') : ''
+  if (!tail) return head
+  return `${head}\n${tail.split('\n').slice(-20).map((l) => `    ${l}`).join('\n')}`
+}
+
+// Tasks with no recorded run, or a run that was not green.
+const tasksToRerun = (tasks, evidence) => tasks
+  .filter((t) => {
+    const mine = evidence.filter((e) => String(e.task_id) === String(t.id))
+    return !mine.length || mine.some((e) => e.exit_code !== 0)
+  })
+  .map((t) => t.id)
+
+const packageReviewPrompt = (ph, commits, evidence, scope) => {
+  const range = diffRange(commits)
+  const packageCommand = (r) => `node "${shipRoot}/ship/review-package.cjs" ${feature} ${r} ${scope}`
+  const packagePath = `.planning/features/${feature}/.review-scratch/package-${scope}.md`
+  const packageBlock = range
+    ? `Build the review package first: \`${packageCommand(range)}\` — it writes \`${packagePath}\` (commit log, stat, and the diff with 10 lines of context) and prints one line with its path and size. Read that file for Step 2 instead of running \`git diff\` yourself. If it reports 0 files or fails, fall back as below.
+
+${rangeInstruction(range)}`
+    : `${rangeInstruction(null)}
+
+Then run the same script with the range you derived: \`${packageCommand('{range}')}\` — it writes \`${packagePath}\` (commit log, stat, and the diff with 10 lines of context). Read that file for Step 2 instead of running \`git diff\` yourself.`
+  const rerun = tasksToRerun(ph.tasks || [], evidence)
+  return `Review feature: ${feature}
+${phaseLine(ph)}Phase commits: ${commits.length ? commits.join(', ') : '(none reported)'}
+
+${packageBlock}
+
+The builders ran each task's \`<verify>\` and recorded:
+${evidence.length ? evidence.map(evidenceLine).join('\n') : '- (nothing recorded)'}
+
+Do NOT re-run these verify commands — skip Step 1 for the tasks above.${rerun.length ? `
+
+Re-run Step 1 only for: ${rerun.map((id) => `task ${id}`).join(', ')}` : ''}
+
+Step 1b (neighbouring tests) still runs. Report only the commands you ran yourself in \`verify_runs\`.
+
+Read this phase's tasks in .planning/features/${feature}/PLAN.md for plan adherence, and .planning/features/${feature}/CONTEXT.md. Follow the Output Discipline section of your instructions.`
+}
+
 // One finding line, shared by every prompt that hands findings on. The pattern
 // and sites travel with it: a fix that sees only the first call site fixes only
 // that one, and the next verify finds the second.
@@ -864,7 +914,8 @@ const buildPhase = async (ph, label, task = null) => {
   }
 }
 
-// A status that ends the phase — and, from the phase loop, the run.
+// A status that ends a per-task phase at the task that returned it (the phase
+// loop below tests the same four by name).
 const STOP_STATUSES = ['EXHAUSTED', 'NEEDS_CONTEXT', 'CHECKPOINT', 'INFRASTRUCTURE']
 
 // Build a phase one task at a time, each task through the full round loop of
@@ -931,7 +982,7 @@ for (let i = 0; i < phases.length; i++) {
   const perTask = buildMode !== 'per-phase' && Array.isArray(ph.tasks) && ph.tasks.length > 0
   const build = perTask ? await buildPhaseByTask(ph, label) : await buildPhase(ph, label)
 
-  if (!build || STOP_STATUSES.includes(build.status)) {
+  if (!build || build.status === 'EXHAUSTED' || build.status === 'NEEDS_CONTEXT' || build.status === 'CHECKPOINT' || build.status === 'INFRASTRUCTURE') {
     stoppedAt = { phase: ph, build: build || { status: 'NO_RESULT' } }
     log(`Build stopped at phase ${label}: ${build ? build.status : 'no result'} — surfacing to the user.`)
     break
@@ -964,7 +1015,11 @@ for (let i = 0; i < phases.length; i++) {
   }
 
   const reviewScope = ph.id === 'all' ? 'all' : `phase-${ph.id}`
-  const reviewFull = reviewPrompt(ph, build.commits || [])
+  const builderEvidence = build.verify_evidence || []
+  // Per-phase phases keep today's prompt byte for byte (the golden test).
+  const reviewFull = perTask
+    ? packageReviewPrompt(ph, build.commits || [], builderEvidence, reviewScope)
+    : reviewPrompt(ph, build.commits || [])
   const review = await safeAgent(reviewFull, {
     agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `review:${label}`, phase: 'Build', model: 'opus',
     retryPrompt: salvageReviewPrompt(ph, reviewScope, reviewFull), salvageRecord: `.review-scratch/${reviewScope}.json`,
@@ -1040,6 +1095,15 @@ for (let i = 0; i < phases.length; i++) {
   const reviewConcerns = []
   if (!review) {
     reviewConcerns.push(`phase ${label} review never ran (no result after retry) — the diff went unreviewed`)
+  } else if (perTask) {
+    // Builder evidence may stand in for the verify half only. An unread diff
+    // is unreviewed whatever the builders ran.
+    if (!filesReviewed.length) {
+      reviewConcerns.push(`phase ${label} review reviewed no files — the diff went unreviewed`)
+    }
+    if (!verifyRuns.length && !filesReviewed.length && !builderEvidence.length) {
+      reviewConcerns.push(`phase ${label} review re-ran no verify commands and reviewed no files — treat its ${review.status} verdict as unsubstantiated`)
+    }
   } else if (!verifyRuns.length && !filesReviewed.length) {
     reviewConcerns.push(`phase ${label} review re-ran no verify commands and reviewed no files — treat its ${review.status} verdict as unsubstantiated`)
   }
@@ -1071,7 +1135,7 @@ for (let i = 0; i < phases.length; i++) {
     rereviewFindings: rereview ? rereview.findings : [],
     rereviewVerifyRuns, rereviewFilesReviewed,
     recorded,
-    builderEvidence: build.verify_evidence || [],
+    builderEvidence,
   })
 }
 
