@@ -606,7 +606,7 @@ const buildPhase = async (ph, label) => {
 
     const build = await safeAgent(round === 1 ? buildPrompt(ph) : continuePrompt(ph, state), {
       agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, phase: 'Build', retry: false,
-      label: `build:${label}${suffix}`,
+      label: `build:${label}${suffix}`, model: 'opus',
     })
 
     if (build && build.status !== 'PARTIAL') {
@@ -657,7 +657,7 @@ const buildPhase = async (ph, label) => {
       // No result at all — ask PLAN.md what actually landed before deciding.
       const progress = await safeAgent(progressPrompt(ph), {
         agentType: 'Explore', schema: PROGRESS_SCHEMA, phase: 'Build', effort: 'low',
-        label: `progress:${label}${suffix}`,
+        label: `progress:${label}${suffix}`, model: 'sonnet',
       })
       if (!progress) {
         // Blind round: the builder and the probe both failed. The probe reads
@@ -804,7 +804,7 @@ for (let i = 0; i < phases.length; i++) {
   const reviewScope = ph.id === 'all' ? 'all' : `phase-${ph.id}`
   const reviewFull = reviewPrompt(ph, build.commits || [])
   const review = await safeAgent(reviewFull, {
-    agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `review:${label}`, phase: 'Build',
+    agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `review:${label}`, phase: 'Build', model: 'opus',
     retryPrompt: salvageReviewPrompt(ph, reviewScope, reviewFull), salvageRecord: `.review-scratch/${reviewScope}.json`,
   })
 
@@ -817,7 +817,7 @@ for (let i = 0; i < phases.length; i++) {
 
   if (blocking.length) {
     fixRound = await safeAgent(fixPrompt(ph, blocking), {
-      agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, label: `fix:${label}`, phase: 'Build',
+      agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, label: `fix:${label}`, phase: 'Build', model: 'opus',
     })
     const fixCommits = (fixRound && fixRound.commits) || []
     // A fix round that committed nothing fixed nothing anyone can point at, and
@@ -832,7 +832,7 @@ for (let i = 0; i < phases.length; i++) {
     } else {
       const rereviewFull = rereviewPrompt(ph, blocking, fixCommits)
       rereview = await safeAgent(rereviewFull, {
-        agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build',
+        agentType: 'ship:ship-reviewer', schema: REVIEW_SCHEMA, label: `rereview:${label}`, phase: 'Build', model: 'opus',
         retryPrompt: salvageReviewPrompt(ph, `${reviewScope}-rereview`, rereviewFull), salvageRecord: `.review-scratch/${reviewScope}-rereview.json`,
       })
     }
@@ -988,7 +988,7 @@ if (!stoppedAt) {
   }
   const verifyFull = `Verify feature: ${feature}\n\nRead .planning/features/${feature}/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.${carriedBlock}${depthBlock}${sweepBlock}`
   verdict = await safeAgent(verifyFull, {
-    agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify',
+    agentType: 'ship:ship-verifier', schema: VERIFY_SCHEMA, label: 'verify', phase: 'Verify', model: 'opus',
     retryPrompt: salvageVerifyPrompt(verifyFull), salvageRecord: '.review-scratch/verify.json',
   })
   // Trust the findings over the verdict: a PASS or INCONCLUSIVE that still
@@ -1044,7 +1044,7 @@ if (!stoppedAt) {
     const verifierFailure = lastFailure
     const alive = await safeAgent(canaryPrompt, {
       agentType: 'Explore', schema: CANARY_SCHEMA, phase: 'Verify', effort: 'low',
-      label: 'canary:verify', retry: false,
+      label: 'canary:verify', retry: false, model: 'sonnet',
     })
     if (!alive) {
       verifyOutage = `the verifier died on both attempts and a one-call connection check died after it — the connection or the usage limit failed, not the verification${verifierFailure ? ` (last error: ${verifierFailure.message})` : ''}`
