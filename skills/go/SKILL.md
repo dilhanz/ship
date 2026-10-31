@@ -58,6 +58,16 @@ If `warning` is non-null, surface it: interactively, say it before continuing; u
 
 The resolved `knobs` feed the workflow `args` in sections 2a and 5. On `standard` every knob equals today's constant, so a standard run is byte-identical to a run from before profiles existed.
 
+## 1c. Check the Workflow Tool
+
+Sections 2a and 5 need the Workflow tool, and a session does not always have it: since Claude Code 2.1.312 some sessions (worktree sessions most often) start without it, so `Workflow` is neither in the tool list nor returned by `ToolSearch`. Check once, before routing: if `Workflow` is not in your tool list, run `ToolSearch` with `select:Workflow`. If it is still not available, this run is in **manual mode**:
+
+- Say so before continuing: "Workflow tool not available in this session — running the manual Ship skills instead." Under `--headless`, put the same line in the final report and `detail`.
+- **Section 2a** becomes `/ship:plan-verify {name}` via the Skill tool. `APPROVED` → continue to section 3. `NEEDS-REVISION` → stop: interactively, report the CRITICALs and recommend `/ship:plan {name}` (its replan mode) and then `/ship:go {name}`; under `--headless`, terminate as `unresolved`.
+- **Section 5** becomes `/ship:build {name}`, then `/ship:verify {name}` once CONTEXT.md reads `status: built`. Section 6's reconcile does not apply: there is no workflow result, and the two skills write REVIEW.md, VERIFY.md and CONTEXT.md themselves. Route on CONTEXT.md `status` afterwards: `done` → GO COMPLETE, then section 7; `plan-verified` (verify FAIL, fix tasks appended) → interactively report and recommend `/ship:go {name}` to run the fix round, under `--headless` terminate as `verify-fail`; still `building` → report the build skill's stop, and under `--headless` terminate as `needs-context`, `checkpoint`, or `exhausted` to match it. Under `--headless` a builder `NEEDS_CONTEXT` is never asked via AskUserQuestion — it terminates as `needs-context`.
+- The profile does not apply: the manual skills always run full ceremony, which is the safe direction.
+- **Never hand-run the workflows instead.** Do not invoke the Ship agents directly, and do not write a plan-loop `### Outcome` block, REVIEW.md entries, or a verdict yourself. The workflow scripts' guards (convergence, blocking findings, verdict downgrade, salvage) exist only inside them; the manual skills are the supported path without them.
+
 ## 2. Advance Pre-Build Steps (inline)
 
 Route on the feature's `status` and run these inline, in order, until the feature reaches `plan-verified`:
