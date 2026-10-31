@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.29.3
+
+Patch release: `sync:main` runs on Sonnet.
+
+### Changed
+
+- **The pre-verify `sync:main` builder passes `model: 'sonnet'`.** It merges main into the feature branch, resolves only mechanical conflicts, and aborts on anything that needs judgement, so it does not need Opus. Every other Ship agent still inherits the session's model. `sync:main` was about 1% of rpfs ship spend in the week to 2026-10-31. The model is set per call through the workflow runtime's `opts.model`.
+
 ## 5.29.2
 
 Patch release: `/ship:go` has a defined path when the session has no Workflow tool.
