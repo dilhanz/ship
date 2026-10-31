@@ -61,3 +61,31 @@ describe('build-context-diet — builder agent', () => {
     assert.match(frontmatter(c), /^maxTurns: 60$/m);
   });
 });
+
+describe('build-context-diet — reviewer agent', () => {
+  const c = readSrc('agents/ship-reviewer.md');
+
+  it('carries package mode, the package script and output discipline', () => {
+    assert.ok(c.includes('Package mode'), 'package mode must be described');
+    assert.ok(c.includes('review-package.cjs'), 'the package script must be named');
+    assert.match(c, /^## Output Discipline$/m, 'an Output Discipline section must exist');
+  });
+
+  it('Step 1b still runs in package mode', () => {
+    const start = c.indexOf('**Package mode.**');
+    assert.ok(start >= 0);
+    const block = c.slice(start, c.indexOf('## Step 0', start));
+    assert.match(block, /Step 1b still runs in package mode/);
+    assert.match(block, /do not re-run any verify command the evidence shows exiting 0/);
+    assert.match(block, /`verify_runs` holds only commands you ran/);
+  });
+
+  it('the HARD-GATE allows the package file as the only other write', () => {
+    const gate = c.slice(c.indexOf('<HARD-GATE>'), c.indexOf('</HARD-GATE>'));
+    assert.match(gate, /package-\{scope\}\.md/);
+  });
+
+  it('frontmatter maxTurns: 60 is unchanged', () => {
+    assert.match(frontmatter(c), /^maxTurns: 60$/m);
+  });
+});
