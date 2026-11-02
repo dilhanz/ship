@@ -217,6 +217,23 @@ describe('task-brief', () => {
     }
   });
 
+  it('a task swallowed by a malformed PLAN.md names the anomaly', () => {
+    const { dir } = makeRepo();
+    try {
+      const p = path.join(dir, '.planning', 'features', SLUG, 'PLAN.md');
+      const text = fs.readFileSync(p, 'utf8');
+      const broken = text.replace(/(<verify>[^\n]*<\/verify>)\n<\/task>/, (m, v) => `${v}</task>`);
+      assert.notEqual(broken, text, 'fixture rewrite applied');
+      fs.writeFileSync(p, broken);
+      const r = spawnSync(process.execPath, [SCRIPT, SLUG, '2'], { cwd: dir, encoding: 'utf8', env: cleanEnv() });
+      assert.equal(r.status, 1);
+      assert.match(r.stdout, /^task-brief: task 2 not found in PLAN\.md — malformed PLAN\.md: line \d+: task 2 opens inside task 1/);
+      assert.equal(r.stdout.trimEnd().split('\n').length, 1);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
   it('the CLI prints exactly one line, the written path', () => {
     const { dir } = makeRepo();
     try {

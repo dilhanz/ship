@@ -148,6 +148,70 @@ describe('plan-tasks', () => {
     }
   });
 
+  it('warns when a task closes inline so its next sibling would be swallowed', () => {
+    const plan = [
+      '<phase id="1" name="One" status="pending">\n',
+      '<task id="1" status="pending">\n  <name>First</name>\n  <files>a.js</files>\n  <verify>node a.js</verify></task>\n',
+      task('2', 'pending', 'b.js'),
+      '</phase>\n',
+    ].join('\n');
+    const dir = makeFixture(plan);
+    try {
+      const r = listPendingTasks({ cwd: dir, feature: SLUG });
+      assert.notEqual(r.warning, null, 'a misparse must not report warning: null');
+      assert.match(r.warning, /malformed PLAN\.md/);
+      assert.match(r.warning, /task 2/);
+      assert.match(r.warning, /task 1/);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  it('warns when a task or phase is still open at end of file', () => {
+    const unclosedTask = ['<phase id="1" name="One" status="pending">\n', task('1', 'pending', 'a.js'), '</phase>\n',
+      '<task id="F1" status="pending">\n  <name>Fix</name>\n  <verify>true</verify>\n'].join('\n');
+    const unclosedPhase = ['<phase id="1" name="One" status="pending">\n', task('1', 'pending', 'a.js')].join('\n');
+    for (const [plan, re] of [[unclosedTask, /task F1 .*never closed/], [unclosedPhase, /phase 1 .*never closed/]]) {
+      const dir = makeFixture(plan);
+      try {
+        const r = listPendingTasks({ cwd: dir, feature: SLUG });
+        assert.notEqual(r.warning, null);
+        assert.match(r.warning, re);
+      } finally {
+        cleanup(dir);
+      }
+    }
+  });
+
+  it('warns when a phase opens before the previous one closed', () => {
+    const plan = [
+      '<phase id="1" name="One" status="pending">\n',
+      task('1', 'pending', 'a.js'),
+      '<phase id="2" name="Two" status="pending">\n',
+      task('2', 'pending', 'b.js'),
+      '</phase>\n',
+    ].join('\n');
+    const dir = makeFixture(plan);
+    try {
+      const r = listPendingTasks({ cwd: dir, feature: SLUG });
+      assert.match(r.warning || '', /phase 2 .*phase 1/);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  it('the CLI prints the anomaly warning and exits 0', () => {
+    const plan = '<phase id="1" name="One" status="pending">\n' + task('1', 'pending', 'a.js');
+    const dir = makeFixture(plan);
+    try {
+      const r = spawnSync(process.execPath, [SCRIPT, SLUG], { cwd: dir, encoding: 'utf8', env: cleanEnv() });
+      assert.equal(r.status, 0);
+      assert.match(JSON.parse(r.stdout).warning, /never closed/);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
   it('parses this repo\'s own PLAN.md without a warning when present', (t) => {
     const root = path.join(__dirname, '..');
     if (!fs.existsSync(path.join(root, '.planning', 'features', 'build-context-diet', 'PLAN.md'))) {

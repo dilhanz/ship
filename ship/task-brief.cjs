@@ -22,7 +22,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { isValidSlug, isValidTaskId, parseTasks, parseDepends } = require(path.join(__dirname, 'plan-parse.cjs'));
+const { isValidSlug, isValidTaskId, parsePlan, withAnomalies, parseDepends } = require(path.join(__dirname, 'plan-parse.cjs'));
 
 const STAT_CAP = 40;
 
@@ -93,9 +93,9 @@ function buildBrief(opts) {
       return fail(`task-brief: PLAN.md not found for ${feature}`);
     }
 
-    const tasks = parseTasks(plan);
+    const { tasks, anomalies } = parsePlan(plan);
     const idx = tasks.findIndex((t) => t.id === taskId);
-    if (idx === -1) return fail(`task-brief: task ${taskId} not found in PLAN.md`);
+    if (idx === -1) return fail(withAnomalies(`task-brief: task ${taskId} not found in PLAN.md`, anomalies));
     const task = tasks[idx];
 
     let context;

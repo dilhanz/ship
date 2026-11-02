@@ -25,7 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isValidSlug, parseTasks, parsePhases } = require(path.join(__dirname, 'plan-parse.cjs'));
+const { isValidSlug, parsePlan } = require(path.join(__dirname, 'plan-parse.cjs'));
 
 const DOC_EXTENSIONS = new Set(['.md', '.mdx', '.markdown', '.txt', '.rst', '.adoc']);
 const PROMPT_DIRS = new Set(['agents', 'skills']);
@@ -77,12 +77,14 @@ function listPendingTasks(opts) {
       return { feature, phases: [], warning: `PLAN.md not found for ${feature}` };
     }
 
-    const phases = parsePhases(text);
-    const tasks = parseTasks(text);
+    const { phases, tasks, anomalies } = parsePlan(text);
+    // A malformed layout means the task list below may be missing tasks. Say
+    // so: a non-null warning sends the go skill to its per-phase fallback.
+    const warning = anomalies.length > 0 ? `malformed PLAN.md: ${anomalies.join('; ')}` : null;
     const pending = (t) => t.attrs.status !== 'done';
 
     if (phases.length === 0) {
-      return { feature, phases: [{ id: 'all', name: 'all', tasks: tasks.filter(pending).map(taskEntry) }], warning: null };
+      return { feature, phases: [{ id: 'all', name: 'all', tasks: tasks.filter(pending).map(taskEntry) }], warning };
     }
 
     const inside = (t, ph) => t.start > ph.start && t.end < ph.end;
@@ -94,14 +96,14 @@ function listPendingTasks(opts) {
         tasks: tasks.filter((t) => inside(t, ph) && pending(t)).map(taskEntry),
       }));
 
-    if (listed.length > 0) return { feature, phases: listed, warning: null };
+    if (listed.length > 0) return { feature, phases: listed, warning };
 
     const orphans = tasks.filter((t) => pending(t) && !phases.some((ph) => inside(t, ph)));
     if (orphans.length > 0) {
-      return { feature, phases: [{ id: 'all', name: 'all', tasks: orphans.map(taskEntry) }], warning: null };
+      return { feature, phases: [{ id: 'all', name: 'all', tasks: orphans.map(taskEntry) }], warning };
     }
 
-    return { feature, phases: [], warning: null };
+    return { feature, phases: [], warning };
   } catch (e) {
     return { feature, phases: [], warning: `plan-tasks failed (${String((e && e.message) || e).split('\n')[0]})` };
   }

@@ -15,8 +15,17 @@
 // Ids are compared as strings after parsing and are never interpolated into a
 // RegExp, so id "1" can never match id "10".
 //
+// A closing tag that is not alone on its line (`<verify>x</verify></task>`) is
+// not recognised, so that task stays open and swallows the next one. Rather
+// than guess, `parsePlan` reports every such shape as an anomaly: a task or
+// phase still open at end of file, a line-start `<task …>` opener seen while a
+// task is open, and a `<phase …>` opener seen while a phase is open. Consumers
+// must surface anomalies (plan-tasks returns them as its `warning`, which
+// sends the go skill to its per-phase fallback; tick and task-brief append
+// them to "not found") rather than act on a silently truncated task list.
+//
 // Zero dependencies. Pure functions over a string: no I/O, nothing throws on
-// odd input — an unclosed task is simply not returned.
+// odd input — an unclosed task is not returned, it is reported.
 
 const TASK_OPEN = /^\s*<task\b[^>]*>/;
 const TASK_CLOSE = /^\s*<\/task>\s*$/;
@@ -89,13 +98,23 @@ function walk(text) {
   const src = typeof text === 'string' ? text : '';
   const phases = [];
   const tasks = [];
-  let phase = null; // { attrs, start, tag }
-  let task = null; // { attrs, start, tag, tagStart, tagEnd }
+  const anomalies = [];
+  let phase = null; // { attrs, start, tag, lineNo }
+  let task = null; // { attrs, start, tag, tagStart, tagEnd, lineNo }
+  const label = (attrs) => (attrs.id !== undefined ? String(attrs.id) : '(no id)');
 
+  let lineNo = 0;
   for (const line of lines(src)) {
+    lineNo += 1;
     const body = line.text.replace(/\r$/, '');
 
     if (task) {
+      const inner = body.match(TASK_OPEN);
+      if (inner) {
+        anomalies.push(
+          `line ${lineNo}: task ${label(parseAttrs(inner[0]))} opens inside task ${label(task.attrs)} (opened line ${task.lineNo}) — a closing \`</task>\` not alone on its line?`
+        );
+      }
       if (TASK_CLOSE.test(body)) {
         const end = line.start + body.length;
         const xml = src.slice(task.start, end);
@@ -122,7 +141,7 @@ function walk(text) {
       const lead = t[0].length - t[0].trimStart().length;
       const tagStart = line.start + lead;
       const tag = t[0].trimStart();
-      task = { attrs: parseAttrs(tag), start: tagStart, tag, tagStart, tagEnd: tagStart + tag.length };
+      task = { attrs: parseAttrs(tag), start: tagStart, tag, tagStart, tagEnd: tagStart + tag.length, lineNo };
       // A one-line task (`<task …>…</task>` with the close on the same line
       // and nothing after it) is not a layout Ship plans use; it stays open
       // until a `</task>` line, like every other task.
@@ -133,7 +152,13 @@ function walk(text) {
     if (p) {
       const lead = p[0].length - p[0].trimStart().length;
       const tag = p[0].trimStart();
-      phase = { attrs: parseAttrs(tag), start: line.start + lead, tag };
+      const attrs = parseAttrs(tag);
+      if (phase) {
+        anomalies.push(
+          `line ${lineNo}: phase ${label(attrs)} opens while phase ${label(phase.attrs)} (opened line ${phase.lineNo}) is still open`
+        );
+      }
+      phase = { attrs, start: line.start + lead, tag, lineNo };
       continue;
     }
 
@@ -152,7 +177,32 @@ function walk(text) {
     }
   }
 
-  return { phases, tasks };
+  if (task) anomalies.push(`task ${label(task.attrs)} (line ${task.lineNo}) is never closed by a \`</task>\` line`);
+  if (phase) anomalies.push(`phase ${label(phase.attrs)} (line ${phase.lineNo}) is never closed by a \`</phase>\` line`);
+
+  return { phases, tasks, anomalies };
+}
+
+/**
+ * Phases, tasks and layout anomalies in one walk.
+ *
+ * @param {string} text
+ * @returns {{ phases: object[], tasks: object[], anomalies: string[] }}
+ */
+function parsePlan(text) {
+  return walk(text);
+}
+
+/**
+ * Append a plan's anomalies to a one-line message, or return it unchanged.
+ *
+ * @param {string} message
+ * @param {string[]} anomalies
+ * @returns {string}
+ */
+function withAnomalies(message, anomalies) {
+  if (!Array.isArray(anomalies) || anomalies.length === 0) return message;
+  return `${message} — malformed PLAN.md: ${anomalies.join('; ')}`;
 }
 
 /**
@@ -185,6 +235,8 @@ module.exports = {
   isValidSlug,
   isValidTaskId,
   parseAttrs,
+  parsePlan,
+  withAnomalies,
   parseTasks,
   parsePhases,
   parseDepends,

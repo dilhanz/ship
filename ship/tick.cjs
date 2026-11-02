@@ -20,7 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isValidSlug, isValidTaskId, parseTasks, parseDepends } = require(path.join(__dirname, 'plan-parse.cjs'));
+const { isValidSlug, isValidTaskId, parsePlan, withAnomalies, parseDepends } = require(path.join(__dirname, 'plan-parse.cjs'));
 
 function result(ok, code, line) {
   return { ok, code, line };
@@ -76,9 +76,9 @@ function tick(opts) {
       return result(false, 1, `tick: PLAN.md not found for ${feature}`);
     }
 
-    const tasks = parseTasks(text);
+    const { tasks, anomalies } = parsePlan(text);
     const task = tasks.find((t) => t.id === taskId);
-    if (!task) return result(false, 1, `tick: task ${taskId} not found in PLAN.md`);
+    if (!task) return result(false, 1, withAnomalies(`tick: task ${taskId} not found in PLAN.md`, anomalies));
 
     const blocking = parseDepends(task.attrs.depends).filter((dep) => {
       const d = tasks.find((t) => t.id === dep);
@@ -104,7 +104,7 @@ function tick(opts) {
       throw e;
     }
 
-    const after = parseTasks(updated);
+    const after = parsePlan(updated).tasks;
     const done = after.filter((t) => t.attrs.status === 'done').length;
     return result(true, 0, `tick: task ${taskId} done (${commit}) — ${done}/${after.length} tasks done`);
   } catch (e) {

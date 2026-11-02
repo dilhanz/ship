@@ -10,7 +10,7 @@ const path = require('node:path');
 
 const TICK = path.join(__dirname, '..', 'ship', 'tick.cjs');
 const { tick } = require(TICK);
-const { parseTasks, parsePhases } = require(path.join(__dirname, '..', 'ship', 'plan-parse.cjs'));
+const { parseTasks, parsePhases, parsePlan } = require(path.join(__dirname, '..', 'ship', 'plan-parse.cjs'));
 const { scanFeatures } = require(path.join(__dirname, '..', 'hooks', 'scan-features.cjs'));
 
 const SLUG = 'sample-feature';
@@ -100,6 +100,26 @@ describe('plan-parse', () => {
     assert.equal(phases[0].id, '1');
     assert.equal(phases[0].name, 'One');
     assert.equal(phases[0].attrs.status, 'pending');
+  });
+
+  it('reports anomalies for inline closes, unclosed tags and nested openers', () => {
+    const inline = '<phase id="1" name="P" status="pending">\n<task id="1" status="pending">\n  <verify>node a.js</verify></task>\n\n<task id="2" status="pending">\n  <name>Two</name>\n</task>\n</phase>\n';
+    const r = parsePlan(inline);
+    assert.deepEqual(r.tasks.map((t) => t.id), ['1']);
+    assert.equal(r.anomalies.length, 1);
+    assert.match(r.anomalies[0], /line 5: task 2 opens inside task 1 \(opened line 2\)/);
+
+    const eof = parsePlan('<phase id="9" name="P" status="pending">\n<task id="3" status="pending">\n  <name>x</name>\n');
+    assert.deepEqual(eof.anomalies, [
+      'task 3 (line 2) is never closed by a `</task>` line',
+      'phase 9 (line 1) is never closed by a `</phase>` line',
+    ]);
+
+    const nested = parsePlan('<phase id="1" status="pending">\n<phase id="2" status="pending">\n</phase>\n');
+    assert.match(nested.anomalies[0], /line 2: phase 2 opens while phase 1 \(opened line 1\) is still open/);
+
+    assert.deepEqual(parsePlan('<task id="1">\n</task>\n').anomalies, []);
+    assert.deepEqual(parsePlan(undefined), { phases: [], tasks: [], anomalies: [] });
   });
 
   it('parses this repo\'s own PLAN.md task 2 in full when present', (t) => {
@@ -199,7 +219,18 @@ describe('tick', () => {
       });
       assert.equal(tick({ cwd: dir, feature: '../x', taskId: '1', commit: 'abcd' }).line, "tick: invalid feature '../x'");
       assert.equal(tick({ cwd: dir, feature: SLUG, taskId: '1"x', commit: 'abcd' }).line, `tick: invalid task-id '1"x'`);
-      assert.equal(tick({ cwd: dir, feature: SLUG, taskId: '7', commit: 'abcd' }).line, 'tick: task 7 not found in PLAN.md');
+      // The fixture's deliberate line-start fake opener inside task 1 is a
+      // layout anomaly, so "not found" names it.
+      assert.equal(
+        tick({ cwd: dir, feature: SLUG, taskId: '7', commit: 'abcd' }).line,
+        'tick: task 7 not found in PLAN.md — malformed PLAN.md: line 17: task fake opens inside task 1 (opened line 12) — a closing `</task>` not alone on its line?'
+      );
+      const clean = makeFixture(PLAN.replace('  <task id="fake" status="pending"> is still inside task 1.', '  is still inside task 1.'));
+      try {
+        assert.equal(tick({ cwd: clean.dir, feature: SLUG, taskId: '7', commit: 'abcd' }).line, 'tick: task 7 not found in PLAN.md');
+      } finally {
+        cleanup(clean.dir);
+      }
       assert.equal(tick({ cwd: dir, feature: 'nope', taskId: '1', commit: 'abcd' }).line, 'tick: PLAN.md not found for nope');
       assert.deepEqual(fs.readFileSync(planPath), before);
       assert.deepEqual(fs.readdirSync(path.dirname(planPath)).sort(), ['CONTEXT.md', 'PLAN.md']);
@@ -225,6 +256,19 @@ describe('tick', () => {
       assert.equal(refused.status, 2);
       const bad = spawnSync(process.execPath, [TICK, SLUG, '1', 'zz'], { cwd: dir, encoding: 'utf8', env: cleanEnv() });
       assert.equal(bad.status, 1);
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  it('names the plan anomaly instead of a bare not found', () => {
+    const plan = '<phase id="1" name="P" status="pending">\n<task id="1" status="pending">\n  <verify>node a.js</verify></task>\n\n<task id="2" status="pending">\n  <name>Two</name>\n</task>\n</phase>\n';
+    const { dir } = makeFixture(plan);
+    try {
+      const r = tick({ cwd: dir, feature: SLUG, taskId: '2', commit: 'abcd123' });
+      assert.equal(r.code, 1);
+      assert.match(r.line, /^tick: task 2 not found in PLAN\.md — malformed PLAN\.md: line 5: task 2 opens inside task 1/);
+      assert.equal(r.line.split('\n').length, 1);
     } finally {
       cleanup(dir);
     }
