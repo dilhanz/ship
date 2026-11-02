@@ -4,7 +4,7 @@
 // Bug Findings only with a CONTEXT.md citation, and the verifier runs at 80
 // turns.
 //
-// Retro evidence: #236 (booking-inspections) shipped PASS 7/7 while its own
+// Retro evidence: one feature shipped PASS 7/7 while its own
 // Bug Findings table listed 4 Open bugs (1 medium, 3 low), because only
 // critical/high bugs used to fail a verify.
 
@@ -398,7 +398,7 @@ const bug = (severity) => ({ severity, category: 'logic', description: `${severi
 const base = { feature: 'demo', criteria_total: 7, criteria_passed: 7, criteria_failed: 0, criteria_inconclusive: 0 };
 
 describe('verify-checklist-gate: go.workflow downgrades a dishonest PASS', () => {
-  it('#236 shape — PASS 7/7 with a medium and 3 lows becomes FAIL on the medium', async () => {
+  it('PASS 7/7 shape — PASS 7/7 with a medium and 3 lows becomes FAIL on the medium', async () => {
     const { result } = await runWorkflowWithVerdict({
       ...base, status: 'PASS', bugs: [bug('medium'), bug('low'), bug('low'), bug('low')],
     });
@@ -477,12 +477,12 @@ describe('verify-checklist-gate: go.workflow downgrades a dishonest PASS', () =>
     assert.equal(result.verdict, failed, 'a FAIL verdict is the same object');
   });
 
-  it('the guard sits before the outage handling and cites #236', () => {
+  it('the guard sits before the outage handling and cites the PASS 7/7 evidence', () => {
     const src = goSrc();
     const guard = src.indexOf('downgraded_from:');
     const outage = src.indexOf('let verifyOutage = null');
     assert.ok(guard > -1 && outage > -1 && guard < outage, 'the guard must run before the outage block');
-    assert.match(src, /#236/);
+    assert.match(src, /shipped PASS 7\/7 with 4 Open bugs/);
   });
 });
 

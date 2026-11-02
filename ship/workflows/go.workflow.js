@@ -993,7 +993,7 @@ if (!stoppedAt) {
   })
   // Trust the findings over the verdict: a PASS or INCONCLUSIVE that still
   // carries an Open bug, a failed checklist item, or a failed trial merge is
-  // contradictory. #236 shipped PASS 7/7 with 4 Open bugs in its own report.
+  // contradictory. One feature shipped PASS 7/7 with 4 Open bugs in its own report.
   // The verifier's rules already say any Open bug fails; this enforces it
   // mechanically, for fresh and salvaged verdicts alike. A FAIL or a clean
   // PASS passes through as the same object. A low bug is Left open, not Open:

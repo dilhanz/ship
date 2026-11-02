@@ -45,7 +45,7 @@ Minor release: fewer verify-fail → fix-round → re-verify loops, without drop
 
 ## 5.28.0
 
-Minor release: a headless verify FAIL builds its own fix phase before reporting. In facility-compass, 11 of 14 unattended features in the ten days to 2026-10-19 ended at least one run `verify-fail`. Each one sat idle until the caller's next hourly poll re-ran `/ship:go` to build the fix phase the run had just written. That came to 17.6 hours of waiting against 27.3 hours of work.
+Minor release: a headless verify FAIL builds its own fix phase before reporting. In one project using headless runs, 11 of 14 unattended features in the ten days to 2026-10-19 ended at least one run `verify-fail`. Each one sat idle until the caller's next hourly poll re-ran `/ship:go` to build the fix phase the run had just written. That came to 17.6 hours of waiting against 27.3 hours of work.
 
 ### Changed
 
@@ -91,7 +91,7 @@ Patch release — `/ship:finish` no longer overwrites the `status:` line when in
 
 ## 5.25.0
 
-Minor release — the verifier's verdict is honest, and it runs the checks the EM review kept catching. On #236 (`booking-inspections`) the verifier reported PASS 7/7 while its own Bug Findings table listed 4 bugs as `Open` (1 medium, 3 low), because only critical/high bugs failed a verify. The September–October retro (recommendation #1) found 81% of feature PRs drew review findings, with real defects reaching review: a 500 on every live invite, non-identical 404s, a merge with main that did not compile. None of those were checks the verifier ran.
+Minor release — the verifier's verdict is honest, and it runs the checks the EM review kept catching. On one feature PR the verifier reported PASS 7/7 while its own Bug Findings table listed 4 bugs as `Open` (1 medium, 3 low), because only critical/high bugs failed a verify. A September–October retrospective found 81% of feature PRs drew review findings, with real defects reaching review: a 500 on every live invite, non-identical 404s, a merge with main that did not compile. None of those were checks the verifier ran.
 
 ### Changed
 
@@ -104,7 +104,7 @@ Minor release — the verifier's verdict is honest, and it runs the checks the E
 - **Generic checklist** in Stage 2b: docs/manual claims vs code, date/time-zone-dependent tests, and concurrency on write paths. Every row is `PASS | FAIL | N/A` with evidence; a `FAIL` row is also a bug at medium or above. Skipped at criteria-only, where the verbatim narrowing line is unchanged.
 - **Repo checklist** from the optional `.planning/verify-checklist.md` — every bullet is a row, and an optional `` Build: `<command>` `` line names the trial-merge command. Runs at every depth, including criteria-only. The format is documented in the new `ship/docs/verify-checklist.md`.
 - **Trial merge of main** in a detached throwaway worktree (`git -C "$TRIAL" merge`, never a bare `git merge` on the feature branch), built against a green HEAD baseline and always removed. `PASS`, `FAIL` (a high bug plus a "merge main and fix the break" fix task) or `NOT_RUNNABLE` (recorded in Gaps). Runs at every depth.
-- **Workflow downgrade guard.** `go.workflow.js` replaces a `PASS` or `INCONCLUSIVE` verdict carrying any bug, a `FAIL` checklist row, or a failed trial merge with `FAIL`, adding `downgraded_from` and `downgrade_reason`; `tests/verify-checklist-gate.test.js` proves it on the #236 shape. The go skill §6 reconciles a downgrade: CONTEXT.md back to `plan-verified`, VERIFY.md's Overall Status rewritten, and a pending fix phase appended to PLAN.md.
+- **Workflow downgrade guard.** `go.workflow.js` replaces a `PASS` or `INCONCLUSIVE` verdict carrying any bug, a `FAIL` checklist row, or a failed trial merge with `FAIL`, adding `downgraded_from` and `downgrade_reason`; `tests/verify-checklist-gate.test.js` proves it on that PASS 7/7 shape. The go skill §6 reconciles a downgrade: CONTEXT.md back to `plan-verified`, VERIFY.md's Overall Status rewritten, and a pending fix phase appended to PLAN.md.
 - **Scratch-record and schema keys.** `VERIFY_SCHEMA`, the verifier's `verify.json` record and `ship/verify-scratch.cjs` carry `checklist[]` and `trial_merge`; legacy records without them still validate, and the Stage 0 salvage prompt stays consistent with the agent.
 
 ## 5.24.0

@@ -1,6 +1,6 @@
 # Headless Mode Contract
 
-The contract of record for `/ship:go --headless`. The go skill conforms to this document; external callers (e.g. solo-core spawning `claude -p`) classify runs by this contract instead of scraping prose. It is versioned with Ship — contract changes are visible in one diff to this file.
+The contract of record for `/ship:go --headless`. The go skill conforms to this document; external callers (e.g. a task runner spawning `claude -p`) classify runs by this contract instead of scraping prose. It is versioned with Ship — contract changes are visible in one diff to this file.
 
 ---
 
@@ -180,4 +180,4 @@ The caller (or a human) fills each `**Answer:**` line and re-invokes `/ship:go -
 ## 9. Compatibility
 
 - Interactive (non-headless) runs never write OUTCOME.json or QUESTIONS.md — behavior without `--headless` is byte-identical to a Ship without this contract.
-- Callers' prompt-level contracts (e.g. solo-core's wrapper-prompt park instructions) remain the fallback for older Ship versions; this contract supersedes them when present. Ship-side changes must not require a lockstep caller release.
+- Callers' prompt-level contracts (e.g. a wrapper prompt's park instructions) remain the fallback for older Ship versions; this contract supersedes them when present. Ship-side changes must not require a lockstep caller release.
