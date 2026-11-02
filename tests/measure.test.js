@@ -163,3 +163,27 @@ test('invalid session id exits 1', () => {
   assert.equal(r.status, 1);
   assert.equal((r.stdout + r.stderr).trim(), "measure: invalid session id '../etc'");
 });
+
+test('synthetic zero-usage messages add no turn, no estimate and never set the model', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-measure-synth-'));
+  try {
+    const zero = { input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 };
+    writeLines(path.join(root, '-p', 'sess-s.jsonl'), [
+      assistant({ id: 'r1', model: 'claude-opus-5-5', ts: '2026-10-01T00:00:01Z',
+        usage: { input_tokens: 100, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 10 } }),
+      assistant({ id: 's1', model: '<synthetic>', ts: '2026-10-01T00:00:02Z', usage: zero }),
+      assistant({ id: 's2', model: '<synthetic>', ts: '2026-10-01T00:00:03Z', usage: zero }),
+    ]);
+    const r = measureSessions({ sessionIds: ['sess-s'], projectsDir: root });
+    assert.equal(r.ok, true);
+    const main = r.sessions[0].agents[0];
+    assert.equal(main.turns, 1);
+    assert.equal(main.model, 'claude-opus-5-5');
+    assert.equal(main.estimated, false);
+    assert.equal(r.sessions[0].total.turns, 1);
+    assert.equal(r.sessions[0].total.estimated, false);
+    near(main.cost, (100 * 4 + 10 * 20) / 1e6);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

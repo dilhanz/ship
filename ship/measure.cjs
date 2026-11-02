@@ -109,6 +109,10 @@ function measureTranscript(file) {
     if (typeof obj.timestamp === 'string' && (firstTs === null || obj.timestamp < firstTs)) firstTs = obj.timestamp;
     const msg = obj.message;
     if (obj.type !== 'assistant' || !msg || !msg.usage || typeof msg.id !== 'string') continue;
+    // Harness-written `<synthetic>` messages (API errors, interrupts) carry
+    // zero usage and were never a model turn: skip them before any aggregate
+    // (turns, pricing, the estimate flag, the row's model) can see them.
+    if (msg.model === '<synthetic>') continue;
     byId.set(msg.id, msg); // last line wins
   }
 
