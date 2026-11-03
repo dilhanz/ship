@@ -1,5 +1,13 @@
 # Changelog
 
+## 5.29.4
+
+Patch release: the headless workflow wait no longer depends on `TaskOutput`.
+
+### Fixed
+
+- **`/ship:go --headless` told the agent to wait with a tool that does not exist.** The wait rule blocked with `TaskOutput {block:true}`, but current Claude Code builds have no `TaskOutput` tool, so `ToolSearch select:TaskOutput,TaskStop` returned only `TaskStop` and each run made up its own wait. One rpfs run (2026-11-03) polled `journal.jsonl` for a `"type":"result"` line. That line marks a single agent finishing, so the wait ended after the first review round while the replanner was still running. Step 3 now blocks in a foreground Bash call (600000 ms, the Bash tool's maximum) until the workflow's `tasks/{task_id}.output` file is non-empty. That file holds the workflow's result JSON, and the agent reconciles from its `result` field. The rule says why `run_in_background` Bash, `Monitor` and the journal's result lines cannot stand in for it. `TaskOutput` is gone from `allowed-tools`, and the 12-call ceiling and TaskStop-before-terminate ordering are unchanged.
+
 ## 5.29.3
 
 Patch release: `sync:main` runs on Sonnet.

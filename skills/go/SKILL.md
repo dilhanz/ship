@@ -2,7 +2,7 @@
 name: go
 description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, TaskOutput, TaskStop, ToolSearch, Skill, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, TaskStop, ToolSearch, Skill, AskUserQuestion
 argument-hint: "[feature-name] [--auto] [--headless] [--profile <quick|standard|thorough>] [--fix-rounds <n>]"
 ---
 
@@ -24,8 +24,16 @@ So under `--headless`, after EVERY Workflow invocation in this skill — section
 
 1. Take the Task ID from the Workflow tool result (it reports `Task ID: {id}`).
 2. If the completion notification already arrived while you were still in the launching turn — short workflows do finish that fast — the result is in hand. Skip to reconciling it.
-3. Otherwise call `TaskOutput` with `{ task_id, block: true, timeout: 600000 }`. 600000 ms is that tool's maximum, not a tuning choice. `TaskOutput` and `TaskStop` may be deferred tools in this harness — load them first with `ToolSearch` using `select:TaskOutput,TaskStop`.
-4. Read the reply's `<status>`. A build spine routinely outlasts ten minutes, so one call is not enough: while the status is still running, repeat step 3 — up to **12 calls** (a 2-hour ceiling). On `completed`, the reply's `<output>` carries `result` — the workflow's own return value, the same `{ feature, stoppedAt, completed, verdict, salvageEvents }` (or plan-loop) object you would have received from a notification. Reconcile from that; do not wait for a separate notification on top of it. The payload is a compact summary, not an agent transcript, so reading it costs nothing.
+3. Otherwise block in a **foreground** Bash call on the workflow's output file. The harness keeps `{task_id}.output` in the session's `tasks/` directory: it is empty while the workflow runs and holds the workflow's result JSON once it ends. Run this with the Bash `timeout` set to `600000` (600000 ms is the Bash tool's maximum, not a tuning choice), substituting the Task ID:
+
+   ```bash
+   id={task_id}; n=0
+   until f=$(find /private/tmp /tmp "${TMPDIR:-/tmp}" -path "*/tasks/$id.output" 2>/dev/null | head -1); [ -s "$f" ] || [ $n -ge 114 ]; do sleep 5; n=$((n+1)); done
+   [ -s "$f" ] && echo "DONE $f" || echo RUNNING
+   ```
+
+   Do not wait any other way. There is no `TaskOutput` tool in current Claude Code builds, so a rule that needs one leaves nothing to block on. `run_in_background` Bash and `Monitor` return at once, so the turn ends and `claude -p` exits anyway. And the `"type":"result"` lines in the workflow's `journal.jsonl` mark individual agents finishing, not the workflow, so watching them ends the wait early. `TaskStop` may be a deferred tool. Load it with `ToolSearch` using `select:TaskStop` before step 5 needs it.
+4. Read the line the call prints. A build spine routinely outlasts ten minutes, so one call is not enough: while the status is still running, repeat step 3 (the call printed `RUNNING`) — up to **12 calls** (a 2-hour ceiling). On `DONE`, read the file it names. Its `result` field is the workflow's own return value: the same `{ feature, stoppedAt, completed, verdict, salvageEvents }` (or plan-loop) object a notification would carry. Reconcile from that; do not wait for a separate notification on top of it. If a completion notification lands between calls, reconcile from its `<result>`, or from its `<output-file>` when that result is cut short. The payload is a compact summary, not an agent transcript, so reading it costs nothing.
 5. If the ceiling is reached with the task still running, call `TaskStop` on the Task ID **before** terminating, then terminate as `error` per section 6 with detail `workflow exceeded the 2-hour headless wait cap`. Stopping first is what holds the guarantee that nothing is still writing to the worktree once the run returns.
 
 The structured result you then reconcile is unchanged — only *when* you receive it changes.
