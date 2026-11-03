@@ -1,6 +1,6 @@
 {
   "name": "ship",
-  "version": "5.29.3",
+  "version": "5.29.4",
   "description": "A feature-centric development framework for Claude Code",
   "bin": "./install.js",
   "engines": {
