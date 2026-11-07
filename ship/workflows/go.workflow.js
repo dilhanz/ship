@@ -450,7 +450,7 @@ ${state}
 
 ${keyFileContext}
 
-Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md. Skip every task already marked status="done" and resume from the first pending task ${ph.id === 'all' ? 'in the plan' : 'in this phase'}. If the working tree carries uncommitted changes from the interrupted task, finish that task, run its verify command, and commit it before moving on. Then follow your normal execution loop, deviation rules, and commit conventions.`
+Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md. Skip every task already marked status="done" and resume from the first pending task ${ph.id === 'all' ? 'in the plan' : 'in this phase'}. If the working tree carries uncommitted changes from the interrupted task, finish that task, run its verify command, and commit it before moving on. Then follow your normal execution loop, deviation rules, and commit conventions.${fixPhaseBuildSweep(ph)}`
 
 const progressPrompt = (ph) => `Report build progress for feature: ${feature}
 ${phaseLine(ph)}
@@ -519,7 +519,7 @@ ${rangeInstruction(diffRange(fixCommits))}
 
 You have no memory of that review — verify from the code. Two jobs, per the Re-Reviews section of your instructions:
 
-1. Re-run the affected verify commands and confirm from the code whether each finding above is actually resolved — at every site, not just the first. Search the phase's changed files for the finding's pattern: an occurrence the fix missed means the finding is not resolved. Report every one that is not, at its original severity, with the missed sites in \`sites\`. A medium you report as unresolved keeps \`"reproduced": true\` only if you reproduced it again. A finding tagged fix-class keeps \`"fix_class": true\` when you report it unresolved.
+1. Re-run the affected verify commands and confirm from the code whether each finding above is actually resolved — at every site, not just the first. Search the phase's changed files for the finding's pattern — for a finding tagged fix-class, search this feature's changed files (${mergeBaseCmd}) instead, the same scope the review swept: an occurrence the fix missed means the finding is not resolved. Report every one that is not, at its original severity, with the missed sites in \`sites\`. A medium you report as unresolved keeps \`"reproduced": true\` only if you reproduced it again. A finding tagged fix-class keeps \`"fix_class": true\` when you report it unresolved.
 2. Review the fix commits as a diff in their own right and report any NEW critical/high problem the fixes introduced, marked \`"new_issue": true\`.
 
 Do not re-review the rest of the phase.`

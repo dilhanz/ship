@@ -120,6 +120,34 @@ describe('fix-class sweep — the sweep rule reaches the fix phase up front', ()
     assert.match(prompts['review:fix-2'], /"fix_class": true/);
   });
 
+  it('a fix phase continuation builder keeps the sweep (PR #50 review)', async () => {
+    let n = 0;
+    const build = () => (++n === 1
+      ? { feature: 'f', status: 'PARTIAL', tasks_completed: 1, tasks_total: 2, commits: ['abc1234'] }
+      : COMPLETE);
+    const { calls, prompts } = await runWorkflow(FIX_PHASE, { build, review: clean, verify: VERDICT });
+    const cont = calls.filter((c) => c.startsWith('build:fix-2') && c !== 'build:fix-2');
+    assert.ok(cont.length >= 1, `expected a continuation round, got ${calls.join(', ')}`);
+    assert.match(prompts[cont[0]], /Continue building feature/);
+    assert.match(prompts[cont[0]], /This is a verify fix phase/);
+    assert.match(prompts[cont[0]], /git merge-base HEAD origin\/main/);
+  });
+
+  it('a fix-class re-review searches the whole feature, not just the phase (PR #50 review)', async () => {
+    const review = { feature: 'f', status: 'APPROVED', findings: [SIBLING_LOW], ...evidence };
+    const { prompts } = await runWorkflow(FIX_PHASE, {
+      build: COMPLETE, review, fix: FIX, rereview: clean, verify: VERDICT,
+    });
+    assert.match(prompts['rereview:fix-2'], /finding tagged fix-class, search this feature's changed files \(`git diff --name-only \$\(git merge-base/);
+    assert.match(reviewer(), /for a fix-class finding, the feature's changed files/);
+    assert.match(buildSkill(), /for a `fix_class` finding, the feature's changed files since the merge-base/);
+  });
+
+  it('the reviewer can derive the feature-wide file set itself on the manual path (PR #50 review)', () => {
+    assert.match(reviewer(), /which you run yourself when the prompt does not supply it/);
+    assert.match(reviewer(), /review the phase's own diff range as usual/);
+  });
+
   it('a feature phase gets neither addition', async () => {
     const { prompts } = await runWorkflow(FEATURE_PHASE, { build: COMPLETE, review: clean, verify: VERDICT });
     assert.doesNotMatch(prompts['build:p1'], /verify fix phase/);
