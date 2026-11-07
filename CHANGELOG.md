@@ -2,11 +2,20 @@
 
 ## 5.30.0
 
-Minor release: a verify fix phase closes its whole defect class in one round, and `--auto` no longer claims to be hands-off.
+Minor release: `/ship:go` builds one brief-fed task at a time to cut builder and reviewer context, a verify fix phase closes its whole defect class in one round, and `--auto` no longer claims to be hands-off.
+
+### Added
+
+- **Per-task builders.** With default knobs, `/ship:go` now dispatches one fresh builder per pending task instead of one per phase. The go skill lists each phase's pending tasks with `ship/plan-tasks.cjs`. Each builder starts by running `ship/task-brief.cjs`, which writes a brief with the task XML, CONTEXT.md's Decisions and Scope, the dependency commits and the verify-checklist bullets. The builder reads that brief, never PLAN.md or CONTEXT.md. It marks its task done with `ship/tick.cjs`, which prints one line and refuses while a dependency is still pending. PARTIAL, the probe, the salvage round and blind rounds now apply per task. A phase without a task list, or a plan the lister reports as malformed, falls back to the per-phase build.
+- **Review packages.** A per-task phase's reviewer reads one file from `ship/review-package.cjs` (commit log, stat and diff) instead of running `git diff` itself. It uses the builders' recorded `verify_evidence` and re-runs only the verify commands nobody evidenced green. Step 1b still runs. REVIEW.md keeps the builders' evidence on a separate `Builder evidence:` line, so the reviewer's own `Verify:` counts stay its own.
+- **Every `agent()` call names its model.** Sonnet runs docs-only tasks, the progress probe, `sync:main` and the canary. Opus runs the rest.
+- **`buildMode` rollback knob.** `--build-mode per-phase`, or `SHIP_BUILD_MODE=per-phase` in the environment, restores the previous per-phase prompts byte for byte. A golden fixture pins those prompts. Precedence is flag > env > `per-task`.
+- **`ship/measure.cjs`.** Reports per-agent turns, peak context, re-read tokens and estimated cost from session transcripts: `node ship/measure.cjs <session-id>… [--json]`.
+- **Builder and reviewer Output Discipline.** Both agents now grep before reading, read line ranges, keep test output to failures, and use `set -o pipefail` on any piped command whose exit code decides a verdict.
 
 ### Changed
 
-- **A same-class sibling gates a fix phase at any severity.** rpfs `finance-meter-readings` needed three verify fix rounds for one defect class: a date with no bound rendered as year-less "d MMM".
+- **A same-class sibling gates a fix phase at any severity.** One feature needed three verify fix rounds for one defect class: a date with no bound rendered as year-less "d MMM".
   - In fix round 2, the task fixed one site.
   - The phase reviewer saw the same class one function over and recorded it as a `low`. Lows never gate, so no fix round ran.
   - The verifier raised it to a `medium` and failed the feature again, costing a third fix round and a third full verify.
@@ -16,6 +25,11 @@ Minor release: a verify fix phase closes its whole defect class in one round, an
 
 ### Fixed
 
+- **The fix-phase sweep now holds everywhere a fix phase runs.**
+  - Per-task builds are the default, and they never reached the per-phase prompts, so a `fix-{n}` phase with a task list ran without the sweep. The task builder, its continuation and the package reviewer now carry it.
+  - A per-phase continuation builder, started after a PARTIAL or a dead builder, now keeps the sweep instruction too.
+  - A re-review of a `fix_class` finding searches the feature's changed files, the scope it was found in, rather than only the phase's.
+  - On the manual `/ship:build` path, the reviewer computes the merge-base file set itself, because that prompt supplies only the phase range.
 - **`--auto` was described as "a fully hands-off run".** It only skips the "Ready to build?" gate. A verify FAIL still stops an interactive run and hands over the fix phase it wrote, because section 6b's automatic fix rounds run only under `--headless`. The go skill and the README now say so. The README also listed only two interruptions, the build gate and plan-loop questions, and now adds the verify FAIL stop.
 
 ## 5.29.4
