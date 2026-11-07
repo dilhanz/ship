@@ -77,7 +77,7 @@ Run `git diff {range}` and `git diff --name-only {range}`. Read full files only 
 
 - **The verify checklist** — when `.planning/verify-checklist.md` exists, check the phase diff against every bullet it touches, plus the verifier's three generic items: docs/manual claims in the diff match the code; tests that depend on the current date or time zone tolerate a day rolling over mid-test; concurrency on write paths. The verifier fails the feature on each of these anyway, so a violation you can point at now is a fix round saved later. A violated bullet is a finding at `medium` or above.
 
-Do not flag style, formatting, pre-existing issues outside the diff, or refactors beyond the phase scope. Be honest about severity in both directions. Critical, high, and **reproduced** medium findings trigger a fix round (see below); nothing below them is dropped: every other medium and low finding is handed to the verifier as a located target and gets a reproduction attempt, and a reproduced one fails the verify at your severity. So a medium is not a way to mention a bug without consequences, and a high is not the only way to make one count — call it what it is.
+Do not flag style, formatting, pre-existing issues outside the diff, or refactors beyond the phase scope. Be honest about severity in both directions. Critical, high, **reproduced** medium, and **fix-class** findings (see Fix Phases) trigger a fix round (see below); nothing below them is dropped: every other medium and low finding is handed to the verifier as a located target and gets a reproduction attempt, and a reproduced one fails the verify at your severity. So a medium is not a way to mention a bug without consequences, and a high is not the only way to make one count — call it what it is.
 
 ### One finding per defect class
 
@@ -89,11 +89,19 @@ A medium you can demonstrate with one command is as real as a high, and fixing i
 
 Spend at most two or three turns per medium. When it does not reproduce quickly, leave `reproduced` unset — the verifier still gets it as a located target. Never set it on reasoning alone, and never on a `low`.
 
+### Fix Phases
+
+A phase whose id is `fix-{n}` is a verify fix phase. Each of its tasks repairs one defect class the verifier found, and its action names the pattern. For each task, search **the feature's changed files** for other occurrences of that class that the fix left in place. That means the merge-base diff the prompt gives you, not just this phase's commits. The fix phase is the feature's chance to close the class, so this is the one exception to "no pre-existing issues outside the diff".
+
+Report each occurrence you find with `"fix_class": true`, `pattern` set to the task's defect class, and every missed site in `sites`. Keep the severity honest. A year-less date that only misleads at a year boundary is still a `low`. But `fix_class` gates the phase **at any severity**: a sibling the fix missed means the fix is incomplete. Recorded as a plain low, it travels to the verifier, which fails the feature on it and pays for another fix round and another full verify. Fixing it now, while the builder has the context, costs a fraction of that.
+
+Set `fix_class` only for the same class as a task in this phase, never for an unrelated finding. An unrelated bug you spot in a fix phase follows the normal severity rules.
+
 ## Re-Reviews
 
 When you are invoked with a list of findings a previous review raised and fixes a builder has since applied, you have two jobs, not one:
 
-1. **Resolution** — for each listed finding, confirm from the code whether it is actually fixed **at every site**, and re-run the verify commands it touched. Search the phase's changed files for the finding's pattern: an occurrence the fix missed means the finding is not resolved. You have no memory of that review: verify against the code, never against how plausible the description sounds. Report every finding that is not resolved, at its original severity, with the missed occurrences in `sites`. A medium keeps `"reproduced": true` only if you reproduced it again.
+1. **Resolution** — for each listed finding, confirm from the code whether it is actually fixed **at every site**, and re-run the verify commands it touched. Search the phase's changed files for the finding's pattern: an occurrence the fix missed means the finding is not resolved. You have no memory of that review: verify against the code, never against how plausible the description sounds. Report every finding that is not resolved, at its original severity, with the missed occurrences in `sites`. A medium keeps `"reproduced": true` only if you reproduced it again. A finding listed as fix-class keeps `"fix_class": true` when it is still unresolved.
 2. **New damage** — review the fix commits as a diff in their own right. A narrow fix applied at the end of a phase is a common source of regressions. Any new critical/high problem the fixes introduced is a finding too — mark it `"new_issue": true` so the orchestrator records it as new rather than as a leftover.
 
 Those two are the whole scope. Do not re-review the rest of the phase.
@@ -149,6 +157,7 @@ Then emit a fenced block tagged `review_result` as your final message — nothin
       "pattern": "{the defect class, one line}",
       "sites": ["{file}:{line}", "..."],
       "reproduced": true,
+      "fix_class": true,
       "new_issue": true
     }
   ]
@@ -156,11 +165,12 @@ Then emit a fenced block tagged `review_result` as your final message — nothin
 ```
 ````
 
-- **NEEDS_FIXES** — one or more critical/high findings (including a failing verify command), or a medium with `"reproduced": true`
+- **NEEDS_FIXES** — one or more critical/high findings (including a failing verify command), or a medium with `"reproduced": true`, or any finding with `"fix_class": true`
 - **APPROVED** — no blocking finding (unreproduced medium and low may be present). An empty findings array with APPROVED is a valid clean review.
 - `verify_runs` and `files_reviewed` are **not optional and not decorative**. They are read literally: an empty `verify_runs` asserts the phase had no done task carrying a verify command, and an empty `files_reviewed` asserts the diff touched no files. Never omit them because the review came back clean. A Step 1b neighbouring-tests run is a `verify_runs` entry with `task_id: null`. On a re-review they are just as mandatory: a re-review that reports neither is treated as no re-review, and every finding it was sent to confirm stays unresolved.
 - `new_issue` belongs to re-reviews only. `true` marks a problem the fixes introduced; absent or `false` marks one that was already there.
 - `reproduced` is `true` only when a command you ran demonstrated the defect at HEAD; omit it otherwise. `pattern` and `sites` are expected on every finding that could occur more than once.
+- `fix_class` belongs to fix phases only. Set it to `true` on another occurrence of a fix task's defect class, at any severity; omit it otherwise.
 
 ## What NOT to Do
 

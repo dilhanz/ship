@@ -1,5 +1,23 @@
 # Changelog
 
+## 5.30.0
+
+Minor release: a verify fix phase closes its whole defect class in one round, and `--auto` no longer claims to be hands-off.
+
+### Changed
+
+- **A same-class sibling gates a fix phase at any severity.** rpfs `finance-meter-readings` needed three verify fix rounds for one defect class: a date with no bound rendered as year-less "d MMM".
+  - In fix round 2, the task fixed one site.
+  - The phase reviewer saw the same class one function over and recorded it as a `low`. Lows never gate, so no fix round ran.
+  - The verifier raised it to a `medium` and failed the feature again, costing a third fix round and a third full verify.
+
+  Review findings now carry an optional `fix_class` flag, which applies in `fix-{n}` phases only. It marks another occurrence of the defect class one of the phase's fix tasks repairs. `isBlocking` treats a `fix_class` finding as blocking whatever its severity, so the in-phase fix round clears it while the builder still has the context. The re-review keeps the flag on a finding that is still unresolved. The manual `/ship:build` path uses the same blocking set.
+- **Fix phases get the sweep rule up front.** The builder and reviewer of a `fix-{n}` phase are now told to search the feature's whole changed-file set for the task's pattern, not just the sites the verifier listed. Before, only an in-phase fix round carried the sweep instruction, and a same-class low never triggered one. The reviewer contract gains a **Fix Phases** section. It is the one exception to "no pre-existing issues outside the diff": the scope is the feature's merge-base diff.
+
+### Fixed
+
+- **`--auto` was described as "a fully hands-off run".** It only skips the "Ready to build?" gate. A verify FAIL still stops an interactive run and hands over the fix phase it wrote, because section 6b's automatic fix rounds run only under `--headless`. The go skill and the README now say so. The README also listed only two interruptions, the build gate and plan-loop questions, and now adds the verify FAIL stop.
+
 ## 5.29.4
 
 Patch release: the headless workflow wait no longer depends on `TaskOutput`.

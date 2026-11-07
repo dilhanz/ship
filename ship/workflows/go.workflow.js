@@ -61,8 +61,17 @@ const syncMain = !!(parsedArgs && (parsedArgs.syncMain === true || parsedArgs.sy
 // the context. An unreproduced medium keeps travelling to the verifier as a
 // located target — about 40% of carried findings did not reproduce, and gating
 // on those would spend fix rounds on non-bugs.
+//
+// A finding of any severity also gates when the reviewer marks it `fix_class`:
+// in a verify fix phase, another occurrence of the defect class one of the
+// phase's fix tasks was written to repair. On
+// rpfs finance-meter-readings, a verify fix task added the year to one "d MMM"
+// date; the phase reviewer saw the same year-less date one function over and
+// recorded it as a low, the verifier raised it to a medium, and it cost a third
+// fix round and a third full verify. A sibling of the class under repair is not
+// a separate low-priority observation — it is the fix being incomplete.
 const isBlocking = (f) => !!f && (f.severity === 'critical' || f.severity === 'high' ||
-  (f.severity === 'medium' && f.reproduced === true))
+  (f.severity === 'medium' && f.reproduced === true) || f.fix_class === true)
 
 const BUILD_SCHEMA = {
   type: 'object',
@@ -135,6 +144,10 @@ const REVIEW_SCHEMA = {
           // one call site the reviewer happened to read first.
           pattern: { type: 'string' },
           sites: { type: 'array', items: { type: 'string' } },
+          // Verify fix phases only: true when the finding is another occurrence
+          // of the defect class one of the phase's fix tasks set out to repair.
+          // Gates the phase at any severity (isBlocking).
+          fix_class: { type: 'boolean' },
         },
       },
     },
@@ -407,13 +420,25 @@ const safeAgent = async (prompt, opts) => {
   }
 }
 
+// A verify fix phase — `fix-{n}`, appended by the verifier or by the go skill's
+// downgrade reconcile. Each of its tasks repairs one defect class, so its
+// builder and its reviewer both get the sweep rule up front, not only in a fix
+// round that a same-class sibling never triggered.
+const isFixPhase = (ph) => !!ph && /^fix-\d+$/.test(String(ph.id))
+
+const mergeBaseCmd = '`git diff --name-only $(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master)..HEAD`'
+
+const fixPhaseBuildSweep = (ph) => isFixPhase(ph)
+  ? `\n\nThis is a verify fix phase: each task repairs a defect class the verifier found, and its action names the pattern and the sites it saw. Fix the class, not the listed sites. Before you change anything for a task, search this feature's changed files (${mergeBaseCmd}) for every other occurrence of the same pattern — the listed sites are where the verifier found it, not a promise there are no others. Fix every occurrence in the same task, cover each with a test (one parametrized test is fine), and name every site you fixed in the commit body. An occurrence outside the changed files is pre-existing: leave it, and record it in your concerns.`
+  : ''
+
 const buildPrompt = (ph) => `Build feature: ${feature}
 ${phaseLine(ph)}
 ## Key File Context (from Explore digest)
 
 ${keyFileContext}
 
-Execute all pending tasks ${ph.id === 'all' ? 'in the plan' : 'in this phase'}. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions.`
+Execute all pending tasks ${ph.id === 'all' ? 'in the plan' : 'in this phase'}. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions.${fixPhaseBuildSweep(ph)}`
 
 const continuePrompt = (ph, state) => `Continue building feature: ${feature}
 ${phaseLine(ph)}
@@ -456,12 +481,14 @@ ${phaseLine(ph)}Phase commits: ${commits.length ? commits.join(', ') : '(none re
 
 ${rangeInstruction(diffRange(commits))}
 
-Re-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md.`
+Re-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/${feature}/PLAN.md and .planning/features/${feature}/CONTEXT.md.${isFixPhase(ph) ? `
+
+This is a verify fix phase. Per the Fix Phases section of your instructions, search this feature's changed files (${mergeBaseCmd}) for any other occurrence of each task's defect class that the fix left in place, and report each one with \`"fix_class": true\` at its honest severity. It gates the phase whatever that severity is: a sibling the fix missed means the fix is incomplete, and recording it as a low only sends it to the verifier, which fails the feature on it and costs another fix round.` : ''}`
 
 // One finding line, shared by every prompt that hands findings on. The pattern
 // and sites travel with it: a fix that sees only the first call site fixes only
 // that one, and the next verify finds the second.
-const findingTags = (f) => [f.severity, f.reproduced === true ? 'reproduced' : null].filter(Boolean).join(', ')
+const findingTags = (f) => [f.severity, f.reproduced === true ? 'reproduced' : null, f.fix_class === true ? 'fix-class' : null].filter(Boolean).join(', ')
 const findingExtras = (f) => `${f.pattern ? ` Pattern: ${f.pattern}.` : ''}${Array.isArray(f.sites) && f.sites.length ? ` Sites: ${f.sites.join(', ')}.` : ''}`
 const findingLine = (f) => `[${findingTags(f)}] ${f.file} — ${f.description}${findingExtras(f)}`
 
@@ -469,11 +496,11 @@ const findingLine = (f) => `[${findingTags(f)}] ${f.file} — ${f.description}${
 // two weeks were the same defect at a call site the previous fix had not
 // touched — workorder-photos-closure-label fixed last-writer-wins saves one
 // method per round, through five verifies.
-const sweepInstruction = `Fix the defect class, not the instance. Before you change anything for a finding, search this feature's changed files (\`git diff --name-only $(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master)..HEAD\`) for every other occurrence of the same pattern — the listed sites are where the reviewer found it, not a promise there are no others. Fix every occurrence, and cover each one with a test (one parametrized test is fine). Name every site you fixed in the commit body. An occurrence outside the changed files is pre-existing: leave it, and record it in your concerns.`
+const sweepInstruction = `Fix the defect class, not the instance. Before you change anything for a finding, search this feature's changed files (${mergeBaseCmd}) for every other occurrence of the same pattern — the listed sites are where the reviewer found it, not a promise there are no others. Fix every occurrence, and cover each one with a test (one parametrized test is fine). Name every site you fixed in the commit body. An occurrence outside the changed files is pre-existing: leave it, and record it in your concerns.`
 
 const fixPrompt = (ph, findings) => `Fix review findings for feature: ${feature}
 ${phaseLine(ph)}
-The phase reviewer found blocking issues — critical/high, or a medium it reproduced with a command. Fix ONLY these — do not refactor beyond them:
+The phase reviewer found blocking issues — critical/high, a medium it reproduced with a command, or (tagged fix-class) another occurrence of a defect class this fix phase set out to repair. Fix ONLY these — do not refactor beyond them:
 
 ${findings.map((f, i) => `${i + 1}. ${findingLine(f)}${f.recommendation ? ` (fix: ${f.recommendation})` : ''}`).join('\n')}
 
@@ -492,7 +519,7 @@ ${rangeInstruction(diffRange(fixCommits))}
 
 You have no memory of that review — verify from the code. Two jobs, per the Re-Reviews section of your instructions:
 
-1. Re-run the affected verify commands and confirm from the code whether each finding above is actually resolved — at every site, not just the first. Search the phase's changed files for the finding's pattern: an occurrence the fix missed means the finding is not resolved. Report every one that is not, at its original severity, with the missed sites in \`sites\`. A medium you report as unresolved keeps \`"reproduced": true\` only if you reproduced it again.
+1. Re-run the affected verify commands and confirm from the code whether each finding above is actually resolved — at every site, not just the first. Search the phase's changed files for the finding's pattern: an occurrence the fix missed means the finding is not resolved. Report every one that is not, at its original severity, with the missed sites in \`sites\`. A medium you report as unresolved keeps \`"reproduced": true\` only if you reproduced it again. A finding tagged fix-class keeps \`"fix_class": true\` when you report it unresolved.
 2. Review the fix commits as a diff in their own right and report any NEW critical/high problem the fixes introduced, marked \`"new_issue": true\`.
 
 Do not re-review the rest of the phase.`

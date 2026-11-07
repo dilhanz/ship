@@ -171,7 +171,7 @@ Emit your review_result JSON block when done.
 - If **both are empty**, the reviewer re-ran nothing and read nothing — its verdict is unsubstantiated. Record it in REVIEW.md as given, and add "phase {id} review reported no verify runs and no files reviewed — verdict unsubstantiated" to the phase's concerns. Do not treat it as a clean review, and do not re-run the reviewer.
 - If any entry is `not_runnable`, add "phase {id}: {N} of {M} verify command(s) not re-runnable in this environment" to the phase's concerns.
 
-**Branch on the findings, not on `status`.** Collect the review's *blocking* set: every critical or high finding, plus every medium marked `"reproduced": true` (the reviewer demonstrated it with a command). An `APPROVED` that still lists a blocking finding is contradictory, and the finding wins — the go workflow treats it the same way, and the two paths must not diverge on what gates a phase.
+**Branch on the findings, not on `status`.** Collect the review's *blocking* set: every critical or high finding, plus every medium marked `"reproduced": true` (the reviewer demonstrated it with a command), plus every finding of any severity marked `"fix_class": true` (in a `fix-{n}` phase, another occurrence of the defect class one of its fix tasks repairs). An `APPROVED` that still lists a blocking finding is contradictory, and the finding wins — the go workflow treats it the same way, and the two paths must not diverge on what gates a phase.
 
 4. **If the blocking set is empty:** append all findings (if any) to REVIEW.md marked `recorded`. Proceed to mark the phase done.
 5. **If the blocking set is non-empty** (whatever `status` said): append all findings to REVIEW.md, then run exactly one fix round:
