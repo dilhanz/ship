@@ -567,7 +567,7 @@ const packageReviewPrompt = (ph, commits, evidence, scope) => {
   const packageCommand = (r) => `node "${shipRoot}/ship/review-package.cjs" ${feature} ${r} ${scope}`
   const packagePath = `.planning/features/${feature}/.review-scratch/package-${scope}.md`
   const packageBlock = range
-    ? `Build the review package first: \`${packageCommand(range)}\` — it writes \`${packagePath}\` (commit log, stat, and the diff with 10 lines of context) and prints one line with its path and size. Read that file for Step 2 instead of running \`git diff\` yourself. If it reports 0 files or fails, fall back as below.
+    ? `Run the coverage check from your instructions first, then build the review package from the final range: \`${packageCommand(range)}\` — substituting the widened range if the check widened it. It writes \`${packagePath}\` (commit log, stat, and the diff with 10 lines of context) and prints one line with its path and size. Read that file for Step 2 instead of running \`git diff\` yourself. If it reports 0 files or fails, fall back as below.
 
 ${rangeInstruction(range)}`
     : `${rangeInstruction(null)}
@@ -582,9 +582,9 @@ ${packageBlock}
 The builders ran each task's \`<verify>\` and recorded:
 ${evidence.length ? evidence.map(evidenceLine).join('\n') : '- (nothing recorded)'}
 
-Do NOT re-run these verify commands — skip Step 1 for the tasks above.${rerun.length ? `
+Do NOT re-run these verify commands where they exited 0 — skip Step 1 for those tasks.
 
-Re-run Step 1 only for: ${rerun.map((id) => `task ${id}`).join(', ')}` : ''}
+Re-run Step 1 for every other task in this phase marked \`status="done"\` in PLAN.md — a task an earlier run finished has no evidence above and must be re-run.${rerun.length ? ` From this run: ${rerun.map((id) => `task ${id}`).join(', ')}` : ''}
 
 Step 1b (neighbouring tests) still runs. Report only the commands you ran yourself in \`verify_runs\`.
 

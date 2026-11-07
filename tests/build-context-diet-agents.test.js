@@ -54,7 +54,8 @@ describe('build-context-diet — builder agent', () => {
     const section = c.slice(od, fs2);
     assert.match(section, /tail/);
     assert.match(section, /Never `cat`/);
-    assert.match(section, /re-reads the whole accumulated context/);
+    assert.match(section, /re-reads the whole accumulated context/);    assert.match(section, /set -o pipefail; \{cmd\} 2>&1 \| tail -40/, 'truncation keeps the exit status');
+    assert.doesNotMatch(section, /or `2>&1 \| tail -40`/, 'no bare tail pipeline that masks exit codes');
   });
 
   it('frontmatter maxTurns: 60 is unchanged', () => {
@@ -78,6 +79,10 @@ describe('build-context-diet — reviewer agent', () => {
     assert.match(block, /Step 1b still runs in package mode/);
     assert.match(block, /do not re-run any verify command the evidence shows exiting 0/);
     assert.match(block, /`verify_runs` holds only commands you ran/);
+    assert.match(block, /run the coverage check below \*\*first\*\*, then run the package command once with the final range/);
+    assert.match(block, /plus any task an earlier run finished/);
+    const od = c.slice(c.indexOf('## Output Discipline'), c.indexOf('## Re-Reviews'));
+    assert.match(od, /set -o pipefail;/, 'reviewer truncation keeps the exit status');
   });
 
   it('the HARD-GATE allows the package file as the only other write', () => {

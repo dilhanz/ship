@@ -76,8 +76,8 @@ Every turn re-reads the whole accumulated context, so a whole-file dump is paid 
 
 - Grep before you read, and read line ranges (`Read` with offset/limit, `sed -n 'a,bp'`), not whole files.
 - Never `cat` a file or print PLAN.md through Bash.
-- Make test and build commands print failures only (the runner's quiet or dot reporter, or `2>&1 | tail -40`).
-- Pipe any command whose output can exceed ~40 lines through `tail` or `head`.
+- Make test and build commands print failures only (the runner's quiet or dot reporter, or `set -o pipefail; {cmd} 2>&1 | tail -40`).
+- Pipe any command whose output can exceed ~40 lines through `tail` or `head` — and when its exit code matters (every `<verify>`, every `exit_code` you record), start the command with `set -o pipefail;`. Without it a pipeline returns `tail`'s status, so a failing verify reads as exit 0.
 - Don't re-read a file you just edited.
 
 ## Fix Scope Boundary

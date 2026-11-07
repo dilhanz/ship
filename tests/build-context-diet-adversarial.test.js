@@ -106,7 +106,7 @@ describe('per-task dispatch — adversarial', () => {
       return null;
     });
     const p = calls.find((c) => c.label === 'review:p1').prompt;
-    assert.ok(p.includes('Re-run Step 1 only for: task 2, task 3'), p);
+    assert.ok(p.includes('From this run: task 2, task 3'), p);
     assert.ok(p.includes('node "/r/ship/review-package.cjs" demo aaa1~1..HEAD phase-p1'), p);
   });
 });

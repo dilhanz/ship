@@ -68,10 +68,13 @@ describe('go workflow — per-task phase review package', () => {
     assert.ok(reviewPrompt.includes('    line 11'), 'last 20 lines kept');
     assert.ok(!reviewPrompt.includes('    line 10\n'), 'tail capped at 20 lines');
     assert.ok(reviewPrompt.includes('Do NOT re-run these verify commands'));
-    const rerun = reviewPrompt.split('\n').find((l) => l.startsWith('Re-run Step 1 only for:'));
+    const rerun = reviewPrompt.split('\n').find((l) => l.startsWith('Re-run Step 1 for every other task'));
     assert.ok(rerun, 're-run list present');
     assert.ok(rerun.includes('task 2') && rerun.includes('task 3'), 'no evidence and failing evidence re-run');
-    assert.ok(!rerun.includes('task 1'), 'green evidence is not re-run');
+    assert.ok(!rerun.includes('task 1,') && !/task 1$/.test(rerun), 'green evidence is not re-run');
+    assert.ok(rerun.includes('a task an earlier run finished has no evidence above and must be re-run'), 'resumed-phase done tasks are re-run');
+    const cov = reviewPrompt.indexOf('Run the coverage check from your instructions first');
+    assert.ok(cov >= 0 && cov < reviewPrompt.indexOf('review-package.cjs'), 'coverage check precedes package build');
     assert.ok(reviewPrompt.includes('Step 1b (neighbouring tests) still runs.'));
     assert.ok(reviewPrompt.includes('Output Discipline'));
     assert.ok(reviewPrompt.includes('.planning/features/demo/PLAN.md'));
@@ -80,7 +83,8 @@ describe('go workflow — per-task phase review package', () => {
   it('omits the re-run list when every task has green evidence', async () => {
     const green = { 1: EVIDENCE[1], 2: [{ task_id: '2', command: 'x', exit_code: 0 }], 3: [{ task_id: '3', command: 'y', exit_code: 0 }] };
     const { reviewPrompt } = await runPerTask(review([], ['a.js']), { evidence: green });
-    assert.ok(!reviewPrompt.includes('Re-run Step 1 only for'));
+    assert.ok(!reviewPrompt.includes('From this run:'), 'no this-run list when all green');
+    assert.ok(reviewPrompt.includes('a task an earlier run finished has no evidence above'), 'earlier done tasks still re-run');
   });
 
   it('a per-phase phase keeps today\'s review prompt', async () => {

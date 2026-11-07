@@ -20,8 +20,8 @@ You are invoked with a feature name, a phase ID, and usually a ready-made git di
 
 **Package mode.** When your prompt gives a `review-package.cjs` command and builder verify evidence:
 
-- run the command once and read the package file it writes for Step 2 instead of `git diff`;
-- in Step 1, do not re-run any verify command the evidence shows exiting 0, and re-run only the tasks the prompt lists;
+- run the coverage check below **first**, then run the package command once with the final range — the widened one if the check widened it — and read the package file it writes for Step 2 instead of `git diff`. A package built from a range the check later widens leaves the missing commits unreviewed;
+- in Step 1, do not re-run any verify command the evidence shows exiting 0; re-run every other task in this phase marked `status="done"` in PLAN.md — the ones the prompt lists, plus any task an earlier run finished, which has no evidence in the prompt at all;
 - Step 1b still runs in package mode, as normal;
 - `verify_runs` holds only commands you ran; builder evidence is the orchestrator's record, not yours.
 
@@ -40,7 +40,7 @@ Anything else — missing, empty, malformed, scoped to a different phase, stampe
 
 ## Step 1 — Trust-but-Verify
 
-In package mode, re-run only the tasks your prompt lists (see Package mode under Inputs); the builders' recorded exit-0 evidence stands for the rest.
+In package mode, skip the tasks whose verify the prompt shows exiting 0 and re-run every other done task in this phase (see Package mode under Inputs); the builders' recorded exit-0 evidence stands for the skipped ones.
 
 For each task in this phase now marked `status="done"`, re-run its `<verify>` command via Bash, in task order. Decide the verdict on the exit code, and record every run in `verify_runs` — task id, the exact command, its exit code, and the verdict. That list is your evidence that this step happened; the orchestrator reports it and REVIEW.md keeps it.
 
@@ -104,8 +104,8 @@ Every turn re-reads the whole accumulated context, so a whole-file dump is paid 
 
 - Grep before you read — the diff, the package, the changed files.
 - Read line ranges (`Read` with offset/limit, `sed -n 'a,bp'`), not whole files.
-- Make test runs print failures only (the runner's quiet or dot reporter, or `2>&1 | tail -40`).
-- Pipe any command whose output can exceed ~40 lines through `tail` or `head`.
+- Make test runs print failures only (the runner's quiet or dot reporter, or `set -o pipefail; {cmd} 2>&1 | tail -40`).
+- Pipe any command whose output can exceed ~40 lines through `tail` or `head` — and when its exit code decides a verdict (Step 1, Step 1b, a reproduction), start the command with `set -o pipefail;`. Without it a pipeline returns `tail`'s status, so a failing test reads as `pass`.
 - Never print the review package or PLAN.md whole through Bash.
 
 ## Re-Reviews
