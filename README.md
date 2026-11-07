@@ -37,7 +37,7 @@ One command that drives a feature from brainstormed to verified:
 3. **Build** — a builder agent implements each phase: one atomic commit per task, verify command green before every commit. After each phase, a read-only reviewer re-runs the phase's verify commands and reviews the diff; critical findings get one fix round.
 4. **Verify** — a verifier checks every acceptance criterion against running code, writes and runs adversarial tests against the actual diff, and records everything in VERIFY.md. PASS means proven, not plausible.
 
-The heavy lifting runs in background workflows, so agent output never floods your conversation. `/ship:go` interrupts you exactly twice: the "Ready to build?" gate, and any question the plan loop genuinely can't settle itself. Pass `--auto` to skip the build gate for a fully hands-off run.
+The heavy lifting runs in background workflows, so agent output never floods your conversation. `/ship:go` interrupts you at three points: the "Ready to build?" gate, any question the plan loop genuinely can't settle itself, and a verify FAIL, which hands you the fix phase it wrote so you can review it before it is built. Pass `--auto` to skip the build gate. A FAIL still stops an `--auto` run; only `--headless` builds its own fix rounds.
 
 If verify fails, fix tasks are written back into the plan and `/ship:go` picks them up again. If a builder runs out of turns mid-phase, a fresh one resumes from the first pending task — progress is never lost.
 
