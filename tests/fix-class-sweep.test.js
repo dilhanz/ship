@@ -178,3 +178,46 @@ describe('--auto wording matches what it does', () => {
     assert.match(readme(), /A FAIL still stops an `--auto` run/);
   });
 });
+
+// PR #49 made per-task dispatch the default: a fix phase with a task list never
+// reaches buildPrompt/reviewPrompt, so the sweep must live in the per-task
+// prompts and the package review too, or 5.30.0 is off by default.
+describe('fix-class sweep — per-task build mode', () => {
+  const { run, WORKFLOW } = require('./go-per-phase-golden.test.js');
+  const src = fs.readFileSync(WORKFLOW, 'utf8');
+  const T = { id: '7', name: 'Add the year to history dates', docsOnly: false };
+  const perTaskFix = { feature: 'demo', shipRoot: '/r', phases: [{ id: 'fix-2', name: 'Verify fix round 2', tasks: [T] }] };
+  const DONE = { feature: 'demo', status: 'COMPLETE', tasks_completed: 1, tasks_total: 1, commits: ['aaa1111'],
+    verify_evidence: [{ task_id: '7', command: 'node --test', exit_code: 0 }] };
+  const OK = { feature: 'demo', status: 'APPROVED', findings: [], verify_runs: [], files_reviewed: ['a.js'] };
+  const PASS = { feature: 'demo', status: 'PASS', criteria_total: 1, criteria_passed: 1 };
+  const prompt = (calls, l) => (calls.find((c) => c.label === l) || {}).prompt || '';
+
+  it('the task builder, its continuation and the package reviewer all carry the sweep', async () => {
+    let n = 0;
+    const { calls } = await run(src, perTaskFix, (label) => {
+      if (label === 'build:fix-2:t7') return { ...DONE, status: 'PARTIAL', commits: [] };
+      if (label.startsWith('build:fix-2:t7:cont')) return ++n === 1 ? DONE : null;
+      if (label.startsWith('progress')) return { tasks_done: 0, tasks_pending: 1, tasks_total: 1, commits: [], working_tree_clean: true };
+      if (label === 'review:fix-2') return OK;
+      if (label === 'verify') return PASS;
+      return null;
+    });
+    const labels = calls.map((c) => c.label);
+    assert.ok(labels.includes('build:fix-2:t7:cont1'), labels.join(', '));
+    for (const l of ['build:fix-2:t7', 'build:fix-2:t7:cont1']) {
+      assert.match(prompt(calls, l), /This is a verify fix phase/, l);
+      assert.match(prompt(calls, l), /git merge-base HEAD origin\/main/, l);
+    }
+    assert.match(prompt(calls, 'review:fix-2'), /review-package\.cjs/);
+    assert.match(prompt(calls, 'review:fix-2'), /"fix_class": true/);
+  });
+
+  it('a per-task feature phase gets no sweep', async () => {
+    const args = { ...perTaskFix, phases: [{ id: 'p1', name: 'Core', tasks: [T] }] };
+    const { calls } = await run(src, args, (label) => (label === 'build:p1:t7' ? DONE
+      : label === 'review:p1' ? OK : label === 'verify' ? PASS : null));
+    assert.doesNotMatch(prompt(calls, 'build:p1:t7'), /verify fix phase/);
+    assert.doesNotMatch(prompt(calls, 'review:p1'), /fix_class/);
+  });
+});

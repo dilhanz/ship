@@ -18,7 +18,9 @@ Read the current task's `<action>` and `<files>` before writing code. Do not adv
 
 ## Inputs
 
-You are invoked with a feature name and optionally a phase ID. Read:
+**Brief mode.** When your prompt names a brief file (`.planning/features/{name}/.review-scratch/briefs/task-{id}.md`), generate and read it as the prompt says. It replaces PLAN.md, CONTEXT.md and the checklist file: do not read those. Your scope is that one task.
+
+**Per-phase inputs.** Otherwise you are invoked with a feature name and optionally a phase ID. Read:
 1. `.planning/features/{name}/PLAN.md` — tasks to execute
 2. `.planning/features/{name}/CONTEXT.md` — for the feature name (used in commit messages)
 3. `.planning/verify-checklist.md` — if present. The verifier fails the feature on every bullet the diff violates, plus three generic items: docs/manual claims match the code; tests that depend on the current date or time zone tolerate the day rolling over mid-test (a retry loop or a pinned clock); concurrency on write paths. See the self-check in the Execution Loop.
@@ -36,7 +38,7 @@ Only execute tasks with `status="pending"`.
 
 For each pending task in scope, in order:
 
-1. **Read** the `<task>`. If it has a `<reference>`, read that file first and use it as a pattern template. If it carries a `depends="..."` attribute, check every task ID it names in PLAN.md before you write any code — a dependency is satisfied only when that task's `status` is `done`.
+1. **Read** the `<task>`. If it has a `<reference>`, read that file first and use it as a pattern template. If it carries a `depends="..."` attribute, check every task ID it names in PLAN.md before you write any code — a dependency is satisfied only when that task's `status` is `done`. In brief mode, read the brief's Dependencies section for this instead of PLAN.md.
 2. **Implement** the `<action>` — create/modify the `<files>`; everything the action specifies is implemented exactly as specified. Where the action is silent on internals, decide yourself, following the `<reference>` pattern and codebase conventions. Don't add scope beyond the action.
 3. **Verify** — run the `<verify>` command; it must pass before committing. If it runs tests you haven't written, follow TDD (failing test first, then implement). On failure, apply the deviation rules:
    - **Rule 1** — small issue (wrong path, missing import): fix and retry
@@ -44,8 +46,8 @@ For each pending task in scope, in order:
    - **Rule 3** — architectural conflict or persistent failure: stop, return CHECKPOINT
 3b. **Self-check against the verify checklist** — before committing, read your own change against every checklist bullet it touches and the three generic items above. A test you wrote that computes "today", a manual sentence you wrote, a write path you changed: fix it now, inside this task's files. A bullet that needs work outside them is not yours to do — record it in `concerns` so the reviewer and verifier see it. This is not scope creep; the verifier fails the feature on these, and every verify FAIL costs a fix round and a full re-verification.
 4. **Commit** — stage only this task's files (never `git add .`) and commit them **in a single command**: `git add {files} && git commit -m "feat({feature-name}): {description}"`. Follow the `git-commits` skill. Do this the moment the verify passes, before anything else — a turn budget that ends between the `add` and the `commit` loses the whole task.
-5. **Mark done** — set the task's status in PLAN.md: `<task id="N" status="done" commit="{short-hash}">`. **Never set `status="done"` on a task while any task in its `depends` list is still pending.** `depends` is authored at plan time and validated by the plan reviewer, but nothing on the build path used to read it — and a task has been observed marked done while a task it declared a dependency on was still pending, which makes PLAN.md's own record of ordering a lie.
-6. After the first task, set CONTEXT.md frontmatter `status: building` if not already set.
+5. **Mark done** — run `node "${CLAUDE_PLUGIN_ROOT}/ship/tick.cjs" {feature} {task-id} {short-hash}` (or the tick command your prompt gives). It sets `status="done" commit="{short-hash}"` on the task tag, prints one line, and refuses while a `depends` task is pending — a refusal is the unmet-depends deviation below. Only if the script itself is missing, set `status="done" commit="{short-hash}"` on the task tag with Edit. Never `sed` PLAN.md, and never `cat` it whole. **Never set `status="done"` on a task while any task in its `depends` list is still pending.** `depends` is authored at plan time and validated by the plan reviewer, but nothing on the build path used to read it — and a task has been observed marked done while a task it declared a dependency on was still pending, which makes PLAN.md's own record of ordering a lie.
+6. After the first task, set CONTEXT.md frontmatter `status: building` if not already set. Skip this step in brief mode.
 
 **Unmet `depends` is a deviation, not a silent skip.** Apply the deviation rules:
 
@@ -67,6 +69,16 @@ You have a bounded turn budget, and a phase of large tasks can exceed it. Runnin
 **Uncommitted work at the end is the one unrecoverable failure.** Everything else survives a turn cap: committed tasks are in the history, done tasks are in PLAN.md, and a fresh builder resumes from both. Work that exists only in the working tree is invisible to the orchestrator, and a phase whose last builder left the tree dirty gets one salvage round to commit it — after that it stops with the work still uncommitted.
 
 **Resuming:** you may be invoked to continue a phase another builder started. PLAN.md is the source of truth — skip tasks already marked `status="done"` and start at the first pending one. If the working tree has uncommitted changes from an interrupted task, complete that task, run its `<verify>`, and commit it before moving on.
+
+## Output Discipline
+
+Every turn re-reads the whole accumulated context, so a whole-file dump is paid for again on every later turn.
+
+- Grep before you read, and read line ranges (`Read` with offset/limit, `sed -n 'a,bp'`), not whole files.
+- Never `cat` a file or print PLAN.md through Bash.
+- Make test and build commands print failures only (the runner's quiet or dot reporter, or `set -o pipefail; {cmd} 2>&1 | tail -40`).
+- Pipe any command whose output can exceed ~40 lines through `tail` or `head` — and when its exit code matters (every `<verify>`, every `exit_code` you record), start the command with `set -o pipefail;`. Without it a pipeline returns `tail`'s status, so a failing verify reads as exit 0.
+- Don't re-read a file you just edited.
 
 ## Fix Scope Boundary
 
@@ -99,10 +111,13 @@ Emit a `build_result` JSON block as your final message — fenced, tagged `build
   "missing": "{what is needed}" | null,
   "stopped_at": "{task id} — {task name}" | null,
   "reason": "{why stopped}" | null,
-  "recommendation": "{what to do next}" | null
+  "recommendation": "{what to do next}" | null,
+  "verify_evidence": [{ "task_id": "{id}", "command": "{verify command}", "exit_code": 0, "output_tail": "{last ≤20 lines}" }]
 }
 ```
 ````
+
+`verify_evidence` holds one entry per task you verified, because the phase reviewer trusts it instead of re-running the command.
 
 `commits` must be **oldest first** — the order you made them, which is task order. The orchestrator derives the reviewer's diff range as `{first-commit}~1..HEAD`, so a shuffled list points the review at the wrong range.
 

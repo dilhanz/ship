@@ -1,0 +1,181 @@
+{
+  "complete-approved-pass": [
+    {
+      "label": "build:1",
+      "agentType": "ship:ship-builder",
+      "prompt": "Build feature: demo\nPhase: 1 — one\n\n## Key File Context (from Explore digest)\n\nNo key file context provided.\n\nExecute all pending tasks in this phase. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "review:1",
+      "agentType": "ship:ship-reviewer",
+      "prompt": "Review feature: demo\nPhase: 1 — one\nPhase commits: aaa1111, bbb2222\n\nDiff range: `aaa1111~1..HEAD` — already derived from the phase commits (oldest first). Use it directly with `git diff aaa1111~1..HEAD`; do not spend turns re-deriving it.\n\nOnly if that range is unusable — `git diff --stat aaa1111~1..HEAD` errors or comes back empty, or `aaa1111` is the repository's root commit so `~1` does not resolve — fall back: `git log --oneline -20` to locate the true range, or `git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD` (the empty tree) when the phase starts at the root commit.\n\nRe-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md."
+    },
+    {
+      "label": "verify",
+      "agentType": "ship:ship-verifier",
+      "prompt": "Verify feature: demo\n\nRead .planning/features/demo/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.\n\n## One bug per defect class\n\nFor every bug you record at medium or above, name its defect class in `pattern` and search the feature's changed files for every other occurrence before you write the fix task. List each occurrence in `sites` (file:line). One bug — and one fix task — per pattern, covering every site. A fix round that repairs one call site of a class and leaves the rest for the next verify is the most expensive loop this workflow has."
+    }
+  ],
+  "partial-continuation": [
+    {
+      "label": "build:1",
+      "agentType": "ship:ship-builder",
+      "prompt": "Build feature: demo\nPhase: 1 — one\n\n## Key File Context (from Explore digest)\n\nctx: src/a.js\n\nExecute all pending tasks in this phase. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "build:1:cont1",
+      "agentType": "ship:ship-builder",
+      "prompt": "Continue building feature: demo\nPhase: 1 — one\n\nA previous builder ran out of turn budget before finishing this phase. You are a fresh agent with no memory of that run — PLAN.md is the source of truth for what already landed.\n\nCommitted so far this phase: aaa1111.\n\n## Key File Context (from Explore digest)\n\nctx: src/a.js\n\nRead .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md. Skip every task already marked status=\"done\" and resume from the first pending task in this phase. If the working tree carries uncommitted changes from the interrupted task, finish that task, run its verify command, and commit it before moving on. Then follow your normal execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "review:1",
+      "agentType": "ship:ship-reviewer",
+      "prompt": "Review feature: demo\nPhase: 1 — one\nPhase commits: aaa1111, bbb2222, ccc3333\n\nDiff range: `aaa1111~1..HEAD` — already derived from the phase commits (oldest first). Use it directly with `git diff aaa1111~1..HEAD`; do not spend turns re-deriving it.\n\nOnly if that range is unusable — `git diff --stat aaa1111~1..HEAD` errors or comes back empty, or `aaa1111` is the repository's root commit so `~1` does not resolve — fall back: `git log --oneline -20` to locate the true range, or `git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD` (the empty tree) when the phase starts at the root commit.\n\nRe-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md."
+    },
+    {
+      "label": "verify",
+      "agentType": "ship:ship-verifier",
+      "prompt": "Verify feature: demo\n\nRead .planning/features/demo/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.\n\n## One bug per defect class\n\nFor every bug you record at medium or above, name its defect class in `pattern` and search the feature's changed files for every other occurrence before you write the fix task. List each occurrence in `sites` (file:line). One bug — and one fix task — per pattern, covering every site. A fix round that repairs one call site of a class and leaves the rest for the next verify is the most expensive loop this workflow has."
+    }
+  ],
+  "dead-builder-probe-dirty-salvage": [
+    {
+      "label": "build:1",
+      "agentType": "ship:ship-builder",
+      "prompt": "Build feature: demo\nPhase: 1 — one\n\n## Key File Context (from Explore digest)\n\nNo key file context provided.\n\nExecute all pending tasks in this phase. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "progress:1",
+      "agentType": "Explore",
+      "prompt": "Report build progress for feature: demo\nPhase: 1 — one\n\nREAD-ONLY — do not edit, write, or commit anything. Read and report only.\n\nRead .planning/features/demo/PLAN.md and count the tasks inside <phase id=\"1\">:\n- tasks_done — tasks with status=\"done\"\n- tasks_pending — tasks in scope not marked done\n- tasks_total — all tasks in scope\n- commits — short hashes recorded on done tasks in scope (the commit=\"...\" attribute), oldest first\n- working_tree_clean — true when `git status --porcelain` prints nothing\n- out_of_order — any task marked status=\"done\" whose depends list names a task that is NOT marked done, as \"task {id} depends on {unmet ids}\"; empty array when the ordering is clean\n- notes — anything odd (uncommitted work, a done task with no commit), else null"
+    },
+    {
+      "label": "build:1:cont1",
+      "agentType": "ship:ship-builder",
+      "prompt": "Continue building feature: demo\nPhase: 1 — one\n\nA previous builder ran out of turn budget before finishing this phase. You are a fresh agent with no memory of that run — PLAN.md is the source of truth for what already landed.\n\nPLAN.md showed 2 of 4 task(s) done in this scope when the previous builder stopped.\n\n## Key File Context (from Explore digest)\n\nNo key file context provided.\n\nRead .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md. Skip every task already marked status=\"done\" and resume from the first pending task in this phase. If the working tree carries uncommitted changes from the interrupted task, finish that task, run its verify command, and commit it before moving on. Then follow your normal execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "progress:1:cont1",
+      "agentType": "Explore",
+      "prompt": "Report build progress for feature: demo\nPhase: 1 — one\n\nREAD-ONLY — do not edit, write, or commit anything. Read and report only.\n\nRead .planning/features/demo/PLAN.md and count the tasks inside <phase id=\"1\">:\n- tasks_done — tasks with status=\"done\"\n- tasks_pending — tasks in scope not marked done\n- tasks_total — all tasks in scope\n- commits — short hashes recorded on done tasks in scope (the commit=\"...\" attribute), oldest first\n- working_tree_clean — true when `git status --porcelain` prints nothing\n- out_of_order — any task marked status=\"done\" whose depends list names a task that is NOT marked done, as \"task {id} depends on {unmet ids}\"; empty array when the ordering is clean\n- notes — anything odd (uncommitted work, a done task with no commit), else null"
+    },
+    {
+      "label": "build:1:cont2",
+      "agentType": "ship:ship-builder",
+      "prompt": "Continue building feature: demo\nPhase: 1 — one\n\nA previous builder ran out of turn budget before finishing this phase. You are a fresh agent with no memory of that run — PLAN.md is the source of truth for what already landed.\n\nPLAN.md showed 2 of 4 task(s) done in this scope when the previous builder stopped.\n\n**The previous builder died with uncommitted changes in the working tree.** That is finished work from an interrupted task, not scratch. Before anything else: run `git status` and `git diff`, complete that task if it is incomplete, run its `<verify>`, and commit it. This is the only round that will do it — a phase that ends with those changes still uncommitted loses them.\n\n## Key File Context (from Explore digest)\n\nNo key file context provided.\n\nRead .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md. Skip every task already marked status=\"done\" and resume from the first pending task in this phase. If the working tree carries uncommitted changes from the interrupted task, finish that task, run its verify command, and commit it before moving on. Then follow your normal execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "review:1",
+      "agentType": "ship:ship-reviewer",
+      "prompt": "Review feature: demo\nPhase: 1 — one\nPhase commits: aaa1111, bbb2222, ccc3333, ddd4444\n\nDiff range: `aaa1111~1..HEAD` — already derived from the phase commits (oldest first). Use it directly with `git diff aaa1111~1..HEAD`; do not spend turns re-deriving it.\n\nOnly if that range is unusable — `git diff --stat aaa1111~1..HEAD` errors or comes back empty, or `aaa1111` is the repository's root commit so `~1` does not resolve — fall back: `git log --oneline -20` to locate the true range, or `git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD` (the empty tree) when the phase starts at the root commit.\n\nRe-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md."
+    },
+    {
+      "label": "verify",
+      "agentType": "ship:ship-verifier",
+      "prompt": "Verify feature: demo\n\nRead .planning/features/demo/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.\n\n## One bug per defect class\n\nFor every bug you record at medium or above, name its defect class in `pattern` and search the feature's changed files for every other occurrence before you write the fix task. List each occurrence in `sites` (file:line). One bug — and one fix task — per pattern, covering every site. A fix round that repairs one call site of a class and leaves the rest for the next verify is the most expensive loop this workflow has."
+    }
+  ],
+  "critical-fix-rereview": [
+    {
+      "label": "build:1",
+      "agentType": "ship:ship-builder",
+      "prompt": "Build feature: demo\nPhase: 1 — one\n\n## Key File Context (from Explore digest)\n\nNo key file context provided.\n\nExecute all pending tasks in this phase. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "review:1",
+      "agentType": "ship:ship-reviewer",
+      "prompt": "Review feature: demo\nPhase: 1 — one\nPhase commits: aaa1111\n\nDiff range: `aaa1111~1..HEAD` — already derived from the phase commits (oldest first). Use it directly with `git diff aaa1111~1..HEAD`; do not spend turns re-deriving it.\n\nOnly if that range is unusable — `git diff --stat aaa1111~1..HEAD` errors or comes back empty, or `aaa1111` is the repository's root commit so `~1` does not resolve — fall back: `git log --oneline -20` to locate the true range, or `git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD` (the empty tree) when the phase starts at the root commit.\n\nRe-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md."
+    },
+    {
+      "label": "fix:1",
+      "agentType": "ship:ship-builder",
+      "prompt": "Fix review findings for feature: demo\nPhase: 1 — one\n\nThe phase reviewer found blocking issues — critical/high, a medium it reproduced with a command, or (tagged fix-class) another occurrence of a defect class this fix phase set out to repair. Fix ONLY these — do not refactor beyond them:\n\n1. [critical] a.js — null deref Pattern: unguarded deref. Sites: a.js:3, a.js:9. (fix: guard it)\n\nFix the defect class, not the instance. Before you change anything for a finding, search this feature's changed files (`git diff --name-only $(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master)..HEAD`) for every other occurrence of the same pattern — the listed sites are where the reviewer found it, not a promise there are no others. Fix every occurrence, and cover each one with a test (one parametrized test is fine). Name every site you fixed in the commit body. An occurrence outside the changed files is pre-existing: leave it, and record it in your concerns.\n\nFor each fix: implement it, re-run the affected task's verify command, and commit with \"fix(demo): {short description}\". Emit an updated build_result."
+    },
+    {
+      "label": "rereview:1",
+      "agentType": "ship:ship-reviewer",
+      "prompt": "Re-review feature: demo\nPhase: 1 — one\nA previous review found these blocking issues, and a builder has applied fixes (fix commits: fff1111):\n\n1. [critical] a.js — null deref Pattern: unguarded deref. Sites: a.js:3, a.js:9.\n\nDiff range: `fff1111~1..HEAD` — already derived from the phase commits (oldest first). Use it directly with `git diff fff1111~1..HEAD`; do not spend turns re-deriving it.\n\nOnly if that range is unusable — `git diff --stat fff1111~1..HEAD` errors or comes back empty, or `fff1111` is the repository's root commit so `~1` does not resolve — fall back: `git log --oneline -20` to locate the true range, or `git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD` (the empty tree) when the phase starts at the root commit.\n\nYou have no memory of that review — verify from the code. Two jobs, per the Re-Reviews section of your instructions:\n\n1. Re-run the affected verify commands and confirm from the code whether each finding above is actually resolved — at every site, not just the first. Search the phase's changed files for the finding's pattern — for a finding tagged fix-class, search this feature's changed files (`git diff --name-only $(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master)..HEAD`) instead, the same scope the review swept: an occurrence the fix missed means the finding is not resolved. Report every one that is not, at its original severity, with the missed sites in `sites`. A medium you report as unresolved keeps `\"reproduced\": true` only if you reproduced it again. A finding tagged fix-class keeps `\"fix_class\": true` when you report it unresolved.\n2. Review the fix commits as a diff in their own right and report any NEW critical/high problem the fixes introduced, marked `\"new_issue\": true`.\n\nDo not re-review the rest of the phase."
+    },
+    {
+      "label": "build:2",
+      "agentType": "ship:ship-builder",
+      "prompt": "Build feature: demo\nPhase: 2 — two\n\n## Key File Context (from Explore digest)\n\nNo key file context provided.\n\nExecute all pending tasks in this phase. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "review:2",
+      "agentType": "ship:ship-reviewer",
+      "prompt": "Review feature: demo\nPhase: 2 — two\nPhase commits: (none reported)\n\nNo commits were reported for this phase, so no range was precomputed. Derive it yourself: the `commit=\"...\"` attributes on this phase's done tasks in PLAN.md give the oldest commit, and the range is `{oldest}~1..HEAD`. Only when no task records a commit is the work uncommitted — then review the working tree against the merge-base (`git diff $(git merge-base HEAD main)`, falling back to `master`). Never review a bare `git diff HEAD`: on a committed phase it is empty, and an empty diff is not a clean review.\n\nRe-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md."
+    },
+    {
+      "label": "verify",
+      "agentType": "ship:ship-verifier",
+      "prompt": "Verify feature: demo\n\nRead .planning/features/demo/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.\n\n## Recorded Review Findings — located targets\n\nThe per-phase reviewers also recorded these lower-severity findings. They did not gate the build and no fix round touched them, but each one is already located in the diff, so they are the cheapest bugs available to you. Give each a reproduction attempt in Stage 2b after the mandatory targets and the gates and before any discretionary test, and record its outcome in the Carried Review Findings table. A reproduced one goes into Bug Findings at the reviewer's severity: a medium is an Open bug and fails the verify, a low is recorded as Left open and does not.\n\n- [medium] phase 1 — b.js: off by one\n\n## One bug per defect class\n\nFor every bug you record at medium or above, name its defect class in `pattern` and search the feature's changed files for every other occurrence before you write the fix task. List each occurrence in `sites` (file:line). One bug — and one fix task — per pattern, covering every site. A fix round that repairs one call site of a class and leaves the rest for the next verify is the most expensive loop this workflow has."
+    }
+  ],
+  "flat-all-phase": [
+    {
+      "label": "build:all",
+      "agentType": "ship:ship-builder",
+      "prompt": "Build feature: demo\n\n## Key File Context (from Explore digest)\n\nNo key file context provided.\n\nExecute all pending tasks in the plan. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "review:all",
+      "agentType": "ship:ship-reviewer",
+      "prompt": "Review feature: demo\nPhase commits: aaa1111\n\nDiff range: `aaa1111~1..HEAD` — already derived from the phase commits (oldest first). Use it directly with `git diff aaa1111~1..HEAD`; do not spend turns re-deriving it.\n\nOnly if that range is unusable — `git diff --stat aaa1111~1..HEAD` errors or comes back empty, or `aaa1111` is the repository's root commit so `~1` does not resolve — fall back: `git log --oneline -20` to locate the true range, or `git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD` (the empty tree) when the phase starts at the root commit.\n\nRe-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md."
+    },
+    {
+      "label": "verify",
+      "agentType": "ship:ship-verifier",
+      "prompt": "Verify feature: demo\n\nRead .planning/features/demo/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.\n\n## One bug per defect class\n\nFor every bug you record at medium or above, name its defect class in `pattern` and search the feature's changed files for every other occurrence before you write the fix task. List each occurrence in `sites` (file:line). One bug — and one fix task — per pattern, covering every site. A fix round that repairs one call site of a class and leaves the rest for the next verify is the most expensive loop this workflow has."
+    }
+  ],
+  "sync-main": [
+    {
+      "label": "build:1",
+      "agentType": "ship:ship-builder",
+      "prompt": "Build feature: demo\nPhase: 1 — one\n\n## Key File Context (from Explore digest)\n\nNo key file context provided.\n\nExecute all pending tasks in this phase. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "review:1",
+      "agentType": "ship:ship-reviewer",
+      "prompt": "Review feature: demo\nPhase: 1 — one\nPhase commits: aaa1111\n\nDiff range: `aaa1111~1..HEAD` — already derived from the phase commits (oldest first). Use it directly with `git diff aaa1111~1..HEAD`; do not spend turns re-deriving it.\n\nOnly if that range is unusable — `git diff --stat aaa1111~1..HEAD` errors or comes back empty, or `aaa1111` is the repository's root commit so `~1` does not resolve — fall back: `git log --oneline -20` to locate the true range, or `git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD` (the empty tree) when the phase starts at the root commit.\n\nRe-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md."
+    },
+    {
+      "label": "sync:main",
+      "agentType": "ship:ship-builder",
+      "prompt": "Sync feature branch with main before verification: demo\n\nYou are not executing PLAN.md tasks. Do NOT edit PLAN.md or CONTEXT.md, do not run the task loop, never rebase, never push, never force anything. Your only job is to bring main into this branch with a merge commit, or to leave the branch exactly as it was.\n\n1. **Preconditions.** If `git rev-parse -q --verify MERGE_HEAD` resolves, a previous sync died mid-merge: run `git merge --abort` first and carry on from a clean branch. Then run `git status --porcelain` and `git rev-parse --abbrev-ref HEAD`. If the tree is dirty, HEAD is detached, or the current branch IS the default branch (main/master), report `not-runnable` with the reason and stop — do not stash, do not switch branches. Also stop with `not-runnable` when `.planning/features/demo/.review-scratch/verify.json` exists: a verification of this head is part-way done, and moving HEAD would void the record its salvage resumes from.\n2. **Target.** Fetch and pick the target exactly as the verifier's trial merge does:\n   `git remote get-url origin >/dev/null 2>&1 && git fetch -q origin main || true`, then the first of `origin/main`, `main`, `master` that resolves. None → `not-runnable`.\n3. **Already contained?** `git merge-base --is-ancestor {target} HEAD` exiting 0 → report `up-to-date` and stop. Nothing else to do.\n4. **Merge.** `git merge --no-edit {target}`.\n   - **Clean** → report `merged` with the merge commit's short hash. Do not run the build: the verifier's gates run next, against this exact head.\n   - **Conflicts** → resolve ONLY mechanical ones: both sides appended separate rows, entries, imports, registrations, footnotes or changelog lines at the same spot, and the honest resolution keeps both, in a sensible order. If ANY conflicted hunk needs you to choose between two behaviours, two wordings of the same row, or to understand what either side intended, run `git merge --abort` and report `conflict-aborted` with every conflicted file — the verifier's trial merge will report it, and a wrong resolution here would land silently.\n   - After resolving mechanical conflicts, run the `Build:` line of `.planning/verify-checklist.md` (else the project's build/test command). Red → `git merge --abort` and report `conflict-aborted` with the failing output tail in `notes`. Green → stage each resolved file by name (never a bulk add) and commit the merge with `git commit --no-edit` in the same command, then report `merged` with the hash, listing the files you resolved in `conflicted_files`.\n\nYour structured result is NOT a build_result. Call StructuredOutput with exactly these fields and nothing else: `outcome`, `target`, `commit` (or null), `conflicted_files`, `notes`."
+    },
+    {
+      "label": "verify",
+      "agentType": "ship:ship-verifier",
+      "prompt": "Verify feature: demo\n\nRead .planning/features/demo/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.\n\n## One bug per defect class\n\nFor every bug you record at medium or above, name its defect class in `pattern` and search the feature's changed files for every other occurrence before you write the fix task. List each occurrence in `sites` (file:line). One bug — and one fix task — per pattern, covering every site. A fix round that repairs one call site of a class and leaves the rest for the next verify is the most expensive loop this workflow has."
+    }
+  ],
+  "verifier-dies-canary": [
+    {
+      "label": "build:1",
+      "agentType": "ship:ship-builder",
+      "prompt": "Build feature: demo\nPhase: 1 — one\n\n## Key File Context (from Explore digest)\n\nNo key file context provided.\n\nExecute all pending tasks in this phase. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md, then follow your execution loop, deviation rules, and commit conventions."
+    },
+    {
+      "label": "review:1",
+      "agentType": "ship:ship-reviewer",
+      "prompt": "Review feature: demo\nPhase: 1 — one\nPhase commits: aaa1111\n\nDiff range: `aaa1111~1..HEAD` — already derived from the phase commits (oldest first). Use it directly with `git diff aaa1111~1..HEAD`; do not spend turns re-deriving it.\n\nOnly if that range is unusable — `git diff --stat aaa1111~1..HEAD` errors or comes back empty, or `aaa1111` is the repository's root commit so `~1` does not resolve — fall back: `git log --oneline -20` to locate the true range, or `git diff 4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD` (the empty tree) when the phase starts at the root commit.\n\nRe-run each task's verify command (trust-but-verify), then review the phase diff. Read .planning/features/demo/PLAN.md and .planning/features/demo/CONTEXT.md."
+    },
+    {
+      "label": "verify",
+      "agentType": "ship:ship-verifier",
+      "prompt": "Verify feature: demo\n\nRead .planning/features/demo/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.\n\n## One bug per defect class\n\nFor every bug you record at medium or above, name its defect class in `pattern` and search the feature's changed files for every other occurrence before you write the fix task. List each occurrence in `sites` (file:line). One bug — and one fix task — per pattern, covering every site. A fix round that repairs one call site of a class and leaves the rest for the next verify is the most expensive loop this workflow has."
+    },
+    {
+      "label": "verify:retry",
+      "agentType": "ship:ship-verifier",
+      "prompt": "Salvage a lost verification result for feature: demo\n\nA verifier just ran this exact verification, but its structured result was lost in transit. Its work is very likely already recorded. Check the scratch record FIRST — it is the only artifact that survives a death part-way through Stage 1 or Stage 2 — and only then VERIFY.md.\n\n**1. The scratch record.** Run `node \"${CLAUDE_PLUGIN_ROOT}/ship/verify-scratch.cjs\" demo` and read the JSON verdict it prints. The helper never throws and always exits 0; a verdict you cannot parse is a reject.\n\n- **`valid: true` with `stage: \"complete\"`:** the verification finished. Adopt its criteria verdicts, carried-finding outcomes, and tests verbatim, confirm `.planning/features/demo/VERIFY.md` is on disk, and report the result without re-running anything.\n- **`valid: true` with `stage: \"criteria\"` or `\"bughunt\"`:** a previous verifier died part-way through THIS build. Adopt every recorded criterion verdict and carried-finding outcome verbatim, resume at the first criterion the record does not cover, and do NOT re-author any test file the record's `tests[]` shows as already committed — re-writing a committed test file is the exact waste this record exists to prevent. Also adopt the record's `checklist` rows and its `trial_merge` verbatim: resume at the first checklist item the record has not decided, and do NOT repeat a trial merge the record has already decided.\n- **`valid: false`:** the record is not this build's. Ignore it and fall through to VERIFY.md below.\n\n**2. VERIFY.md.** Read `.planning/features/demo/VERIFY.md` and run `git rev-parse HEAD`.\n\n- **If it exists, is complete (all stages filled, no placeholders), and its `**Head:**` line matches that SHA:** report its verdict, counts, criteria verdicts, bugs, and gaps as your result and stop. Do NOT re-run criteria, re-hunt bugs, or rewrite the file.\n- **If it carries `**Status:** IN PROGRESS — Stage 1 only`:** it is a Stage 1 flush from a run that died, not a verdict. Never report it as your result — its criteria table is evidence, and the scratch record above supersedes it.\n- **If it is missing, partial, stamped with a different head, or carries no `**Head:**` line at all:** it is not this verification. Fall back to the full verification below.\n\n**3.** Whichever branch you take, report a `\"salvaged\"` field in your structured result: `\"adopted\"` when you reused any recorded work, `\"rejected\"` when nothing matched and you redid the verification from scratch.\n\n---\n\nVerify feature: demo\n\nRead .planning/features/demo/CONTEXT.md and PLAN.md, then verify acceptance criteria, hunt bugs with adversarial tests, run the trial merge with main and the verify checklist (generic items plus .planning/verify-checklist.md if present), scan for anti-patterns, and write VERIFY.md per your instructions.\n\n## One bug per defect class\n\nFor every bug you record at medium or above, name its defect class in `pattern` and search the feature's changed files for every other occurrence before you write the fix task. List each occurrence in `sites` (file:line). One bug — and one fix task — per pattern, covering every site. A fix round that repairs one call site of a class and leaves the rest for the next verify is the most expensive loop this workflow has."
+    },
+    {
+      "label": "canary:verify",
+      "agentType": "Explore",
+      "prompt": "Connection check. Do not read files, run commands, or use any other tool. Call StructuredOutput with {\"ok\": true} as your only action."
+    }
+  ]
+}

@@ -3,7 +3,7 @@ name: go
 description: Use when you want to auto-run all remaining Ship steps for a feature without manual step-by-step invocation
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Workflow, TaskStop, ToolSearch, Skill, AskUserQuestion
-argument-hint: "[feature-name] [--auto] [--headless] [--profile <quick|standard|thorough>] [--fix-rounds <n>]"
+argument-hint: "[feature-name] [--auto] [--headless] [--profile <quick|standard|thorough>] [--fix-rounds <n>] [--build-mode <per-task|per-phase>]"
 ---
 
 Auto-run all remaining steps for the active feature. Round-1 planning and the finish step run inline here; the plan revision loop and the build→verify spine each run in a Workflow, so per-agent output never enters this conversation.
@@ -42,7 +42,7 @@ The structured result you then reconcile is unchanged — only *when* you receiv
 
 First parse flags out of `$ARGUMENTS`: strip `--auto` and `--headless` (recording whether each was present, in any argument order) *before* resolving the feature name, so `/ship:go my-feature --auto`, `/ship:go --auto my-feature`, `/ship:go --headless my-feature`, and `/ship:go --auto` all work. `--headless` sets `--auto`.
 
-Also strip `--profile {value}` in the same pass — both the `--profile quick` and `--profile=quick` forms, in any argument order — recording the value for section 1b. Strip `--fix-rounds {n}` the same way (both forms), recording `n` for section 6b; it must be a whole number 0–3, and any other value is treated as absent. Whatever remains after all flags are stripped is the feature name.
+Also strip `--profile {value}` in the same pass — both the `--profile quick` and `--profile=quick` forms, in any argument order — recording the value for section 1b. Strip `--fix-rounds {n}` the same way (both forms), recording `n` for section 6b; it must be a whole number 0–3, and any other value is treated as absent. Strip `--build-mode {value}` the same way (both the `--build-mode per-phase` and `--build-mode=per-phase` forms), recording the value for section 1b. Whatever remains after all flags are stripped is the feature name.
 
 Feature state is injected at session start ("SHIP ACTIVE FEATURES"). If the remaining `$ARGUMENTS` names a feature, use it. Otherwise pick the one feature whose CONTEXT.md `status` is not `done`. If several are unfinished, ask which. If none exist, tell the user to run `/ship:start`. Under `--headless`, resolution must never ask: if several features are unfinished and none was named, or none exist, terminate with outcome `error` and a detail line naming the problem (per the headless termination rule in section 6).
 
@@ -56,9 +56,13 @@ Once the feature name is resolved, resolve the workflow profile for this run:
 node "${CLAUDE_PLUGIN_ROOT}/ship/resolve-profile.cjs" {name}
 # with the flag present, append it:
 node "${CLAUDE_PLUGIN_ROOT}/ship/resolve-profile.cjs" {name} --profile {value}
+# with --build-mode present, append it too:
+node "${CLAUDE_PLUGIN_ROOT}/ship/resolve-profile.cjs" {name} --build-mode {value}
 ```
 
-It prints a single line of JSON: `{ profile, source, warning, knobs: { reviewGate, verifyDepth, maxBuildRounds, maxPlanRounds } }`. Parse it.
+It prints a single line of JSON: `{ profile, source, warning, knobs: { reviewGate, verifyDepth, maxBuildRounds, maxPlanRounds }, buildMode, buildModeSource }`. Parse it.
+
+**Build mode** is the top-level `buildMode` field (`per-task` or `per-phase`), not a profile knob. **Precedence: `--build-mode` flag > `SHIP_BUILD_MODE` env > `per-task`.** `per-phase` is the rollback to the pre-diet path (one builder per phase reading PLAN.md); setting `SHIP_BUILD_MODE=per-phase` in the environment the runs inherit rolls back every run without a version pin. An unrecognized value resolves to `per-task` and its warning is merged into `warning`.
 
 **Precedence: flag > CONTEXT.md `profile:` frontmatter > standard.** An absent field resolves to `standard`, which is exactly today's behavior; an unrecognized value resolves to `standard` with a `warning`. The helper always exits 0 with valid JSON — resolution never asks a question and never stops the run.
 
@@ -156,7 +160,15 @@ Fires when status is `plan-verified` (whether the plan loop just approved it or 
 
 ## 4. Pre-Build Prep
 
-1. From PLAN.md, build the ordered list of **pending phases** (each `<phase>` whose `status` != `done`, as `{id, name}`). If the plan is flat (no `<phase>` elements), use a single pseudo-phase `{id: "all", name: "all"}`. If no pending phases remain but pending `<task>`s exist outside any phase (fix tasks appended by an older verifier), also use the `{id: "all", name: "all"}` pseudo-phase — its builder prompt says to execute all pending tasks in the plan, which sweeps them up.
+1. Build the ordered list of **pending phases** with the task lister:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/ship/plan-tasks.cjs" {name}
+   ```
+
+   It prints one JSON line, `{ feature, phases: [{ id, name, tasks: [{ id, name, docsOnly }] }], warning }`, and always exits 0. Pass its `phases` (each with `tasks`) to section 5 as-is. Its documented behavior matches the old manual rules: each `<phase>` whose `status` != `done` is listed with its pending tasks; a flat plan (no `<phase>` elements) is a single pseudo-phase `{id: "all", name: "all"}`; and when no pending phases remain but pending `<task>`s exist outside any phase (fix tasks appended by an older verifier), they also form the `{id: "all", name: "all"}` pseudo-phase — its builder prompt says to execute all pending tasks in the plan, which sweeps them up.
+
+   **Fallback:** if it prints a non-null `warning`, or an empty `phases` while PLAN.md has pending tasks, fall back to building the list by hand from PLAN.md by the rules above, as `{id, name}` phases **without** `tasks` — a phase with no task list builds per-phase, so a misparse degrades to the old path rather than skipping work. A malformed layout is one such warning: a `<task>` or `<phase>` still open at end of file, or a closing `</task>` that is not alone on its line (which would swallow the next task), comes back as `warning: "malformed PLAN.md: …"` naming the lines. Say that you fell back, and why.
 2. If status is `built` (build already complete, verify only), use an **empty** phase list — the workflow will skip straight to verify.
 3. Set CONTEXT.md frontmatter `status: building` (unless already `built`).
 
@@ -169,36 +181,40 @@ Workflow({
   scriptPath: "${CLAUDE_PLUGIN_ROOT}/ship/workflows/go.workflow.js",
   args: {
     feature: "{name}",
-    phases: [ {id, name}, ... ],
+    phases: [ {id, name, tasks}, ... ],
     profile: "{profile}",
     reviewGate: {knobs.reviewGate},
     verifyDepth: "{knobs.verifyDepth}",
     maxBuildRounds: {knobs.maxBuildRounds},
-    syncMain: true
+    syncMain: true,
+    buildMode: "{buildMode}",
+    shipRoot: "${CLAUDE_PLUGIN_ROOT}"
   }
 })
 ```
 
 `syncMain: true` is always passed: before the verifier runs, a builder merges main into the feature branch (`sync:main`), resolving only mechanical conflicts — rows both sides appended to the same shared file — and aborting the merge on anything that needs a judgement. The verifier's trial merge then checks a branch that already contains main, instead of failing it on a conflict that a fix round and a full re-verification would otherwise have to clear. It never rebases, pushes, or runs on the default branch, and it stands down while a verification's scratch record exists so a salvage can still resume. The workflow treats an absent `syncMain` as off, so older callers keep the old behavior.
 
+`buildMode` comes from section 1b. `per-task` (the default) dispatches one fresh, brief-fed builder per pending task and needs `phases[].tasks` from section 4 — a phase without a task list builds per-phase regardless; `per-phase` ignores every task list and runs the pre-diet path. `shipRoot` is the absolute plugin root: it is how the workflow's agents find the brief, tick and review-package scripts (`ship/task-brief.cjs`, `ship/tick.cjs`, `ship/review-package.cjs`).
+
 The four policy fields come from section 1b. Pass them as **real JSON values** — `reviewGate` a boolean, `maxBuildRounds` a number, `profile`/`verifyDepth` strings. `profile` is display-only (it labels records); the other three drive behavior, and each defaults inside the workflow to today's value when absent.
 
 Under `--headless`, block on the returned Task ID before reading the result — see **Headless workflow wait** above. This is the invocation the wait rule exists for: the build→verify spine is the long one, and a headless turn that ends here strands it. Interactively, behave as before — report that it is running and end the turn.
 
-The workflow builds each phase (builder → reviewer re-verify+review → one fix round for blocking findings — critical/high, a medium the reviewer reproduced, or, in a `fix-{n}` phase, any finding marked `fix_class` (another occurrence of the defect class a fix task repairs) — → re-review), then runs the merged verifier (acceptance criteria + adversarial bug hunt → VERIFY.md). It returns `{ feature, stoppedAt, completed, verdict, salvageEvents, sync }`. `sync` is the `sync:main` result — `outcome` (`up-to-date`, `merged`, `conflict-aborted`, `not-runnable`), `target`, `commit`, `conflicted_files`, `notes` — or null when the step did not run or returned nothing. Agent output stays inside the workflow — you receive only this structured result.
+The workflow builds each phase (one brief-fed builder per task in per-task mode, or one builder for the whole phase in per-phase mode → reviewer re-verify+review → one fix round for blocking findings — critical/high, a medium the reviewer reproduced, or, in a `fix-{n}` phase, any finding marked `fix_class` (another occurrence of the defect class a fix task repairs) — → re-review), then runs the merged verifier (acceptance criteria + adversarial bug hunt → VERIFY.md). It returns `{ feature, stoppedAt, completed, verdict, salvageEvents, sync }`. `sync` is the `sync:main` result — `outcome` (`up-to-date`, `merged`, `conflict-aborted`, `not-runnable`), `target`, `commit`, `conflicted_files`, `notes` — or null when the step did not run or returned nothing. Agent output stays inside the workflow — you receive only this structured result.
 
 `salvageEvents` is one entry per salvage retry — `{ agent, record, outcome }`, where `outcome` is `adopted`, `rejected`, `unknown`, or `no-result`. It is empty on a run where nothing was lost in transit, which is the common case.
 
-Each phase in `completed` carries the review's own evidence — `verifyRuns` and `filesReviewed` — alongside its `findings`. A fix round that lands no commits gets no re-review (there would be no diff to read, and an approving re-review over an empty tree would read as "fixed"); its findings come back `unresolved` with a concern instead.
+Each phase in `completed` carries the review's own evidence — `verifyRuns` and `filesReviewed` — alongside its `findings`, plus `builderEvidence`: the per-task `verify_evidence` the builders recorded (empty in per-phase mode). In per-task mode the reviewer reads one review-package file and does not re-run the verify commands builders recorded with exit 0, so `verifyRuns` holds only the reviewer's own runs. A fix round that lands no commits gets no re-review (there would be no diff to read, and an approving re-review over an empty tree would read as "fixed"); its findings come back `unresolved` with a concern instead.
 
-A builder that runs out of turn budget mid-phase does not stop the run: the workflow continues the phase with fresh builders (up to 5 rounds) as long as tasks keep landing, and reports the round count per phase as `builderRounds`. It only stops when a whole round lands nothing new.
+A builder that runs out of turn budget mid-phase does not stop the run: the workflow continues the phase with fresh builders (up to 5 rounds) as long as tasks keep landing, and reports the round count per phase as `builderRounds` (in per-task mode the round cap applies per task, and `builderRounds` is the maximum any single task needed). It only stops when a whole round lands nothing new.
 
 ## 6. Reconcile & Report
 
 From the returned result:
 
 1. For each phase in `completed`, mark its `<phase>` `status="done"` in PLAN.md (skip the `all` pseudo-phase).
-2. Persist review findings to `.planning/features/{name}/REVIEW.md` (create on first append), same format as the manual build skill: a `## Phase {id} — {phase-name} (round 1)` heading with `Status: {reviewStatus}`, then the two evidence lines from `verifyRuns` and `filesReviewed` — `Verify: {N} re-run — {P} pass, {F} fail, {X} not runnable` and `Reviewed: {M} file(s)` — then one line per finding: `- [{severity}] {file}: {description} — {marker}`. Marker: `new (round 2)` if the finding appears in that phase's `introducedByFix` list; `unresolved` if it appears in `unresolved`; `fixed in fix round` for other blocking findings (critical/high, a medium with `reproduced: true`, or any finding with `fix_class: true`) when `fixApplied` is true; `recorded` otherwise. Keep the `[{severity}]` tag exactly as is (audits parse it); a finding with `reproduced: true` appends ` (reproduced)` to its description, and one with `sites` appends ` — sites: {sites joined by ", "}`, both before the marker. Write the heading and evidence lines for **every** phase, including ones with an empty `findings` array — a phase approved with `Verify: 0 re-run` and `Reviewed: 0 file(s)` is exactly the record worth keeping, and `reviewStatus: SKIPPED` must appear as `Status: SKIPPED` so REVIEW.md durably records that the diff went unreviewed.
+2. Persist review findings to `.planning/features/{name}/REVIEW.md` (create on first append), same format as the manual build skill: a `## Phase {id} — {phase-name} (round 1)` heading with `Status: {reviewStatus}`, then the two evidence lines from `verifyRuns` and `filesReviewed` — `Verify: {N} re-run — {P} pass, {F} fail, {X} not runnable` (counting only the reviewer's own runs, never the builders') and `Reviewed: {M} file(s)` — then, when the phase's `builderEvidence` is non-empty, a third line after `Reviewed:`, `Builder evidence: {K} task(s) — {P} exit 0, {F} non-zero` — then one line per finding: `- [{severity}] {file}: {description} — {marker}`. Marker: `new (round 2)` if the finding appears in that phase's `introducedByFix` list; `unresolved` if it appears in `unresolved`; `fixed in fix round` for other blocking findings (critical/high, a medium with `reproduced: true`, or any finding with `fix_class: true`) when `fixApplied` is true; `recorded` otherwise. Keep the `[{severity}]` tag exactly as is (audits parse it); a finding with `reproduced: true` appends ` (reproduced)` to its description, and one with `sites` appends ` — sites: {sites joined by ", "}`, both before the marker. Write the heading and evidence lines for **every** phase, including ones with an empty `findings` array — a phase approved with `Verify: 0 re-run` and `Reviewed: 0 file(s)` is exactly the record worth keeping, and `reviewStatus: SKIPPED` must appear as `Status: SKIPPED` so REVIEW.md durably records that the diff went unreviewed.
 
    **Skipped by profile:** when a phase's `reviewStatus` is `SKIPPED_BY_PROFILE`, write `Status: SKIPPED (profile: {profile})` and, in place of the two evidence lines, the single line `Review skipped by profile — no reviewer ran by design.` This is deliberately distinct from a bare `Status: SKIPPED`, which continues to mean the review was supposed to run and failed. An audit must be able to tell a traded-away review from a broken one.
 
@@ -256,14 +272,15 @@ Verify: {PASS | FAIL | INCONCLUSIVE | FAIL (downgraded from {downgraded_from}) �
 [If sync is non-null:] Sync with main: {sync.outcome}{ — sync.commit}{ — conflicts left for the verifier: sync.conflicted_files when outcome is conflict-aborted}{ — sync.notes}
 [If salvageEvents is non-empty:] Salvage events:
 - {agent}: {record} → {adopted | rejected | unknown | no result}
-[If any phase whose reviewStatus is NOT `SKIPPED_BY_PROFILE` has an empty verifyRuns and empty filesReviewed:] Unsubstantiated review verdicts: phase {id} approved with no verify re-runs and no files reviewed.
+[If any phase whose reviewStatus is NOT `SKIPPED_BY_PROFILE` has an empty verifyRuns, empty filesReviewed and empty builderEvidence:] Unsubstantiated review verdicts: phase {id} approved with no verify re-runs, no builder evidence and no files reviewed. (A per-task phase that reviewed no files surfaces through its concern line.)
+[If buildMode is per-phase:] Build mode: per-phase (rollback path)
 [If any phase's reviewStatus is `SKIPPED_BY_PROFILE`:] Review gate off by profile ({profile}): no reviewer ran for phase(s) {ids} — the verifier was the only gate.
 
 [If verdict PASS/INCONCLUSIVE:] Ready to finish — run /ship:finish (or I can run it now).
 [If FAIL, including a downgraded verdict:] Fix tasks were appended to PLAN.md as a pending fix phase. Review them, then /ship:go to continue (or /ship:build for manual control).
 [If stoppedAt:] Stopped at phase {id}. Reason: {status}{, tasks_completed/tasks_total if EXHAUSTED}. Commits landed: {stoppedAt.build.commits}. Next: {suggested action}.
    An `INFRASTRUCTURE` stop reports the transport cause from `stoppedAt.build.reason` and the `/ship:go {name}` re-run recommendation instead of task counts — the counts are not what stopped it.
-[If any phase has builderRounds > 1:] Note: phase {id} needed {builderRounds} builder rounds (tasks are large enough to outlive one turn budget).
+[If any phase has builderRounds > 1:] Note: phase {id} needed {builderRounds} builder rounds (tasks are large enough to outlive one turn budget; in per-task mode this is the most rounds any single task needed — a task outlived one builder's turn budget).
 ```
 
 An `adopted` salvage event is the machinery working — a lost result recovered for a few thousand tokens instead of a ~90k-token re-run; a `rejected` one means the record did not match this build and the work was redone from scratch. Surfacing both is what makes the next field audit a read of this report rather than a reconstruction from session transcripts.
