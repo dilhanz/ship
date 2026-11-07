@@ -173,14 +173,14 @@ describe('headless doctrine — interactive behavior unchanged', () => {
  * prose around it, and pin that the rule stays scoped to --headless.
  */
 describe('headless doctrine — the turn never ends mid-workflow', () => {
-  it('go declares TaskOutput and TaskStop in allowed-tools', () => {
+  it('go declares TaskStop in allowed-tools and no longer depends on TaskOutput', () => {
     const fm = readSrc('skills/go/SKILL.md').split('---')[1];
-    assert.ok(/allowed-tools:.*\bTaskOutput\b/.test(fm),
-      'the skill cannot block on a workflow without TaskOutput in allowed-tools');
+    assert.ok(!/allowed-tools:.*\bTaskOutput\b/.test(fm),
+      'current Claude Code builds have no TaskOutput tool; listing it implies a wait the skill cannot make');
     assert.ok(/allowed-tools:.*\bTaskStop\b/.test(fm),
       'the wait-cap path calls TaskStop, so it must be in allowed-tools');
     assert.ok(/allowed-tools:.*\bToolSearch\b/.test(fm),
-      'the rule tells go to load deferred TaskOutput/TaskStop with ToolSearch, so it must be in allowed-tools too');
+      'the rule tells go to load deferred TaskStop with ToolSearch, so it must be in allowed-tools too');
   });
 
   it('go names the wait rule and states the tool returns a Task ID, not a result', () => {
@@ -193,33 +193,39 @@ describe('headless doctrine — the turn never ends mid-workflow', () => {
     assert.ok(/Task ID/.test(go), 'the rule must name the Task ID as what comes back');
   });
 
-  it('go blocks with TaskOutput at the tool maximum timeout', () => {
+  it('go blocks with a foreground Bash poll on the workflow output file at the tool maximum timeout', () => {
     const go = readSrc('skills/go/SKILL.md');
-    assert.ok(/TaskOutput/.test(go), 'the blocking primitive is TaskOutput');
-    assert.ok(/block:\s*true/.test(go), 'the call must block');
-    assert.ok(/600000/.test(go), '600000ms is the documented maximum for one TaskOutput call');
+    assert.ok(/\*\*foreground\*\* Bash call/.test(go), 'the blocking primitive is a foreground Bash call');
+    assert.ok(go.includes('tasks/$id.output'), 'the poll watches the workflow task output file');
+    assert.ok(/\[ -s "\$f" \]/.test(go), 'the file is empty while running, so the poll waits for it to be non-empty');
+    assert.ok(/600000/.test(go), '600000ms is the Bash tool maximum for one foreground call');
+    assert.ok(/There is no `TaskOutput` tool/.test(go), 'the rule must say why TaskOutput is not used');
+    assert.ok(/`run_in_background` Bash and `Monitor` return at once/.test(go),
+      'background waits end the turn, which is the orphan the rule prevents');
+    assert.ok(/mark individual agents finishing, not the workflow/.test(go),
+      'journal result lines are per-agent; treating one as completion ends the wait early');
   });
 
   it('go repeats the blocking call rather than trusting a single 10-minute wait', () => {
     const go = readSrc('skills/go/SKILL.md');
     assert.ok(/while the status is still running, repeat step 3/.test(go),
-      'a build spine outlasts one TaskOutput call, so the rule must repeat it');
+      'a build spine outlasts one 10-minute call, so the rule must repeat it');
     assert.ok(/12\*{0,2} calls/.test(go), 'the repetition must be bounded at 12 calls');
     assert.ok(/2-hour ceiling/.test(go), 'the bound must be stated as a 2-hour ceiling');
   });
 
   it('go reconciles from the blocking call rather than waiting for a notification too', () => {
     const go = readSrc('skills/go/SKILL.md');
-    assert.ok(/`<status>`/.test(go), 'the loop condition is the reply status');
-    assert.ok(/`<output>` carries `result`/.test(go),
-      'the blocking reply carries the workflow return value; go must know to read it');
+    assert.ok(/`RUNNING`/.test(go) && /On `DONE`/.test(go), 'the loop condition is the line the poll prints');
+    assert.ok(/Its `result` field is the workflow's own return value/.test(go),
+      'the output file carries the workflow return value; go must know to read it');
     assert.ok(/do not wait for a separate notification/.test(go),
-      'waiting for a notification on top of a completed TaskOutput would re-strand the turn');
+      'waiting for a notification on top of a finished poll would re-strand the turn');
   });
 
-  it('go loads the deferred TaskOutput/TaskStop schemas before calling them', () => {
-    assert.ok(readSrc('skills/go/SKILL.md').includes('select:TaskOutput,TaskStop'),
-      'both tools may be deferred; the rule must say how to load them');
+  it('go loads the deferred TaskStop schema before calling it', () => {
+    assert.ok(readSrc('skills/go/SKILL.md').includes('select:TaskStop'),
+      'TaskStop may be deferred; the rule must say how to load it');
   });
 
   it('go stops the task before terminating on the wait ceiling', () => {
