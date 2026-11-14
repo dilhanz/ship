@@ -54,6 +54,7 @@ Step 7 and the display below carry the replan-mode branches; Step 8 is unchanged
 Scale exploration to uncertainty — the gate is the output, not the process:
 
 - **Read CONTEXT.md `## Codebase Notes` first, if present.** When the brainstorm already mapped the territory, do not re-explore it — verify with spot-checks only.
+- **Read `.planning/verify-checklist.md`, if present.** The verifier fails the feature on every bullet the diff violates. A bullet that bears on this feature is a design constraint: settle it in the `<action>` of the task it governs, rather than leaving it for a fix round after the design is fixed.
 - **Small or familiar surface:** explore inline with Glob/Read/Grep.
 - **Large or unfamiliar surface:** fan out parallel Explore agents — you choose how many and what each investigates. Similar features, architecture, and conventions remain useful lenses, not mandatory slots.
 
@@ -82,6 +83,7 @@ Extract from CONTEXT.md:
 - Acceptance criteria (these become your Must Deliver items)
 - Scope boundaries (what's in, what's out)
 - Decisions already made
+- Open questions (`## Open Questions`, when present) — decisions the brainstorm left for you to settle
 
 ### Step 2 — Use Exploration Findings
 
@@ -99,6 +101,10 @@ If the feature involves unfamiliar technology, make up to 3 WebFetch calls.
 If CONTEXT.md contains a `## Chosen Architecture` section, use that approach as your architectural foundation.
 
 Document implementation decisions not already in CONTEXT.md. For each, note the rationale.
+
+**Settle every open question.** Each entry under CONTEXT.md `## Open Questions` gets one `## Decisions` line naming the question, the answer, and the rationale. A question you cannot settle from the code or CONTEXT.md goes to the user through the Post-Exploration Clarifying Questions step — it never enters the plan as an open item.
+
+**Decisions travel to the builder.** PLAN.md's `## Decisions` section is copied into every per-task builder's brief, so write each entry to stand on its own in a line or two.
 
 If a decision contradicts CONTEXT.md, flag it explicitly.
 

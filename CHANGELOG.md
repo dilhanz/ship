@@ -1,5 +1,21 @@
 # Changelog
 
+## 5.31.0
+
+Minor release: four things the planning steps produced and the next step never used now reach it. No new agent, gate, or workflow round.
+
+### Changed
+
+- **Plan-review warnings get a disposition.** The go skill used to list WARNING findings in the outcome block and show a count at the approval gate. A per-task builder reads its brief, not `## Plan Review`, so a warning reached nobody unless the session applied it ad hoc, and one such edit rewrote an acceptance criterion in CONTEXT.md. On `APPROVED`, `/ship:go` and `/ship:plan-verify` now give every WARNING one of three dispositions:
+  - `Applied`: the warning names a task and its evidence holds, so that task's files, reference, action or verify is edited.
+  - `Not applied`: the check disproved it.
+  - `Needs the user`: it names no task, or acting on it would add or remove a task or change CONTEXT.md. CONTEXT.md is never edited here. The approval-gate summary prints these in full.
+
+  SUGGESTION findings are listed and not applied.
+- **The planner settles `## Open Questions`.** The brainstorm writes that section for the planner, but the plan skill never mentioned it. Each entry now gets a `## Decisions` line, or goes to the user in the post-exploration questions. The plan reviewer checks it: an unsettled question a task's contract depends on is CRITICAL, any other is a WARNING.
+- **The builder's brief carries the plan's decisions.** `ship/task-brief.cjs` copied CONTEXT.md's Decisions and Scope only, so a decision the planner or replanner recorded in PLAN.md bound the builder only when a task action repeated it. PLAN.md's `## Decisions` now sits under `### Plan decisions` inside the brief's Decisions and Scope part. A plan with no decisions adds nothing.
+- **The planner and plan reviewer read the verify checklist.** `.planning/verify-checklist.md` was applied by the builder, the phase reviewer and the verifier, all after the design was fixed. The plan skill now reads it during exploration and settles a relevant bullet in the task it governs. The plan reviewer raises a WARNING on a task whose approach plainly violates a bullet.
+
 ## 5.30.0
 
 Minor release: `/ship:go` builds one brief-fed task at a time to cut builder and reviewer context, a verify fix phase closes its whole defect class in one round, and `--auto` no longer claims to be hands-off.

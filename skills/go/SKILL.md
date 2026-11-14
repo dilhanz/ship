@@ -130,7 +130,7 @@ Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ens
 
 ### Branch on `status`
 
-- **`APPROVED`** — set CONTEXT.md `status: plan-verified`. The outcome block additionally lists the examined files and any WARNING/SUGGESTION findings. Continue to the approval gate (section 3).
+- **`APPROVED`** — set CONTEXT.md `status: plan-verified`. The outcome block additionally lists the examined files and any WARNING/SUGGESTION findings, each WARNING followed by its disposition from **Apply the warnings** below. Continue to the approval gate (section 3).
 - **`NEEDS_INPUT`** — split on `--headless`:
   - **Interactive (no `--headless`)** — ask each entry in `questions` via AskUserQuestion (one question per entry, using its `options`; the automatic Other option covers anything else). Then RE-INVOKE the same workflow with `args: { feature: "{name}", answers: "<Q/A transcript>", roundOffset: <the result's nextRoundOffset>, findings: <the result's findings>, maxPlanRounds: {knobs.maxPlanRounds} }` and re-branch on the new status. `nextRoundOffset` is the total number of `### Round n` labels consumed so far across all invocations — it counts an apply-answers step, which summing `rounds` would miss; when the field is absent (an older workflow), fall back to the summed `rounds`. It is what keeps the replanner's `### Round {n}` headings unique across re-invocations — without it a second run restarts at `### Round 1` and collides with the first run's subsection, which the replanner is forbidden to rewrite. `findings` are the escalated CRITICALs the re-invoked workflow applies the answers against: it runs them through a `replan:answers` step before its first review, so an answer can no longer be dropped by an approving review. Do **not** use `resumeFromRunId`. Cap this at 2 re-invocations; if a third `NEEDS_INPUT` arrives, report it and stop.
   - **Headless** — do NOT call AskUserQuestion. Write `.planning/features/{name}/QUESTIONS.md` in the format specified in **`ship/docs/headless.md` §6**, recording `roundOffset` as the result's `nextRoundOffset` (the total `### Round n` labels consumed so far across all invocations; fall back to the summed `rounds` when the field is absent). Leave CONTEXT.md at `planned` and terminate as `needs-input` with `questions_file` set.
@@ -148,12 +148,22 @@ Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ens
 
 **Scratch cleanup — after the branch, never before it.** The reviewer scratch fallback above reads `plan-round-{rounds}.json`, so this step runs only once the `BLOCKED` branch has finished (adopted, re-invoked, or reported) — deleting first would destroy the record the fallback exists to read. On every terminal outcome except `NEEDS_INPUT` (whose re-invocation still needs them — including a headless park, which is terminal for this process but leaves the loop live, so the files are kept exactly as on interactive `NEEDS_INPUT`) and except a `BLOCKED` whose `blockedBy` is `replanner` or `answers` (the report just pointed the user at `replan-round-{n}.json`, and the recommended `/ship:go` re-run salvages it), delete `.planning/features/{name}/.review-scratch/plan-round-*.json` and `.planning/features/{name}/.review-scratch/replan-round-*.json` — the plan reviewers' and replanner's crash-recovery cache for the loop that just ended. Leaving them is not dangerous (each is fingerprinted with the PLAN.md hash it was written against, so a salvage rejects one from a different plan) but they serve no further purpose. On `APPROVED`, section 6 clears the whole directory anyway.
 
+### Apply the warnings (`APPROVED` only)
+
+A WARNING does not block approval, but a per-task builder reads its brief, not `## Plan Review`, so a warning left in the outcome block reaches nobody. Before the approval gate, give every WARNING in the approved result exactly one disposition, written after it in the outcome block:
+
+- **`*Applied:* {what changed}`** — the warning names a task (`task_id` is set) and its evidence holds when you check it with one Read or Grep (a reviewer can be wrong). Edit only that task's `<files>`, `<reference>`, `<action>` or `<verify>` in PLAN.md. Never renumber a task id, never add or remove a task, and never touch a task the warning does not name.
+- **`*Not applied:* {evidence}`** — the check disproved the warning.
+- **`*Needs the user:* {what must be decided}`** — the warning names no task, or acting on it would add or remove a task or change CONTEXT.md (an acceptance criterion, a decision, the scope). **Never edit CONTEXT.md here**: every requirement in it is one the user confirmed, and a criterion rewritten on a reviewer's say-so is no longer theirs.
+
+SUGGESTION findings are listed and not applied. The dispositions are written the same way under `--auto` and `--headless`; a `Needs the user` warning does not stop the run, because a WARNING never blocks — it is shown in the section 3 summary, which prints even when the gate is skipped.
+
 ## 3. Plan Approval Gate (interactive)
 
 Fires when status is `plan-verified` (whether the plan loop just approved it or the feature was already there). Skip it when resuming from `building`, and skip it when `--auto` was passed — without the flag the gate always fires. (`--headless` implies `--auto`, so the gate is always skipped headlessly.)
 
 1. Read `.planning/features/{name}/PLAN.md`; count tasks and phases.
-2. Show a compact summary: feature, task count (and phase count), Must Deliver items, the task list grouped by phase, and the count of any plan-review warnings.
+2. Show a compact summary: feature, task count (and phase count), Must Deliver items, the task list grouped by phase, the count of any plan-review warnings, and every warning marked `Needs the user` in full.
 3. AskUserQuestion: "Ready to build?" — options **Proceed** / **Adjust first**. (Skipped entirely under `--auto`: show the summary, note that the gate was skipped, and continue.)
 4. **Adjust first** → stop; tell the user to `/ship:plan {name}` then `/ship:go`.
 5. **Proceed** → continue.

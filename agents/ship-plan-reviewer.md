@@ -53,6 +53,8 @@ For every task in PLAN.md:
 - Pattern consistency: does the approach match how the codebase already does this (layering, naming, library choices)?
 - Duplicate functionality: does the plan rebuild something that already exists? Grep for similar function names or route paths.
 - Coverage: is any acceptance criterion in CONTEXT.md left unaddressed by the tasks?
+- Open questions: is every entry under CONTEXT.md `## Open Questions` settled by a PLAN.md `## Decisions` line or by a task? An unsettled one that a task's contract depends on is CRITICAL; any other unsettled one is a WARNING.
+- Checklist: when `.planning/verify-checklist.md` exists, read it. A task whose planned approach plainly violates a bullet gets a WARNING naming that task and the bullet — the verifier will fail the feature on it after the build.
 - Side effects: will planned modifications break existing callers?
 
 Do NOT police document format — review substance, not section presence or wording.

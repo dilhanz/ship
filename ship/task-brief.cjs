@@ -4,7 +4,10 @@
 //
 // The brief has exactly four parts, in this order:
 //   1. the task's own `<task …>…</task>` XML, verbatim
-//   2. CONTEXT.md's "## Decisions" and "## Scope" section bodies, verbatim
+//   2. CONTEXT.md's "## Decisions" and "## Scope" section bodies, verbatim,
+//      with PLAN.md's own "## Decisions" between them under "### Plan
+//      decisions" when the plan has any — the planner and the replanner
+//      record theirs there, and a decision the builder never sees binds nobody
 //   3. the tasks it depends on — status, commit, files, and `git show --stat`
 //   4. the repo verify checklist's bullets and Build: line
 // Nothing else: no exploration summary, no acceptance criteria, no other tasks.
@@ -107,6 +110,10 @@ function buildBrief(opts) {
 
     const decisions = sectionBody(context, 'Decisions');
     const scope = sectionBody(context, 'Scope');
+    // Only the plan's preamble is searched, so a `## Decisions` line inside a
+    // task's action can never be mistaken for the plan's own section.
+    const preamble = tasks.length > 0 ? plan.slice(0, plan.indexOf(tasks[0].xml)) : plan;
+    const planDecisions = sectionBody(preamble, 'Decisions');
 
     const explicit = parseDepends(task.attrs.depends);
     let depIds;
@@ -153,6 +160,7 @@ function buildBrief(opts) {
       '',
       decisions !== null ? decisions : '(CONTEXT.md has no Decisions section)',
       '',
+      ...(planDecisions ? ['### Plan decisions', '', planDecisions, ''] : []),
       scope !== null ? scope : '(CONTEXT.md has no Scope section)',
       '',
       '## Dependencies',

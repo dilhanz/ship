@@ -268,3 +268,59 @@ describe('task-brief', () => {
     }
   });
 });
+
+describe('task-brief: plan decisions', () => {
+  function withPlanDecisions(dir, body) {
+    const p = path.join(dir, '.planning', 'features', SLUG, 'PLAN.md');
+    const text = fs.readFileSync(p, 'utf8');
+    fs.writeFileSync(p, text.replace('<phase id="1"', `${body}\n<phase id="1"`));
+  }
+
+  it("carries PLAN.md's Decisions between the context decisions and the scope", () => {
+    const { dir } = makeRepo();
+    try {
+      withPlanDecisions(dir, '## Decisions\n\n- Plan decision: use the line-anchored parser.\n\n## Must Deliver\n\n- Outcome that must not appear.\n');
+      const r = buildBrief({ cwd: dir, feature: SLUG, taskId: '2' });
+      assert.equal(r.ok, true, r.line);
+      const headings = r.content.split('\n').filter((l) => /^## /.test(l));
+      assert.deepEqual(headings, ['## Task', '## Decisions and Scope', '## Dependencies', '## Verify checklist']);
+      const ctx = r.content.indexOf('- Decision one.');
+      const planAt = r.content.indexOf('### Plan decisions\n\n- Plan decision: use the line-anchored parser.');
+      const scope = r.content.indexOf('**In scope:** a and b.');
+      assert.ok(ctx !== -1 && planAt > ctx && scope > planAt, 'order is context decisions, plan decisions, scope');
+      assert.ok(!r.content.includes('Outcome that must not appear'));
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  it('adds nothing when the plan has no Decisions section or an empty one', () => {
+    const { dir } = makeRepo();
+    try {
+      let r = buildBrief({ cwd: dir, feature: SLUG, taskId: '2' });
+      assert.ok(!r.content.includes('### Plan decisions'));
+      withPlanDecisions(dir, '## Decisions\n\n## Must Deliver\n');
+      r = buildBrief({ cwd: dir, feature: SLUG, taskId: '2' });
+      assert.equal(r.ok, true, r.line);
+      assert.ok(!r.content.includes('### Plan decisions'));
+    } finally {
+      cleanup(dir);
+    }
+  });
+
+  it('ignores a Decisions heading inside a task or after the tasks', () => {
+    const { dir } = makeRepo();
+    try {
+      const p = path.join(dir, '.planning', 'features', SLUG, 'PLAN.md');
+      const text = fs.readFileSync(p, 'utf8')
+        .replace('<action>Write a.js.</action>', '<action>Write a.js.\n## Decisions\n\n- Decoy inside a task.\n</action>');
+      fs.writeFileSync(p, `${text}\n## Decisions\n\n- Decoy after the tasks.\n`);
+      const r = buildBrief({ cwd: dir, feature: SLUG, taskId: '2' });
+      assert.equal(r.ok, true, r.line);
+      assert.ok(!r.content.includes('### Plan decisions'));
+      assert.ok(!r.content.includes('Decoy'));
+    } finally {
+      cleanup(dir);
+    }
+  });
+});
