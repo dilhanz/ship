@@ -80,6 +80,14 @@ Append to PLAN.md:
 [Any WARNING or SUGGESTION items — or "No issues found."]
 ```
 
+**Apply the warnings.** A builder working from a task brief never reads `## Plan Review`, so give every WARNING exactly one disposition, written after it under `### Findings`:
+
+- `*Applied:* {what changed}` — the warning names a task and its evidence holds when you check it with one Read or Grep. Edit only that task's `<files>`, `<reference>`, `<action>` or `<verify>` in PLAN.md; never renumber, add, or remove a task.
+- `*Not applied:* {evidence}` — the check disproved it.
+- `*Needs the user:* {what must be decided}` — it names no task, or acting on it would add or remove a task or change CONTEXT.md. Never edit CONTEXT.md's requirements here; list these warnings in the display below.
+
+SUGGESTION items are listed and not applied.
+
 #### If NEEDS-REVISION:
 
 Keep CONTEXT.md status as `planned` (do NOT change it).
@@ -122,6 +130,7 @@ Tasks reviewed: [N] / [N]
 
 [If APPROVED:]
 Findings: [N warnings, N suggestions — or "Clean"]
+[One line per warning marked `Needs the user`]
 Plan is ready to build.
 Next: /ship:build
 
