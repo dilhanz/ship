@@ -259,6 +259,81 @@ describe('/ship:auto skill — run record, go, route, finish', () => {
     assert.match(stop, /Resume: \/ship:auto \{name\}/);
   });
 
+  // An auto run pushes HEAD with no prompt, so every place that leads to that
+  // push must refuse the base branch: a feature left in the main checkout on
+  // the default branch would otherwise be pushed straight to origin's default.
+  describe('base-branch guard — never pushes the base branch', () => {
+    const guard = sliceFrom(skill, /^## Branch guard$/m, /^## /m);
+    const resolve = sliceFrom(skill, /^## Resolve the start$/m, /^## /m);
+    const finishAuto = sliceFrom(finish, /^## Auto Run \(\/ship:auto only\)$/m, /^## /m);
+
+    it('the guard section compares the current branch with the base branch', () => {
+      assert.notEqual(guard, '', 'no `## Branch guard` section in skills/auto/SKILL.md');
+      assert.ok(guard.includes('git rev-parse --abbrev-ref HEAD'));
+      assert.ok(guard.includes('git rev-parse --verify main &>/dev/null && echo main || echo master'));
+      assert.ok(guard.includes('refs/remotes/origin/HEAD'));
+      assert.match(guard, /detached/i);
+      assert.match(guard, /Nothing was pushed and no PR was opened/);
+      assert.match(guard, /git switch -c feature\/\{name\}/);
+    });
+
+    it('the guard uses the same base-branch detection as finish Option 1', () => {
+      const optionOne = sliceFrom(finish, /^### Option 1: Create PR$/m, /^### /m);
+      assert.ok(optionOne.includes('git rev-parse --verify main &>/dev/null && echo main || echo master'));
+    });
+
+    it('the guard runs before the run is recorded', () => {
+      const guardAt = skill.search(/^## Branch guard$/m);
+      const recordAt = skill.search(/^## Record the run$/m);
+      assert.ok(guardAt !== -1 && recordAt !== -1 && guardAt < recordAt);
+      assert.match(guard, /no run record/i);
+    });
+
+    const sites = [
+      {
+        name: 'skills/auto/SKILL.md — Resolve the start, in-flight case',
+        text: () => resolve.split('\n').find((l) => l.startsWith('1. ')) || '',
+        re: /go to \*\*Branch guard\*\*/,
+      },
+      {
+        name: 'skills/auto/SKILL.md — Finish, before ship:finish is invoked',
+        text: () => finishSection,
+        re: /`## Branch guard`[^\n]*before[^\n]*`ship:finish`|Run the `## Branch guard` check/,
+      },
+      {
+        name: 'skills/finish/SKILL.md — Auto Run, before the push',
+        text: () => finishAuto,
+        re: /\*\*Branch guard:\*\*[^\n]*git rev-parse --abbrev-ref HEAD[^\n]*nothing is pushed/,
+      },
+    ];
+
+    for (const site of sites) {
+      it(`guards the push at: ${site.name}`, () => {
+        assert.match(site.text(), site.re);
+      });
+    }
+
+    it('in an in-flight start the guard, not the record, is the next step', () => {
+      const caseOne = resolve.split('\n').find((l) => l.startsWith('1. ')) || '';
+      assert.doesNotMatch(caseOne, /go to \*\*Record the run\*\*/);
+    });
+
+    it("auto's Finish stops on a failed guard before finish runs", () => {
+      const guardAt = finishSection.indexOf('`## Branch guard`');
+      const invokeAt = finishSection.indexOf('`ship:finish` with args');
+      assert.ok(guardAt !== -1 && invokeAt !== -1 && guardAt < invokeAt);
+      assert.match(finishSection, /Stop report/);
+    });
+
+    it("finish's guard comes before the push in the Auto Run section", () => {
+      const guardAt = finishAuto.indexOf('**Branch guard:**');
+      const pushAt = finishAuto.indexOf('`git push -u origin HEAD`');
+      assert.ok(guardAt !== -1 && pushAt !== -1 && guardAt < pushAt);
+      assert.ok(finishAuto.includes('refs/remotes/origin/HEAD'));
+      assert.match(finishAuto, /detached/i);
+    });
+  });
+
   it('writes none of the headless files', () => {
     assert.doesNotMatch(skill, /OUTCOME\.json|QUESTIONS\.md/);
   });

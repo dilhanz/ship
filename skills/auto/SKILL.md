@@ -28,7 +28,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/start/SKILL.md` once, here. Take the `MAIN_RO
 
 A **slug-shaped token** is a start text with no whitespace that matches `^[a-z0-9][a-z0-9-]*$`. Take the first case that applies:
 
-1. A slug-shaped token that is a key in `features` with `location` `main` or `worktree` → **in flight**. If `owner` is `ambiguous`, stop and list the `candidates` (path, branch, status). If `here` is false, call `EnterWorktree` with `path:` set to the entry's `path`, without asking; if that fails, stop and say where the feature lives. Then go to **Record the run**.
+1. A slug-shaped token that is a key in `features` with `location` `main` or `worktree` → **in flight**. If `owner` is `ambiguous`, stop and list the `candidates` (path, branch, status). If `here` is false, call `EnterWorktree` with `path:` set to the entry's `path`, without asking; if that fails, stop and say where the feature lives. Then go to **Branch guard**.
 2. A slug-shaped token that matches a ledger row under `## Now`, `## Next` or `## Someday` and has no folder → **new**. The feature name is the slug and the idea is the row's one-liner verbatim.
 3. A slug-shaped token found only in the archive (`location` is `archive`) → report that the feature is already shipped, and stop.
 4. A slug-shaped token that matches nothing → report `{slug}` as not found, list the live features (`{slug} [{status} · {location}]`) and the ledger rows, say that a new idea needs a description, and stop.
@@ -66,6 +66,31 @@ Then call `EnterWorktree` with `path: "$MAIN_ROOT/.claude/worktrees/{name}"`.
 
 - `git worktree add` fails (the branch or path exists), or git is unavailable → stop, leave the feature directory where it is, and report.
 - `EnterWorktree` fails → stop, and say to open a session in the worktree and run `/ship:auto {name}`.
+
+## Branch guard
+
+An auto run ends in `git push -u origin HEAD` with no prompt, so it must never run on the base branch. An in-flight feature can sit there: `/ship:start` leaves it in the main checkout on the default branch when the user declines the worktree. Check every start, new or in flight, from the checkout that holds the feature:
+
+```bash
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+BASE=$(git rev-parse --verify main &>/dev/null && echo main || echo master)
+ORIGIN_DEFAULT=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+echo "branch=$BRANCH base=$BASE origin-default=$ORIGIN_DEFAULT"
+```
+
+The base-branch detection is the one finish's Option 1 uses. The guard **fails** when `BRANCH` equals `BASE`, equals a non-empty `ORIGIN_DEFAULT`, or is `HEAD` (a detached checkout has no branch to open a PR from). On a failure, stop here: write no run record, do not run go, and report:
+
+   ```
+   ## AUTO STOPPED
+
+   Feature: {name}
+   Reason: the feature is on the base branch `{branch}` (or a detached HEAD); an auto run would push it to origin with no pull request
+   Unblock: move the feature onto its own branch, for example `git switch -c feature/{name}`
+   Nothing was pushed and no PR was opened.
+   Resume: /ship:auto {name}
+   ```
+
+Otherwise continue to **Record the run**.
 
 ## Record the run
 
@@ -119,8 +144,9 @@ Read CONTEXT.md `status` and what go (or finish) just reported. Take the first r
 ## Finish
 
 1. Run `node "${CLAUDE_PLUGIN_ROOT}/ship/auto-run.cjs" get {name}` and keep `fixRoundsUsed`, `fixRounds` and the `failingSets` trend for the final report: finish deletes the record before that report is written.
-2. If VERIFY.md carries INCONCLUSIVE markers (frontmatter `status: INCONCLUSIVE`, or a Stage 1 row with that verdict), invoke the Skill tool: `ship:finish` with args `{name} --accept-inconclusive "automatic override by /ship:auto: the pull request is the review gate; the inconclusive criteria are listed in the PR body"`. Otherwise `ship:finish` with args `{name}`. Finish's `## Auto Run (/ship:auto only)` section does the rest: the test suite, the push, the PR, both stamps, the archive move and the ledger row. If finish stops, go to `## Route`.
-3. Write the final report:
+2. Run the `## Branch guard` check again, before `ship:finish` is invoked: the branch may have changed since the run started (a resumed run, a checkout in between). If it fails → **Stop report** with the guard's reason. Finish is not invoked and nothing is pushed.
+3. If VERIFY.md carries INCONCLUSIVE markers (frontmatter `status: INCONCLUSIVE`, or a Stage 1 row with that verdict), invoke the Skill tool: `ship:finish` with args `{name} --accept-inconclusive "automatic override by /ship:auto: the pull request is the review gate; the inconclusive criteria are listed in the PR body"`. Otherwise `ship:finish` with args `{name}`. Finish's `## Auto Run (/ship:auto only)` section does the rest: the test suite, the push, the PR, both stamps, the archive move and the ledger row. If finish stops, go to `## Route`.
+4. Write the final report:
 
    ```
    ## AUTO COMPLETE
