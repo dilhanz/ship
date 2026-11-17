@@ -23,6 +23,7 @@
 //   node auto-run.cjs end <slug>
 
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const { isValidSlug } = require(path.join(__dirname, 'plan-parse.cjs'));
 const { listPendingTasks } = require(path.join(__dirname, 'plan-tasks.cjs'));
@@ -32,10 +33,13 @@ const LOCK_FILE = 'AUTO.json.lock';
 const DEFAULT_FIX_ROUNDS = 2;
 const MAX_FIX_ROUNDS = 3;
 const WORKFLOW_KINDS = ['plan', 'build'];
-const BUMP_FIELDS = ['planRounds'];
+const BUMP_FIELDS = ['planRounds', 'continueRounds'];
 const UNSUBSTITUTED_SESSION = 'CLAUDE_SESSION_ID';
 const LOCK_WAIT_MS = 5000;
-const LOCK_STALE_MS = 30000;
+// Stale threshold stays below the wait, so a waiter outlives a lock a killed
+// command left behind and takes it over instead of giving up. The critical
+// section is a few milliseconds.
+const LOCK_STALE_MS = 2000;
 const LOCK_POLL_MS = 20;
 
 function fail(warning) {
@@ -304,6 +308,15 @@ function pendingTaskCount(cwd, slug) {
   return count;
 }
 
+/** A hash of the feature's VERIFY.md, or null when there is none to read. */
+function verifyStamp(dir) {
+  try {
+    return crypto.createHash('sha1').update(fs.readFileSync(path.join(dir, 'VERIFY.md'))).digest('hex');
+  } catch (e) {
+    return null;
+  }
+}
+
 /**
  * Record a verify's failing-set size and decide whether a fix round runs.
  * Rules, in order: budget spent → stop; no pending fix task → stop; the
@@ -322,6 +335,14 @@ function verdict(slug, failingCount, opts) {
   }
   const cwd = resolveCwd(opts);
   return update(slug, opts, 'verdict', (record, dir) => {
+    // One decision per verify: VERIFY.md is rewritten by every verification, so
+    // its hash names the verify. A repeated call for the same one (a resume that
+    // re-enters Route) gets the stored decision back and consumes nothing.
+    const stamp = verifyStamp(dir);
+    const last = record.lastVerdict;
+    if (stamp !== null && last && last.stamp === stamp && last.count === count && last.result) {
+      return Object.assign({}, last.result, { repeated: true });
+    }
     const sets = Array.isArray(record.failingSets) ? record.failingSets.slice() : [];
     const previous = sets.length > 0 ? sets[sets.length - 1] : null;
     const budget = parseFixRounds(record.fixRounds);
@@ -346,8 +367,10 @@ function verdict(slug, failingCount, opts) {
     record.failingSets = sets;
     record.fixRounds = fixRounds;
     record.fixRoundsUsed = used;
+    const result = { ok: true, next, reason, used, budget: fixRounds, trend: sets.join('→') };
+    record.lastVerdict = stamp === null ? null : { stamp, count, result };
     writeRecord(dir, record);
-    return { ok: true, next, reason, used, budget: fixRounds, trend: sets.join('→') };
+    return result;
   });
 }
 
@@ -361,7 +384,7 @@ function verdict(slug, failingCount, opts) {
  */
 function bump(slug, field, cap, opts) {
   if (!isValidSlug(slug)) return invalidSlug(slug);
-  if (!BUMP_FIELDS.includes(field)) return fail(`unknown counter '${String(field)}' — expected planRounds`);
+  if (!BUMP_FIELDS.includes(field)) return fail(`unknown counter '${String(field)}' — expected planRounds or continueRounds`);
   const limit = parseCount(cap);
   if (limit === null) return fail(`--cap '${String(cap)}' is not a whole non-negative number`);
   return update(slug, opts, 'bump', (record, dir) => {

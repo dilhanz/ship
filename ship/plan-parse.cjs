@@ -32,10 +32,10 @@ const TASK_CLOSE = /^\s*<\/task>\s*$/;
 const PHASE_OPEN = /^\s*<phase\b[^>]*>/;
 const PHASE_CLOSE = /^\s*<\/phase>\s*$/;
 
-/** A slug is one path segment: non-empty, no separators, no `..`. */
+/** A slug is one path segment: non-empty, not `.`, no separators, no `..`. */
 function isValidSlug(slug) {
   if (typeof slug !== 'string') return false;
-  if (slug.trim() === '') return false;
+  if (slug.trim() === '' || slug.trim() === '.') return false;
   if (slug.includes('/') || slug.includes('\\') || slug.includes('..')) return false;
   return true;
 }

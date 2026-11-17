@@ -60,7 +60,7 @@ mkdir -p "$MAIN_ROOT/.claude/worktrees/{name}/.planning/features/{name}"
 cp -R "$CWD_ROOT/.planning/features/{name}/." "$MAIN_ROOT/.claude/worktrees/{name}/.planning/features/{name}/"
 ```
 
-Remove the main-checkout copy (`rm -rf "$CWD_ROOT/.planning/features/{name}"`) only when `git status --porcelain -- ".planning/features/{name}"` shows every line beginning `??`. If any line does not, copy without removing and say the main checkout still holds a copy. The ledger is not carried across. When CONTEXT.md was written straight into the new worktree, skip the copy and the removal.
+Remove the main-checkout copy (`rm -rf "$CWD_ROOT/.planning/features/{name}"`) only when `git status --porcelain -- ".planning/features/{name}"` shows every line beginning `??`. If any line does not, copy without removing and say the main checkout still holds a copy. The ledger is not carried across. When CONTEXT.md was written straight into the new worktree, `git worktree add` has already run: skip all three commands and the removal, and do not run it a second time.
 
 Then call `EnterWorktree` with `path: "$MAIN_ROOT/.claude/worktrees/{name}"`.
 
@@ -78,7 +78,7 @@ ORIGIN_DEFAULT=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/de
 echo "branch=$BRANCH base=$BASE origin-default=$ORIGIN_DEFAULT"
 ```
 
-The base-branch detection is the one finish's Option 1 uses. The guard **fails** when `BRANCH` equals `BASE`, equals a non-empty `ORIGIN_DEFAULT`, or is `HEAD` (a detached checkout has no branch to open a PR from). On a failure, stop here: write no run record, do not run go, and report:
+The base-branch detection is the one finish's Option 1 uses. The guard **fails** when `BRANCH` equals `BASE`, equals a non-empty `ORIGIN_DEFAULT`, or is `HEAD` (a detached checkout has no branch to open a PR from). On a failure, stop here: do not run go, write no run record, and run `node "${CLAUDE_PLUGIN_ROOT}/ship/auto-run.cjs" end {name}` so a record an earlier run left is not re-injected after a compaction. Then report:
 
    ```
    ## AUTO STOPPED
@@ -136,9 +136,9 @@ Read CONTEXT.md `status` and what go (or finish) just reported. Take the first r
   node "${CLAUDE_PLUGIN_ROOT}/ship/auto-run.cjs" verdict {name} {count}
   ```
 
-  `next: fix-round` → **Run go** again (it builds the pending fix phase and verifies again). `next: stop` → **Stop report** with its `reason` and `trend`.
+  `next: fix-round` → **Run go** again (it builds the pending fix phase and verifies again). `next: stop` → **Stop report** with its `reason` and `trend`. A second call for the same VERIFY.md returns the same decision with `repeated: true` and spends nothing, so re-entering this row after a compaction is safe.
 - **`planned` after a manual-mode `NEEDS-REVISION`** → run `node "${CLAUDE_PLUGIN_ROOT}/ship/auto-run.cjs" bump {name} planRounds --cap 2`. `allowed: true` → invoke `ship:plan` with args `{name}` (its replan mode, no questions), then **Run go**. Otherwise → **Stop report**.
-- **More to do, nothing stopped** → **Run go** again. This is `plan-verified` with no verify verdict yet (a plan just approved, such as a plan-loop result reconciled after a compaction), or `building` or `built` with no stop reported.
+- **More to do, nothing stopped** → run `node "${CLAUDE_PLUGIN_ROOT}/ship/auto-run.cjs" bump {name} continueRounds --cap 5`. `allowed: true` → **Run go** again; otherwise → **Stop report** (go keeps ending with neither progress nor a stop). This is `plan-verified` with no verify verdict yet (a plan just approved, such as a plan-loop result reconciled after a compaction), or `building` or `built` with no stop reported.
 - **Anything else** → **Stop report**.
 
 ## Finish
