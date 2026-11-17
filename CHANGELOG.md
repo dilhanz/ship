@@ -1,5 +1,26 @@
 # Changelog
 
+## 5.32.0
+
+Minor release: `/ship:auto` takes an idea to a pull request in one command. The brainstorm is still confirmed by you; nothing after it asks, except a question the plan loop cannot settle itself.
+
+### Added
+
+- **`/ship:auto`.** Runs the same brainstorm as `/ship:start`, with the same confirm-before-writing gate, then plans, builds, verifies and opens the pull request in the same session with no further prompts: no worktree offer, no "Ready to build?", no finish offer, no PR / merge / keep choice, no archive-outcome question. A plan-loop `NEEDS_INPUT` question is the one exception.
+  - **Three starts.** A quoted idea; a ledger row that has no folder yet, brainstormed from its one-liner; or a feature already in flight, which skips its completed steps. A new feature always gets a `feature/{slug}` worktree and the session enters it. A feature living in another worktree is entered without asking.
+  - **Fix rounds.** A verify FAIL runs fix rounds automatically under the rules of the headless fix rounds: 2 by default, `--fix-rounds` 0–3, and every round after the first only while the failing set shrinks. `--profile` passes through to the run.
+  - **PASS** runs the test suite, pushes the branch, opens a ready-for-review PR against the base branch, stamps `pr:` and `outcome: shipped`, archives the feature to the main worktree and moves its ledger row to `## Shipped`. The final report carries the PR URL.
+  - **INCONCLUSIVE** does the same. The PR body lists the inconclusive criteria and VERIFY.md's Inconclusive Override section records the automatic override.
+  - **Every other ending stops with nothing pushed and no PR**: a plan loop that does not approve, a builder stop, a null verdict, fix rounds spent or refused, a failing test suite at finish, `gh` unavailable, or a feature sitting on the base branch or a detached HEAD. The report names the reason and the status left behind, and re-running `/ship:auto {slug}` resumes from there.
+  - Invoking the command authorizes one push and one PR for that feature. It never merges, never force-pushes and never opens a draft. A permission prompt on `git push` or `gh pr create` depends on your permission mode and would hold a run you have walked away from.
+  - It works in a session without the Workflow tool: when the single-shot plan review asks for a revision, the run replans and tries again, at most twice.
+- **`ship/auto-run.cjs`.** Owns the run record, `.planning/features/{slug}/AUTO.json`: the session id, the flags, the fix-round and plan-round counters and any workflow in flight. Its `verdict` command decides each fix round (budget, pending fix task, shrinking failing set), so the rule is deterministic and unit-tested. The record is deleted on every ending and is never archived.
+- **An auto run survives a context compaction.** `hooks/post-compact.cjs` reads the run records and, when one belongs to the compacting session, re-injects an instruction to continue the run, so it still ends in a PR instead of stopping at the finish offer. A workflow that was in flight is reconciled, not launched a second time. A record from another session injects nothing.
+
+### Changed
+
+- **The go and finish skills each gain an auto-run block.** It applies only when the `/ship:auto` skill invoked them in this session and the feature has a run record. No flag selects it, so `/ship:go`, `/ship:finish` and `/ship:go --headless` invoked directly never enter it and behave as before. The `--headless` contract is untouched: headless runs still never invoke finish.
+
 ## 5.31.0
 
 Minor release: four things the planning steps produced and the next step never used now reach it. No new agent, gate, or workflow round.
