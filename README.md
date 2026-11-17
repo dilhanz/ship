@@ -41,6 +41,38 @@ The heavy lifting runs in background workflows, so agent output never floods you
 
 If verify fails, fix tasks are written back into the plan and `/ship:go` picks them up again. If a builder runs out of turns mid-phase, a fresh one resumes from the first pending task — progress is never lost.
 
+## /ship:auto
+
+One command from an idea to a pull request:
+
+```
+/ship:auto "your idea"      Brainstorm, then plan → build → verify → PR
+/ship:auto <slug>           Continue a ledger row or a feature already in flight
+```
+
+It starts from any of three places:
+
+- **A quoted idea** — the same brainstorm as `/ship:start`, with the same confirm-before-writing gate. Nothing is built from requirements you have not confirmed.
+- **A ledger row with no folder yet** — brainstormed from the row's one-liner.
+- **A feature already in flight** — completed steps are skipped; a feature living in another worktree is entered without asking.
+
+A new feature always gets its own `feature/{slug}` worktree, and the session moves into it without the offer. After the brainstorm is confirmed, the only question that can still fire is one the plan loop genuinely cannot settle itself: no "Ready to build?", no finish offer, no PR / merge / keep choice.
+
+How a run ends:
+
+- **PASS** — the test suite runs, the branch is pushed, a ready-for-review PR is opened against the base branch, the feature is archived and its ledger row moves to `## Shipped`. The PR URL is in the final report. The PR is the human review gate.
+- **INCONCLUSIVE** — the same, and the PR body lists the inconclusive criteria; VERIFY.md records the automatic override.
+- **FAIL** — fix rounds run automatically (2 by default, `--fix-rounds 0`–`3`), each one after the first only while the failing set shrinks. When they are spent or refused, the run stops.
+- **Anything else** — a plan loop that cannot converge, a builder stop, a failing test suite at finish, `gh` unavailable, a feature sitting on the base branch: nothing is pushed, no PR is opened, and the report names the reason and the status left behind.
+
+To resume a stopped run, re-run `/ship:auto {slug}`. `--profile` applies as it does on `/ship:go`.
+
+Invoking `/ship:auto` is your authorization for one push and one PR for that feature. It never merges, never force-pushes and never opens a draft.
+
+**Several terminals, one run each.** Nothing coordinates runs; each one is self-contained in its own worktree, so launching several features is opening several terminals.
+
+**Permission prompts.** Whether `git push` and `gh pr create` raise a permission prompt depends on your Claude Code permission mode, not on Ship. A run you have walked away from waits at that prompt until you answer it.
+
 ## The ledger
 
 Ship keeps one ordered index of planned features at `.planning/LEDGER.md`. **Position is priority** — the top line of `## Now` is the next thing to do — so reprioritising is moving a line, in any editor, without telling anything.
@@ -72,7 +104,7 @@ Ship keeps one ordered index of planned features at `.planning/LEDGER.md`. **Pos
 
 A row holds a slug and a one-liner and nothing else. **Everything about a feature lives in `.planning/features/{slug}/`** — context, plan, review, verification — and status is read live from that folder every time the ledger is displayed, so there is no status cell to drift. A row does not need a folder: an idea can sit under `## Next` indefinitely, and `/ship:start` is what gives it one.
 
-`/ship:start` puts the new feature at the top of `## Now`; `/ship:finish` moves it to `## Shipped`. Nothing else writes the file, so the ordering stays yours.
+`/ship:start` puts the new feature at the top of `## Now`; `/ship:finish` moves it to `## Shipped` (`/ship:auto` performs those same two steps). Nothing else writes the file, so the ordering stays yours.
 
 **Brainstorm in main, build in a worktree.** `/ship:start` runs in the main checkout and offers, once CONTEXT.md is written, to create a `feature/{slug}` worktree and move the session into it — carrying the feature directory across so the worktree holds the only copy. The ledger stays behind in the main checkout, where it belongs: it indexes the project, not the branch. `/ship:finish` archives from any lane back to the main root, so history survives `git worktree remove`.
 
@@ -94,6 +126,7 @@ Status lives in CONTEXT.md frontmatter: `brainstormed` → `planned` → `plan-v
 |---------|--------------|
 | `/ship:start "idea"` | Intensive brainstorm → CONTEXT.md |
 | `/ship:go [--auto]` | Auto-run everything from plan to verify |
+| `/ship:auto "idea"` | Brainstorm, then everything through to a pull request, with no further prompts |
 | `/ship:ledger [verb]` | Show or reorder the planned-feature ledger |
 | `/ship:design` | Compare 2–3 architecture approaches before planning (optional) |
 | `/ship:plan` | Plan tasks manually → PLAN.md |

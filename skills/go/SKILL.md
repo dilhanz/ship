@@ -12,6 +12,8 @@ Pass `--auto` to skip the "Ready to build?" approval gate. It is not a fully han
 
 Pass `--headless` for unattended runs (e.g. a spawned `claude -p`) where no interactive prompt can fire. `--headless` implies `--auto`, and additionally degrades every interactive point deterministically per the contract in `${CLAUDE_PLUGIN_ROOT}/ship/docs/headless.md` — read that file when the flag is present; it is the contract of record for QUESTIONS.md, OUTCOME.json, the outcome vocabulary, and the workflow wait rule below.
 
+**Auto run (`/ship:auto` only).** Applies only when the `/ship:auto` skill invoked this skill in this session and `.planning/features/{name}/AUTO.json` exists. No flag selects it, and a direct `/ship:go` never enters it. It is an interactive `--auto` run (the workflow wait stays interactive: end the turn, continue on the notification; no OUTCOME.json, no QUESTIONS.md; `NEEDS_INPUT` is still asked) with these differences only: (1) right after every Workflow invocation run `node "${CLAUDE_PLUGIN_ROOT}/ship/auto-run.cjs" workflow {name} {plan|build} {task-id}`, and once that workflow's result is reconciled run `node "${CLAUDE_PLUGIN_ROOT}/ship/auto-run.cjs" workflow {name} clear`; (2) section 7 makes no offer and `/ship:finish` is not invoked from here, section 2's `done` row included; (3) when this skill's run ends (a report, a stop, any plan-loop terminal) do not end on a recommendation: continue at the auto skill's `## Route` section; (4) the auto skill's No-prompt rule applies to every skill this one invokes, and in manual mode a builder `NEEDS_CONTEXT` is not asked: it is a stop, as under `--headless`. Section 6b stays headless-only; the auto skill runs its own fix rounds.
+
 ### Headless workflow wait (every Workflow invocation)
 
 **The Workflow tool does not return the workflow's result.** It launches the workflow in the background and returns a Task ID immediately; the result arrives later as a completion notification.
@@ -323,5 +325,7 @@ Under `--headless`, EVERY terminal path in this skill — the resolution/`done` 
 If the verdict is PASS or INCONCLUSIVE, offer to run `/ship:finish` (PR/merge/keep is outward-facing — confirm before acting). Do not finish automatically without the user's go-ahead.
 
 Under `--headless`, skip this section entirely: PASS/INCONCLUSIVE terminates as `done`, with the finish offer suppressed — PR/merge stays human-gated, and the `detail` notes `/ship:finish` is the manual next step.
+
+In an auto run (the intro's **Auto run** paragraph), make no offer: return to the auto skill's `## Route`.
 
 $ARGUMENTS
