@@ -344,3 +344,44 @@ describe('/ship:auto skill — run record, go, route, finish', () => {
     assert.ok(contract.includes('**`/ship:finish` is never invoked.**'));
   });
 });
+
+describe('/ship:auto — docs', () => {
+  const help = readSrc('skills/help/SKILL.md');
+  const readme = readSrc('README.md');
+  const claudeMd = readSrc('CLAUDE.md');
+
+  it('the help skill lists the command, its flags and the short flow', () => {
+    assert.match(help, /^  \/ship:auto "idea"/m);
+    assert.match(help, /--profile/);
+    assert.match(help, /--fix-rounds/);
+    assert.match(help, /\(or just: auto\)/);
+  });
+
+  it('the README has a /ship:auto section after /ship:go and a command-table row', () => {
+    const autoAt = readme.search(/^## \/ship:auto$/m);
+    const goAt = readme.search(/^## \/ship:go$/m);
+    const ledgerAt = readme.search(/^## The ledger$/m);
+    assert.ok(goAt !== -1 && autoAt > goAt && autoAt < ledgerAt);
+    assert.match(readme, /^\| `\/ship:auto[^|]*` \|/m);
+    const section = sliceFrom(readme, /^## \/ship:auto$/m, /^## /m);
+    assert.match(section, /INCONCLUSIVE/);
+    assert.match(section, /permission/);
+    assert.match(section, /`git push`/);
+    assert.match(section, /`gh pr create`/);
+  });
+
+  it('CLAUDE.md documents the command, the skill count and the helper', () => {
+    assert.match(claudeMd, /\/ship:auto/);
+    assert.ok(claudeMd.includes('16 skills (13 user-invocable commands + 3 reference skills)'));
+    assert.ok(claudeMd.includes('ship/auto-run.cjs'));
+    assert.match(claudeMd, /^- \*\*Idea to PR \(`\/ship:auto`\):\*\*/m);
+    assert.ok(claudeMd.includes('Nothing else writes the file'));
+  });
+
+  it('there are 16 skill directories, matching the documented count', () => {
+    const skillDirs = fs
+      .readdirSync(path.join(ROOT, 'skills'), { withFileTypes: true })
+      .filter((e) => e.isDirectory() && fs.existsSync(path.join(ROOT, 'skills', e.name, 'SKILL.md')));
+    assert.equal(skillDirs.length, 16);
+  });
+});
