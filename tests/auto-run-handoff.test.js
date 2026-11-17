@@ -109,3 +109,84 @@ describe('auto-run handoff — go', () => {
     assert.ok(bytes < 1500, `auto-run text is ${bytes} bytes`);
   });
 });
+
+describe('auto-run handoff — finish', () => {
+  const finish = readSrc('skills/finish/SKILL.md');
+  const lines = finish.split('\n');
+  const section = sliceFrom(finish, /^## Auto Run \(\/ship:auto only\)$/m, /^## /m);
+
+  it('the section exists between Find Active Feature and the INCONCLUSIVE check', () => {
+    assert.notEqual(section, '', 'no `## Auto Run (/ship:auto only)` section');
+    const at = finish.indexOf('\n## Auto Run (/ship:auto only)\n');
+    assert.ok(at > finish.indexOf('\n## Find Active Feature\n'));
+    assert.ok(at < finish.indexOf('\n## Check INCONCLUSIVE Verdicts\n'));
+  });
+
+  it('is gated on invocation by the auto skill plus the run record', () => {
+    assert.match(section, /`\/ship:auto` skill invoked this skill in this session/);
+    assert.match(section, /\.planning\/features\/\{name\}\/AUTO\.json/);
+    assert.match(section, /Invoked directly, this skill never enters this section/);
+    assert.match(section, /every question below still fires/);
+  });
+
+  it('an undetectable test command is a stop, not a question', () => {
+    assert.match(section, /\*\*Prerequisites:\*\*/);
+    assert.match(section, /`test command not detected`/);
+    assert.match(section, /nothing is pushed/i);
+  });
+
+  it('takes Option 1 without showing the options', () => {
+    assert.match(section, /\*\*Present Options:\*\*/);
+    assert.match(section, /no AskUserQuestion/);
+    assert.match(section, /take Option 1/);
+  });
+
+  it('forbids a force push, a draft PR and a merge', () => {
+    assert.match(section, /`git push -u origin HEAD`/);
+    assert.match(section, /never a force push/);
+    assert.match(section, /never `--draft`/);
+    assert.match(section, /never a merge/);
+  });
+
+  it('an applied INCONCLUSIVE override lists the criteria in the PR body', () => {
+    assert.ok(section.includes('`## Inconclusive criteria`'));
+    assert.match(section, /after `## Test plan`/);
+    assert.match(section, /each inconclusive criterion from VERIFY\.md/);
+  });
+
+  it('a failed gh check, push or PR creation stamps and archives nothing', () => {
+    assert.match(section, /`gh auth status`, the push, or `gh pr create` fails/);
+    assert.match(section, /no stamp, no archive, no ledger change/);
+    assert.match(section, /report which step failed/);
+  });
+
+  it('stamps shipped without asking for the archive outcome', () => {
+    assert.match(section, /\*\*Archive outcome:\*\* not asked; stamp `shipped`/);
+  });
+
+  it('deletes the run record in the same command as the archive move', () => {
+    assert.match(section, /\*\*Run record:\*\*/);
+    assert.match(section, /same Bash command as the archive `mv`/);
+    assert.match(section, /immediately before it/);
+    assert.match(section, /never archived/);
+  });
+
+  it('returns to the auto skill: the final report, or Route on a stop', () => {
+    assert.match(section, /auto skill's final report/);
+    assert.match(section, /`## Route`/);
+  });
+
+  it('both existing questions are still present', () => {
+    assert.ok(finish.includes("Use AskUserQuestion to get the user's choice."));
+    assert.ok(
+      finish.includes('Ask the user, with AskUserQuestion, which outcome this archive records:')
+    );
+  });
+
+  it('the frontmatter is unchanged', () => {
+    assert.ok(lines.includes('allowed-tools: Read, Bash, Glob, AskUserQuestion'));
+    assert.ok(
+      lines.includes('argument-hint: "[feature-name] [--accept-inconclusive \\"reason\\"]"')
+    );
+  });
+});
