@@ -32,17 +32,23 @@ const TASK_CLOSE = /^\s*<\/task>\s*$/;
 const PHASE_OPEN = /^\s*<phase\b[^>]*>/;
 const PHASE_CLOSE = /^\s*<\/phase>\s*$/;
 
-/** A slug is one path segment: non-empty, not `.`, no separators, no `..`. */
+// Slugs and ids are written into shell command lines inside agent prompts
+// (`node tick.cjs {feature} {task-id} …`), so they are held to a token a shell
+// cannot read as anything else: it starts with a letter or digit (never `-`,
+// so it is never an option) and continues with letters, digits, dot,
+// underscore or dash. No whitespace, quotes, `$`, `;`, `|` or backticks.
+// The go and plan workflow scripts cannot require() this file and carry the
+// same pattern inline; tests/identifier-hygiene.test.js keeps them in step.
+const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+/** A slug is one path segment and one shell token: see SAFE_TOKEN, and no `..`. */
 function isValidSlug(slug) {
-  if (typeof slug !== 'string') return false;
-  if (slug.trim() === '' || slug.trim() === '.') return false;
-  if (slug.includes('/') || slug.includes('\\') || slug.includes('..')) return false;
-  return true;
+  return typeof slug === 'string' && SAFE_TOKEN.test(slug) && !slug.includes('..');
 }
 
-/** A task id is a short token: letters, digits, dot, underscore, dash. */
+/** A task or phase id is one shell token: see SAFE_TOKEN. */
 function isValidTaskId(id) {
-  return typeof id === 'string' && /^[A-Za-z0-9._-]+$/.test(id);
+  return typeof id === 'string' && SAFE_TOKEN.test(id);
 }
 
 /**
@@ -232,6 +238,7 @@ function parseDepends(value) {
 }
 
 module.exports = {
+  SAFE_TOKEN,
   isValidSlug,
   isValidTaskId,
   parseAttrs,
