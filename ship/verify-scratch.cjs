@@ -35,6 +35,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { isValidSlug } = require(path.join(__dirname, 'plan-parse.cjs'));
 
 /** The three stages a record can be stamped with, in the order they occur. */
 const RECORD_STAGES = Object.freeze(['criteria', 'bughunt', 'complete']);
@@ -206,6 +207,9 @@ function validateRecord(featureSlug, cwd) {
     const dir = typeof cwd === 'string' && cwd !== '' ? cwd : process.cwd();
     if (typeof featureSlug !== 'string' || featureSlug.trim() === '') {
       return reject('no feature named — nothing to validate');
+    }
+    if (!isValidSlug(featureSlug)) {
+      return reject(`invalid feature '${featureSlug}' — a slug is one path segment`);
     }
 
     const file = recordPath(featureSlug, dir);

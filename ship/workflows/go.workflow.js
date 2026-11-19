@@ -37,6 +37,25 @@ const keyFileContext = (parsedArgs && parsedArgs.keyFileContext) || 'No key file
 
 if (!feature) throw new Error('go.workflow: args.feature is required')
 
+// The feature slug and every phase and task id are written into shell command
+// lines in the agents' prompts (`node tick.cjs {feature} {task-id} …`), and
+// PLAN.md ids are text a planner wrote. Anything that is not one plain token
+// stops the run here, before a prompt is built. Same pattern as SAFE_TOKEN in
+// ship/plan-parse.cjs, which this script cannot require().
+const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
+const isSafeToken = (v) => (typeof v === 'string' || typeof v === 'number') && SAFE_TOKEN.test(String(v))
+const unsafeToken = (what, v) => new Error(`go.workflow: ${what} ${JSON.stringify(v === undefined ? null : v)} is not a plain token (letters, digits, dot, underscore, dash; starting with a letter or digit) — correct it in PLAN.md and re-run`)
+
+if (!isSafeToken(feature) || String(feature).includes('..')) throw unsafeToken('args.feature', feature)
+if (!Array.isArray(phases)) throw new Error('go.workflow: args.phases must be an array')
+for (const ph of phases) {
+  if (!ph || !isSafeToken(ph.id)) throw unsafeToken('phase id', ph && ph.id)
+  if (ph.tasks !== undefined && ph.tasks !== null && !Array.isArray(ph.tasks)) throw new Error(`go.workflow: phase ${ph.id} tasks must be an array`)
+  for (const task of ph.tasks || []) {
+    if (!task || !isSafeToken(task.id)) throw unsafeToken(`phase ${ph.id} task id`, task && task.id)
+  }
+}
+
 // Display-only: the profile name appears in reports and records, never in logic.
 const profileName = (parsedArgs && parsedArgs.profile) || null
 
@@ -68,7 +87,11 @@ const buildMode = (parsedArgs && parsedArgs.buildMode) === 'per-phase' ? 'per-ph
 
 // Escaped even in a plain string: tests/structured-output-salvage.test.js bans
 // any bare plugin-root reference, since one inside a template literal throws.
-const shipRoot = (parsedArgs && typeof parsedArgs.shipRoot === 'string' && parsedArgs.shipRoot) || '\${CLAUDE_PLUGIN_ROOT}'
+const DEFAULT_SHIP_ROOT = '\${CLAUDE_PLUGIN_ROOT}'
+const givenShipRoot = parsedArgs && typeof parsedArgs.shipRoot === 'string' ? parsedArgs.shipRoot : ''
+// The root sits inside double quotes on a command line, so a value that could
+// close the quote or expand there is not used; the literal default is.
+const shipRoot = givenShipRoot && !/["`$\r\n]/.test(givenShipRoot) ? givenShipRoot : DEFAULT_SHIP_ROOT
 
 // What gates a phase. A critical or high finding always does. A medium does
 // when the reviewer reproduced it with a command: the verifier reproduced 195
@@ -730,7 +753,20 @@ A verifier just ran this exact verification, but its structured result was lost 
 
 ${fullPrompt}`
 
-const uniq = (list) => Array.from(new Set(list.filter((c) => typeof c === 'string' && c)))
+// Commit ids are agent output, and the reviewer's prompt puts them on command
+// lines (`git diff {oldest}~1..HEAD`). Only a bare alphanumeric token is kept;
+// a hash followed by a note ("abc1234 (task 2)") is cut back to the hash, and
+// anything else is dropped — the reviewer then derives the range itself.
+const cleanCommit = (c) => {
+  if (typeof c !== 'string') return null
+  const t = c.trim()
+  if (/^[A-Za-z0-9]{1,40}$/.test(t)) return t
+  const m = t.match(/^[0-9a-f]{7,40}(?=[\s(:,;]|$)/i)
+  return m ? m[0] : null
+}
+const cleanCommits = (list) => (Array.isArray(list) ? list : []).map(cleanCommit).filter(Boolean)
+
+const uniq = (list) => Array.from(new Set(cleanCommits(list)))
 
 // Build one phase, spanning as many builder agents as it takes.
 //
@@ -807,7 +843,7 @@ const buildPhase = async (ph, label, task = null) => {
     if (build) {
       blindRounds = 0
       landed =(build.commits || []).length > 0 || (build.tasks_completed || 0) > 0
-      priorCommits.push(...(build.commits || []))
+      priorCommits.push(...cleanCommits(build.commits))
       priorTasks += build.tasks_completed || 0
       lastTotal = build.tasks_total || lastTotal
       taskState = "This task's previous builder reported PARTIAL."
@@ -871,7 +907,7 @@ const buildPhase = async (ph, label, task = null) => {
       } else {
         blindRounds = 0
         taskState = 'The progress check found this task not yet done.'
-        priorCommits.push(...(progress.commits || []))
+        priorCommits.push(...cleanCommits(progress.commits))
         // The probe reads PLAN.md's declared ordering, so it can see a task
         // marked done ahead of a dependency it declared. Surface it: the
         // builder that did it is gone, and an already-corrupted plan must not
@@ -1068,7 +1104,7 @@ for (let i = 0; i < phases.length; i++) {
     fixRound = await safeAgent(fixPrompt(ph, blocking), {
       agentType: 'ship:ship-builder', schema: BUILD_SCHEMA, label: `fix:${label}`, phase: 'Build', model: 'opus',
     })
-    const fixCommits = (fixRound && fixRound.commits) || []
+    const fixCommits = cleanCommits(fixRound && fixRound.commits)
     // A fix round that committed nothing fixed nothing anyone can point at, and
     // sending a re-reviewer after it is worse than sending none: with no fix
     // commits there is no range, so it inspects `git diff HEAD`, finds a clean

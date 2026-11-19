@@ -41,11 +41,15 @@ jobs:
 
       # Read everything from the tagged commit, not from the default branch, so
       # a manual run publishes the same content the tag push would have.
-      - uses: actions/checkout@v4
+      # Actions are pinned to a commit: a tag can be moved, a commit cannot.
+      # persist-credentials is off so the write token is not left in .git/config
+      # for the test suite to read; the two `gh` steps get it through GH_TOKEN.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 

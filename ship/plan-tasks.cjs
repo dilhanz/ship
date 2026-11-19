@@ -25,7 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { isValidSlug, parsePlan } = require(path.join(__dirname, 'plan-parse.cjs'));
+const { isValidSlug, isValidTaskId, parsePlan } = require(path.join(__dirname, 'plan-parse.cjs'));
 
 const DOC_EXTENSIONS = new Set(['.md', '.mdx', '.markdown', '.txt', '.rst', '.adoc']);
 const PROMPT_DIRS = new Set(['agents', 'skills']);
@@ -80,8 +80,21 @@ function listPendingTasks(opts) {
     const { phases, tasks, anomalies } = parsePlan(text);
     // A malformed layout means the task list below may be missing tasks. Say
     // so: a non-null warning sends the go skill to its per-phase fallback.
-    const warning = anomalies.length > 0 ? `malformed PLAN.md: ${anomalies.join('; ')}` : null;
+    let warning = anomalies.length > 0 ? `malformed PLAN.md: ${anomalies.join('; ')}` : null;
     const pending = (t) => t.attrs.status !== 'done';
+
+    // Ids are written into shell commands in the builders' prompts, so one
+    // that is not a plain token is never handed on. Nothing is listed: the go
+    // workflow refuses such an id too, so the plan has to be corrected first.
+    const badIds = [
+      ...phases.filter((ph) => ph.attrs.status !== 'done' && !isValidTaskId(ph.id)).map((ph) => `phase id ${JSON.stringify(ph.id)}`),
+      ...tasks.filter((t) => pending(t) && !isValidTaskId(t.id)).map((t) => `task id ${JSON.stringify(t.id)}`),
+    ];
+    if (badIds.length > 0) {
+      const unsafe = `unsafe id in PLAN.md: ${badIds.join(', ')} — an id is letters, digits, dot, underscore or dash, starting with a letter or digit; correct PLAN.md before building`;
+      warning = warning ? `${warning}; ${unsafe}` : unsafe;
+      return { feature, phases: [], warning };
+    }
 
     if (phases.length === 0) {
       return { feature, phases: [{ id: 'all', name: 'all', tasks: tasks.filter(pending).map(taskEntry) }], warning };

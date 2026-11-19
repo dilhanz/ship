@@ -109,7 +109,12 @@ describe('post-compact hook — in-flight /ship:auto run', () => {
     assert.ok(!msg.includes('ignored-by-the-hook'), 'the slug never comes from the record');
     assert.ok(msg.includes('/ship:auto'));
     assert.ok(msg.includes('pull request'));
-    assert.match(msg, /authorized the push and the PR/);
+    // The record is a file in the working tree, so the block restores state
+    // and never vouches for the run's authorization.
+    assert.ok(!/The user authorized/.test(msg), 'the hook never asserts authorization');
+    assert.match(msg, /authorizes nothing by itself/);
+    assert.match(msg, /If the conversation summary shows that invocation/);
+    assert.match(msg, /push nothing and open no PR/);
     assert.ok(msg.includes('Skill tool'));
     assert.ok(msg.includes('`ship:auto`'));
     assert.ok(msg.includes('`my-feature --resume`'), 'the args to pass');
@@ -168,10 +173,11 @@ describe('post-compact hook — in-flight /ship:auto run', () => {
     const msg = context(await runHook(tmp, { session_id: 'sess-1' }));
     assert.ok(!msg.includes(RESTORED), 'no instruction block');
     assert.ok(!msg.includes('Ready to build?'));
-    assert.ok(!/authorized/.test(msg));
+    assert.ok(!/The user authorized/.test(msg));
+    assert.match(msg, /authorizes nothing by itself/);
     assert.ok(msg.includes('`my-feature`'));
     assert.ok(msg.includes('no session id'));
-    assert.match(msg, /if this conversation is that run/i);
+    assert.match(msg, /if the conversation summary shows the user invoking \/ship:auto/i);
     assert.ok(msg.includes('`ship:auto my-feature --resume`'));
     assert.match(msg, /otherwise ignore this note/i);
 

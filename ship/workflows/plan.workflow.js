@@ -45,6 +45,15 @@ const labelRound = (round) => round + roundOffset + labelShift
 
 if (!feature) throw new Error('plan.workflow: args.feature is required')
 
+// The slug is written into paths and command lines in the agents' prompts, so
+// anything that is not one plain token stops the run before a prompt is built.
+// Same pattern as SAFE_TOKEN in ship/plan-parse.cjs, which this script cannot
+// require().
+const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
+if (typeof feature !== 'string' || !SAFE_TOKEN.test(feature) || feature.includes('..')) {
+  throw new Error(`plan.workflow: args.feature ${JSON.stringify(feature)} is not a plain token (letters, digits, dot, underscore, dash; starting with a letter or digit)`)
+}
+
 // How many reviews a single plan may burn before we call it unresolved.
 // The cap check fires before the replan, so round N ends on a review verdict:
 // N reviews, at most N-1 replans. The value arrives pre-resolved from the go

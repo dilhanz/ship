@@ -201,17 +201,39 @@ function copyDir(src, dest) {
   return copied;
 }
 
+/**
+ * Read an existing settings.json. An absent or empty file is a fresh start. A
+ * file that exists but does not parse as a JSON object is reported, never
+ * replaced: it may hold permission rules, and writing a new file over it would
+ * silently drop them.
+ *
+ * @param {string} settingsPath
+ * @returns {{ settings: object|null, error: string|null }}
+ */
+function readExistingSettings(settingsPath) {
+  if (!fs.existsSync(settingsPath)) return { settings: null, error: null };
+  const text = fs.readFileSync(settingsPath, 'utf8');
+  if (text.trim() === '') return { settings: null, error: null };
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { settings: parsed, error: null };
+    }
+    return { settings: null, error: `${relDisplay(settingsPath)} is not a JSON object` };
+  } catch (e) {
+    return { settings: null, error: `${relDisplay(settingsPath)} is not valid JSON (${String(e.message).split('\n')[0]})` };
+  }
+}
+
 function registerSettings() {
   const settingsPath = path.join(CLAUDE_DIR, 'settings.json');
   let settings = {};
 
-  if (fs.existsSync(settingsPath)) {
-    try {
-      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    } catch (e) {
-      // Corrupt or empty settings — start fresh
-    }
-  }
+  // install() has already refused an unreadable settings file, so a parse
+  // failure here cannot happen; it throws rather than overwrite one anyway.
+  const existing = readExistingSettings(settingsPath);
+  if (existing.error) throw new Error(existing.error);
+  if (existing.settings) settings = existing.settings;
 
   // Use bare 'node' (resolved from PATH) and relative paths for portability
   // across macOS, Windows (Git Bash), and WSL.
@@ -262,15 +284,15 @@ function registerSettings() {
     hooks: [{ type: 'command', command: postCompactCmd }]
   });
 
-  // SubagentStop: subagent-stop — validate builder results
-  const subagentStopCmd = `node ${hooksDir}/subagent-stop.cjs`;
-  if (!settings.hooks.SubagentStop) settings.hooks.SubagentStop = [];
-  settings.hooks.SubagentStop = settings.hooks.SubagentStop.filter(group =>
-    !group.hooks?.some(h => h.command?.includes('ship-subagent-stop') || h.command?.includes('hooks/subagent-stop.cjs'))
-  );
-  settings.hooks.SubagentStop.push({
-    hooks: [{ type: 'command', command: subagentStopCmd }]
-  });
+  // SubagentStop: the subagent-stop hook was removed in v4. Drop a registration
+  // an older install left behind, and register nothing — the file no longer
+  // ships, so a registration would fail on every subagent stop.
+  if (settings.hooks.SubagentStop) {
+    settings.hooks.SubagentStop = settings.hooks.SubagentStop.filter(group =>
+      !group.hooks?.some(h => h.command?.includes('ship-subagent-stop') || h.command?.includes('hooks/subagent-stop.cjs'))
+    );
+    if (settings.hooks.SubagentStop.length === 0) delete settings.hooks.SubagentStop;
+  }
 
   // statusLine: always update to keep node path current
   settings.statusLine = { type: 'command', command: statuslineCmd };
@@ -372,6 +394,15 @@ function install() {
   console.warn('\n⚠️  DEPRECATED: install.js is the legacy installation method.');
   console.warn('   Recommended: claude plugin install ship');
   console.warn('   See README.md for plugin installation instructions.\n');
+
+  // Checked before anything is copied, so a refusal leaves the project as it was.
+  const settingsCheck = readExistingSettings(path.join(CLAUDE_DIR, 'settings.json'));
+  if (settingsCheck.error) {
+    console.error(`ERROR: ${settingsCheck.error}.`);
+    console.error('Ship will not overwrite it: the file may hold permission rules. Fix the JSON (comments and trailing commas are not allowed) and run the installer again. Nothing was installed.');
+    process.exit(1);
+  }
+
   console.log('Installing Ship...\n');
 
   const allCopied = [];
