@@ -1,5 +1,31 @@
 # Changelog
 
+## 5.33.0
+
+Minor release: hardening from a security audit of Ship. Identifiers that reach a shell are held to one plain-token rule, the compaction hook stops vouching for a `/ship:auto` run, the legacy installer stops overwriting a settings file it cannot read, and CI runs with less.
+
+### Changed
+
+- **Slugs and ids must be plain tokens.** Feature slugs, phase ids and task ids are written into shell command lines inside agent prompts (`node tick.cjs {feature} {task-id} …`), and PLAN.md ids are text a planner wrote. They are now held to one pattern, `SAFE_TOKEN` in `ship/plan-parse.cjs`: a letter or digit, then letters, digits, dot, underscore or dash, 100 characters at most. A slug additionally has no `..`.
+  - `ship/plan-tasks.cjs` lists nothing and returns an `unsafe id in PLAN.md` warning when a pending phase or task id fails the pattern. The go skill stops on that warning instead of taking its per-phase fallback.
+  - `go.workflow.js` and `plan.workflow.js` carry the same pattern inline and throw before any prompt is built.
+  - **What you will notice:** a plan whose pending phase or task has no `id`, or an id with a space or punctuation in it, now stops `/ship:go` until the id is corrected in PLAN.md. A slug that begins with a dash or contains a space is refused by every helper.
+- **The compaction hook restores an auto run without vouching for it.** `AUTO.json` is a file in the working tree, which any tool or agent can write. The block `hooks/post-compact.cjs` injects after a compaction no longer says the user authorized the push and the PR. It says the note authorizes nothing by itself, to continue only when the conversation summary shows the user's `/ship:auto` invocation, and otherwise to push nothing and ask.
+
+### Fixed
+
+- **Commit ids from agent output cannot reach a command line as anything else.** The go workflow keeps only bare alphanumeric commit ids from builder and progress-probe results. A hash followed by a note is cut back to the hash, and anything else is dropped, in which case the reviewer derives the diff range itself.
+- **A `shipRoot` that could close its quotes is ignored.** The go workflow falls back to the literal plugin-root placeholder.
+- **`ship/verify-scratch.cjs` rejects a slug that is not one path segment.** It used to join any value under `.planning/features/`.
+- **The legacy installer no longer replaces a `settings.json` it cannot parse.** A file with a comment or a trailing comma was treated as empty and overwritten, which dropped every other key in it, permission rules included. `install.js` now stops with exit 1 before copying anything and leaves the file byte-identical.
+- **The legacy installer no longer registers `subagent-stop.cjs`.** That hook was removed in 4.0, so the registration failed on every subagent stop. An entry an older install left behind is removed.
+
+### CI
+
+- `test.yml` runs with a read-only token (`permissions: contents: read`).
+- Both workflows check out with `persist-credentials: false`, so the release job's write token is not left in `.git/config` while the test suite runs.
+- `actions/checkout` and `actions/setup-node` are pinned to commit SHAs instead of the `v4` tag.
+
 ## 5.32.0
 
 Minor release: `/ship:auto` takes an idea to a pull request in one command. The brainstorm is still confirmed by you; nothing after it asks, except a question the plan loop cannot settle itself.
