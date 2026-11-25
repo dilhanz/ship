@@ -164,11 +164,17 @@ describe('auto-run handoff — finish', () => {
     assert.match(section, /\*\*Archive outcome:\*\* not asked; stamp `shipped`/);
   });
 
-  it('deletes the run record in the same command as the archive move', () => {
+  it('leaves deleting the run record to the archive helper, before the move', () => {
     assert.match(section, /\*\*Run record:\*\*/);
-    assert.match(section, /same Bash command as the archive `mv`/);
-    assert.match(section, /immediately before it/);
+    assert.match(section, /archive helper/);
+    assert.match(section, /before it moves the directory/);
+    assert.match(section, /removes the record from the index/);
     assert.match(section, /never archived/);
+  });
+
+  it('pushes the tracked-mode archive commit onto the PR branch, never forced', () => {
+    assert.match(section, /\*\*Second push:\*\*/);
+    assert.match(section, /run `git push` \(never a force push\)/);
   });
 
   it('returns to the auto skill: the final report, or Route on a stop', () => {

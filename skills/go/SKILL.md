@@ -14,6 +14,8 @@ Pass `--headless` for unattended runs (e.g. a spawned `claude -p`) where no inte
 
 **Auto run (`/ship:auto` only).** Applies only when the `/ship:auto` skill invoked this skill in this session and `.planning/features/{name}/AUTO.json` exists. No flag selects it, and a direct `/ship:go` never enters it. It is an interactive `--auto` run (the workflow wait stays interactive: end the turn, continue on the notification; no OUTCOME.json, no QUESTIONS.md; `NEEDS_INPUT` is still asked) with these differences only: (1) right after every Workflow invocation run `node "${CLAUDE_PLUGIN_ROOT}/ship/auto-run.cjs" workflow {name} {plan|build} {task-id}`, and once that workflow's result is reconciled run `node "${CLAUDE_PLUGIN_ROOT}/ship/auto-run.cjs" workflow {name} clear`; (2) section 7 makes no offer and `/ship:finish` is not invoked from here, section 2's `done` row included; (3) when this skill's run ends (a report, a stop, any plan-loop terminal) do not end on a recommendation: continue at the auto skill's `## Route` section; (4) the auto skill's No-prompt rule applies to every skill this one invokes, and in manual mode a builder `NEEDS_CONTEXT` is not asked: it is a stop, as under `--headless`. Section 6b stays headless-only; the auto skill runs its own fix rounds.
 
+**Shell commands.** Edit PLAN.md, CONTEXT.md and REVIEW.md with Edit or Write, never `cat >>` or a heredoc, and keep every other Bash call one plain command — no shell functions, `for` loops or `cd … &&` chains. A worktree-isolated session refuses any command it cannot verify stays inside the worktree, and each refusal costs a turn. Stage files by explicit path (`git add -- {paths}`); the safety gate blocks the `-A` form even when paths follow it. Never stage `AUTO.json`.
+
 ### Headless workflow wait (every Workflow invocation)
 
 **The Workflow tool does not return the workflow's result.** It launches the workflow in the background and returns a Task ID immediately; the result arrives later as a completion notification.
@@ -115,7 +117,7 @@ The workflow loops review → replan → re-review for up to 5 rounds (the cap c
 
 ### Write the outcome block (every terminal status)
 
-Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ensure a `## Plan Review` section exists — **create it if absent**, since on a clean round 1 no replanner ran and the section does not exist yet — then append:
+Before branching, record the outcome in `.planning/features/{name}/PLAN.md`: ensure a `## Plan Review` section exists — **create it if absent**, since on a clean round 1 no replanner ran and the section does not exist yet — then append it with the Edit tool:
 
 ```markdown
 ### Outcome — {status}

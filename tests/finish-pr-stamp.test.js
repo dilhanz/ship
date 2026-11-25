@@ -6,11 +6,9 @@
  * - **Documented contract** — the stamp lives inside Option 1, happens before
  *   the archive move, is explicitly non-fatal, and stays a Bash operation
  *   (finish holds neither Write nor Edit, by design).
- * - **Executable behaviour** — the `node -e` program is extracted from the
- *   skill body and run exactly as the skill runs it, so the bytes under test
- *   are the bytes that ship. The `-e` form is mandatory: the program reads
- *   `process.argv.slice(1)`, which is the user arguments under `-e` but starts
- *   at the script path when run from a file.
+ * - **Executable behaviour** — the skill calls `ship/finish-record.cjs stamp`,
+ *   so the helper is run directly. It replaced an inline `node -e` program,
+ *   which a worktree-isolated session refused as too complex to verify.
  *
  * Scoped to the canonical `skills/` tree only — never the legacy `.claude/`
  * mirrors.
@@ -44,25 +42,6 @@ function stampSubsection() {
   const rest = skill.slice(start + SUBSECTION.length);
   const end = rest.search(/\n### /);
   return SUBSECTION + (end === -1 ? rest : rest.slice(0, end));
-}
-
-/**
- * Extract the single-quoted program handed to `node -e` inside the first
- * fenced bash block of the PR-stamp subsection.
- */
-function stampProgram() {
-  const section = stampSubsection();
-  const fence = section.match(/```bash\n([\s\S]*?)```/);
-  assert.ok(
-    fence,
-    `expected a fenced \`\`\`bash block inside "${SUBSECTION}" holding the stamp`
-  );
-  const prog = fence[1].match(/node -e '([\s\S]*?)'\s/);
-  assert.ok(
-    prog,
-    `expected a single-quoted program passed to \`node -e\` inside "${SUBSECTION}"'s bash block`
-  );
-  return prog[1];
 }
 
 describe('finish PR stamp — documented contract', () => {
@@ -121,7 +100,7 @@ describe('finish PR stamp — documented contract', () => {
 });
 
 describe('finish PR stamp — executable behaviour', () => {
-  const prog = stampProgram();
+  const { stamp: stampRecord } = require(path.join(ROOT, 'ship', 'finish-record.cjs'));
   const URL = 'https://github.com/dilhanz/ship/pull/29';
 
   let dir;
@@ -129,17 +108,15 @@ describe('finish PR stamp — executable behaviour', () => {
 
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-pr-stamp-'));
-    ctx = path.join(dir, 'CONTEXT.md');
+    fs.mkdirSync(path.join(dir, '.planning', 'features', 'f'), { recursive: true });
+    ctx = path.join(dir, '.planning', 'features', 'f', 'CONTEXT.md');
   });
 
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  // The only faithful invocation: the program reads process.argv.slice(1),
-  // which is the user arguments under `-e` and the script path under a file.
-  const stamp = (url = URL) =>
-    spawnSync(process.execPath, ['-e', prog, ctx, url], { encoding: 'utf8' });
+  const stamp = (url = URL) => stampRecord('f', 'pr', url, { cwd: dir });
 
   const frontmatterOf = (s) => {
     const m = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -147,13 +124,19 @@ describe('finish PR stamp — executable behaviour', () => {
     return m[1];
   };
 
+  it('the skill stamps through the helper, one plain command', () => {
+    assert.match(
+      stampSubsection(),
+      /node "\$\{CLAUDE_PLUGIN_ROOT\}\/ship\/finish-record\.cjs" stamp \{feature-name\} pr /
+    );
+  });
+
   it('inserts pr: directly after status: and leaves every other byte alone', () => {
     const before =
       '---\nfeature: "squash-merge-detection"\nstatus: done\ncreated: "2026-08-29"\n---\n\n## Problem\n\nBody text.\n';
     fs.writeFileSync(ctx, before);
 
-    const run = stamp();
-    assert.equal(run.status, 0, run.stderr);
+    assert.equal(stamp().ok, true);
     assert.equal(
       fs.readFileSync(ctx, 'utf8'),
       before.replace('status: done\n', `status: done\npr: ${URL}\n`)
@@ -163,9 +146,9 @@ describe('finish PR stamp — executable behaviour', () => {
   it('replaces an existing pr: line rather than adding a second one', () => {
     fs.writeFileSync(ctx, '---\nfeature: "f"\nstatus: done\n---\n\nBody\n');
 
-    assert.equal(stamp().status, 0);
+    assert.equal(stamp().ok, true);
     const second = 'https://github.com/dilhanz/ship/pull/30';
-    assert.equal(stamp(second).status, 0);
+    assert.equal(stamp(second).ok, true);
 
     const out = fs.readFileSync(ctx, 'utf8');
     assert.equal((out.match(/^pr:/gm) || []).length, 1, 'exactly one pr: line');
@@ -176,8 +159,7 @@ describe('finish PR stamp — executable behaviour', () => {
   it('appends pr: to the frontmatter when there is no status: line', () => {
     fs.writeFileSync(ctx, '---\nfeature: "f"\ncreated: "2026-08-29"\n---\n\nBody\n');
 
-    const run = stamp();
-    assert.equal(run.status, 0, run.stderr);
+    assert.equal(stamp().ok, true);
     assert.match(
       frontmatterOf(fs.readFileSync(ctx, 'utf8')),
       new RegExp(`^pr: ${URL.replace(/\//g, '\\/')}$`, 'm'),
@@ -185,45 +167,44 @@ describe('finish PR stamp — executable behaviour', () => {
     );
   });
 
-  it('exits non-zero and changes nothing when there is no frontmatter block', () => {
+  it('reports failure and changes nothing when there is no frontmatter block', () => {
     const before = '# Just a document\n\nNo frontmatter here.\n';
     fs.writeFileSync(ctx, before);
 
-    const run = stamp();
-    assert.notEqual(run.status, 0, 'an unstampable file must report failure');
-    assert.equal(
-      fs.readFileSync(ctx, 'utf8'),
-      before,
-      'and must leave the file byte-identical — the caller reports and proceeds'
-    );
+    assert.equal(stamp().ok, false, 'an unstampable file must report failure');
+    assert.equal(fs.readFileSync(ctx, 'utf8'), before);
   });
 
-  it('exits non-zero and writes no pr: line when the URL is empty', () => {
-    // The impossible case: neither `gh pr create` nor the `gh pr view`
-    // fallback produced a URL. A literal `pr: ` line with no value would be a
-    // false record — and the skill's trailing `grep -n 'pr: '` would match it,
-    // reading the failure back as a success. The field must simply be absent.
+  it('reports failure and writes no pr: line when the URL is empty or not a URL', () => {
+    // Neither `gh pr create` nor the `gh pr view` fallback produced a URL. A
+    // literal `pr: ` line with no value would be a false record.
     const before = '---\nfeature: "f"\nstatus: done\n---\n\nBody\n';
     fs.writeFileSync(ctx, before);
 
-    const run = stamp('');
-    assert.notEqual(run.status, 0, 'an empty URL must report failure');
-    assert.equal(
-      fs.readFileSync(ctx, 'utf8'),
-      before,
-      'and must leave the file byte-identical, with no pr: field at all'
-    );
+    assert.equal(stamp('').ok, false);
+    assert.equal(stamp('no pull request found').ok, false);
+    assert.equal(fs.readFileSync(ctx, 'utf8'), before);
   });
 
   it('parses CRLF frontmatter', () => {
     fs.writeFileSync(ctx, '---\r\nfeature: "f"\r\nstatus: done\r\n---\r\n\r\nBody\r\n');
 
-    const run = stamp();
-    assert.equal(run.status, 0, run.stderr);
+    assert.equal(stamp().ok, true);
     assert.match(
       frontmatterOf(fs.readFileSync(ctx, 'utf8')),
       new RegExp(`^pr: ${URL.replace(/\//g, '\\/')}$`, 'm'),
       'CRLF frontmatter is stamped, not rejected'
     );
+  });
+
+  it('the CLI prints one JSON line and exits 0 even on failure', () => {
+    fs.writeFileSync(ctx, '# no frontmatter\n');
+    const run = spawnSync(
+      process.execPath,
+      [path.join(ROOT, 'ship', 'finish-record.cjs'), 'stamp', 'f', 'pr', URL],
+      { cwd: dir, encoding: 'utf8' }
+    );
+    assert.equal(run.status, 0);
+    assert.equal(JSON.parse(run.stdout).ok, false);
   });
 });

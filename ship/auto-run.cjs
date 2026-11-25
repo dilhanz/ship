@@ -27,6 +27,7 @@ const crypto = require('crypto');
 const path = require('path');
 const { isValidSlug } = require(path.join(__dirname, 'plan-parse.cjs'));
 const { listPendingTasks } = require(path.join(__dirname, 'plan-tasks.cjs'));
+const { execFileSync } = require('child_process');
 
 const RECORD_FILE = 'AUTO.json';
 const LOCK_FILE = 'AUTO.json.lock';
@@ -41,6 +42,16 @@ const LOCK_WAIT_MS = 5000;
 // section is a few milliseconds.
 const LOCK_STALE_MS = 2000;
 const LOCK_POLL_MS = 20;
+// The run record is per-session state, never project history. These lines go
+// in git's local exclude file (shared by every worktree, never committed), so
+// staging the feature directory skips the record and `git add` of the record
+// itself is refused. In a repository that tracks `.planning/`, an auto run's own
+// commits could otherwise sweep AUTO.json into the branch and the archive.
+const EXCLUDE_PATTERNS = [
+  '/.planning/features/*/AUTO.json',
+  '/.planning/features/*/AUTO.json.lock',
+  '/.planning/features/*/AUTO.json.*.tmp',
+];
 
 function fail(warning) {
   return { ok: false, warning };
@@ -195,6 +206,37 @@ function freshRecord(slug, session, fixRounds, profile) {
 }
 
 /**
+ * Add EXCLUDE_PATTERNS to the repository's local exclude file. Best effort: a
+ * checkout that is not a git repository, or an exclude file that cannot be
+ * written, leaves the run unaffected and reports `false`.
+ */
+function excludeRunRecord(cwd) {
+  try {
+    const file = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (!file) return false;
+    let text = '';
+    try {
+      text = fs.readFileSync(file, 'utf8');
+    } catch (e) {
+      if (!e || e.code !== 'ENOENT') throw e;
+    }
+    const have = new Set(text.split(/\r?\n/).map((l) => l.trim()));
+    const missing = EXCLUDE_PATTERNS.filter((p) => !have.has(p));
+    if (missing.length === 0) return true;
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const lead = text === '' || text.endsWith('\n') ? '' : '\n';
+    fs.appendFileSync(file, lead + '# Ship /ship:auto run records\n' + missing.join('\n') + '\n');
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * Start (or resume) a run record.
  *
  * @param {string} slug
@@ -212,6 +254,7 @@ function start(slug, opts) {
     const fixRounds = parseFixRounds(o.fixRounds);
     const profile = normalizeProfile(o.profile);
 
+    const excluded = excludeRunRecord(resolveCwd(o));
     return withLock(dir, () => {
       const existing = o.resume ? readRecord(dir) : null;
       if (existing) {
@@ -219,11 +262,11 @@ function start(slug, opts) {
         if (fixRounds !== undefined) existing.fixRounds = fixRounds;
         if (profile !== null) existing.profile = profile;
         writeRecord(dir, existing);
-        return { ok: true, resumed: true, record: existing };
+        return { ok: true, resumed: true, excluded, record: existing };
       }
       const record = freshRecord(slug, session, fixRounds, profile);
       writeRecord(dir, record);
-      return { ok: true, resumed: false, record };
+      return { ok: true, resumed: false, excluded, record };
     });
   } catch (e) {
     return fail(`auto-run start failed (${firstLine(e)})`);
@@ -487,7 +530,7 @@ function run(argv, opts) {
   }
 }
 
-module.exports = { start, get, setWorkflow, clearWorkflow, verdict, bump, end, run, RECORD_FILE };
+module.exports = { start, get, setWorkflow, clearWorkflow, verdict, bump, end, run, RECORD_FILE, EXCLUDE_PATTERNS };
 
 if (require.main === module) {
   let result;

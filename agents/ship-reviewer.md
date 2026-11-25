@@ -86,6 +86,8 @@ Run `git diff {range}` and `git diff --name-only {range}`. In package mode the d
 
 - **The verify checklist** — when `.planning/verify-checklist.md` exists, check the phase diff against every bullet it touches, plus the verifier's three generic items: docs/manual claims in the diff match the code; tests that depend on the current date or time zone tolerate a day rolling over mid-test; concurrency on write paths. The verifier fails the feature on each of these anyway, so a violation you can point at now is a fix round saved later. A violated bullet is a finding at `medium` or above.
 
+- **Stale line cites** — for each file the phase diff adds or removes lines in, run `git grep -n '{file basename}:[0-9]' -- '*.md'`. A `path:line` cite into that file that no longer lands on what it names is a `medium` with `"reproduced": true`, the `sed -n '{line}p' {path}` output in `description`, and one finding for the whole pattern with every stale cite in `sites`. It is cheap to fix while the builder has the context, and otherwise the verifier fails the feature on it.
+
 Do not flag style, formatting, pre-existing issues outside the diff, or refactors beyond the phase scope. Be honest about severity in both directions. Critical, high, **reproduced** medium, and **fix-class** findings (see Fix Phases) trigger a fix round (see below); nothing below them is dropped: every other medium and low finding is handed to the verifier as a located target and gets a reproduction attempt, and a reproduced one fails the verify at your severity. So a medium is not a way to mention a bug without consequences, and a high is not the only way to make one count — call it what it is.
 
 ### One finding per defect class
