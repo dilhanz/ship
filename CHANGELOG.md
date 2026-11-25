@@ -1,5 +1,20 @@
 # Changelog
 
+## 5.34.0
+
+Minor release: `/ship:finish` and `/ship:auto` work cleanly in repositories that track `.planning/` in git and in worktree-isolated sessions.
+
+### Changed
+
+- **`/ship:finish` archives inside the branch when `.planning/` is tracked.** The new `ship/finish-record.cjs archive` picks the mode from git. With the feature directory in git it runs `git mv` to `.planning/archive/{slug}/`, moves the ledger row in the branch's own `.planning/LEDGER.md`, and commits both as `chore({slug}): archive the feature record`; finish then pushes, so the pull request carries the archive and the merge lands it. Untracked records move to the main worktree as before. Two open branches that both add a `## Shipped` row conflict mechanically for whoever merges second.
+- **Finish's stamps and archive are one plain command each.** `ship/finish-record.cjs stamp {slug} pr|outcome {value}` replaces the inline `node -e` programs and shell loops that a worktree-isolated session refused as unverifiable.
+- **The go skill keeps Bash calls plain.** Outcome blocks are appended with Edit, not `cat >>` heredocs, and the skill names the shell forms the isolation guard and the safety gate refuse.
+- **Builders re-point stale line cites, and reviewers flag them.** A builder that adds or removes lines in a file checks every `path:line` cite into it in the repo's Markdown and fixes the ones that moved, in the same commit. The reviewer reports a stale cite as a reproduced `medium`, so it is fixed inside the phase.
+
+### Fixed
+
+- **`AUTO.json` is never committed or archived.** `auto-run.cjs start` adds the run record's paths to git's local exclude file (shared by every worktree, never committed), and the archive helper drops a record that was already committed from the index before it moves the directory.
+
 ## 5.33.0
 
 Minor release: hardening from a security audit of Ship. Identifiers that reach a shell are held to one plain-token rule, the compaction hook stops vouching for a `/ship:auto` run, the legacy installer stops overwriting a settings file it cannot read, and CI runs with less.

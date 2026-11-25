@@ -36,7 +36,8 @@ Applies only when the `/ship:auto` skill invoked this skill in this session and 
 - **Branch guard:** before Option 1 runs anything, compare `git rev-parse --abbrev-ref HEAD` with the base branch Option 1 detects (`main`, else `master`) and with origin's default branch (`git symbolic-ref --quiet --short refs/remotes/origin/HEAD`, minus the `origin/` prefix, when it resolves). If the current branch equals either one, or the checkout is detached (the command prints `HEAD`), stop: nothing is pushed, no PR is opened, and the report says the feature is on the base branch and has to move onto its own branch first. An unprompted push of the base branch would publish the commits with no pull request.
 - **Option 1:** the commands are unchanged: `gh auth status`, `git push -u origin HEAD` (never a force push), `gh pr create` (never `--draft`, never a merge). When the INCONCLUSIVE override was applied, the PR body gains a `## Inconclusive criteria` section after `## Test plan`, listing each inconclusive criterion from VERIFY.md. If `gh auth status`, the push, or `gh pr create` fails, stop there (no stamp, no archive, no ledger change) and report which step failed.
 - **Archive outcome:** not asked; stamp `shipped`.
-- **Run record:** delete `.planning/features/{name}/AUTO.json` in the same Bash command as the archive `mv`, immediately before it, so the record is never archived.
+- **Run record:** the archive helper (`## Archive Feature`) deletes `.planning/features/{name}/AUTO.json` before it moves the directory, and in a repository that tracks `.planning/` it also removes the record from the index, so the record is never archived. Do not delete it separately.
+- **Second push:** in tracked mode the archive lands as a commit on the PR branch, so run `git push` (never a force push) after it; that push is part of the PR the user authorized.
 - **After the report:** return to the auto skill's final report. On any stop above, return to the auto skill's `## Route` with the reason.
 
 ## Check INCONCLUSIVE Verdicts
@@ -132,28 +133,17 @@ Report the PR URL (`$PR_URL`) to the user, then stamp it into the feature record
 
 Record the PR on the feature itself, so merge provenance is a lookup on disk rather than git archaeology later. The URL is written verbatim as `gh` printed it — the PR number stays derivable from it rather than stored twice.
 
-Stamp it **before** the archive move, while the directory is still at `.planning/features/{feature-name}/`. Stamping after the `mv` would target a path that no longer exists — in a worktree-isolated session it would silently do nothing. This is the same ordering rule the `outcome:` stamp follows, and for the same reason.
+Stamp it **before** the archive move, while the directory is still at `.planning/features/{feature-name}/`. Stamping after the move would target a path that no longer exists. This is the same ordering rule the `outcome:` stamp follows, and for the same reason.
 
-This skill has no Write or Edit tool, so the stamp goes through Bash. Replace an existing `pr:` line if there is one, otherwise insert one directly after the `status:` line inside the leading frontmatter block, and leave every other byte alone:
+This skill has no Write or Edit tool, so the stamp goes through the record helper — one plain command, with the URL as a literal argument (no shell variables, loops or functions: a worktree-isolated session refuses a command it cannot verify):
 
 ```bash
-CTX=".planning/features/{feature-name}/CONTEXT.md"
-node -e '
-  const fs = require("fs"), [p, v] = process.argv.slice(1);
-  if (!v) process.exit(1);
-  const s = fs.readFileSync(p, "utf8");
-  const m = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!m) process.exit(1);
-  let fm = m[1];
-  fm = /^pr:/m.test(fm)
-    ? fm.replace(/^pr:.*$/m, "pr: " + v)
-    : fm.replace(/^status:.*$/m, (line) => line + "\npr: " + v);
-  if (!/^pr:/m.test(fm)) fm += "\npr: " + v;
-  fs.writeFileSync(p, s.slice(0, m.index) + "---\n" + fm + "\n---" + s.slice(m.index + m[0].length));
-' "$CTX" "$PR_URL" && grep -n 'pr: ' "$CTX"
+node "${CLAUDE_PLUGIN_ROOT}/ship/finish-record.cjs" stamp {feature-name} pr {the PR URL}
 ```
 
-A failed or impossible stamp is **not fatal** — report the failure, leave the field absent, and let the archive proceed. An empty or unavailable URL (neither `gh pr create` nor the `gh pr view` fallback produced one) exits non-zero and writes nothing: an absent field is a recorded gap, whereas a literal `pr: ` line with no value would be a false record that the trailing `grep` would read back as success. A CONTEXT.md with no leading frontmatter block behaves the same way — exits non-zero, left byte-identical.
+It replaces an existing `pr:` line, otherwise inserts one directly after the `status:` line inside the leading frontmatter block, and leaves every other byte alone. It prints one JSON line; `ok: false` with a `warning` means nothing was written.
+
+A failed or impossible stamp is **not fatal** — report the failure, leave the field absent, and let the archive proceed. An empty value or one that is not a URL (neither `gh pr create` nor the `gh pr view` fallback produced one) writes nothing: an absent field is a recorded gap, whereas a literal `pr: ` line with no value would be a false record. A CONTEXT.md with no leading frontmatter block behaves the same way — left byte-identical.
 
 Option 2 and Option 3 open no PR and stamp nothing.
 
@@ -187,80 +177,44 @@ Ask the user, with AskUserQuestion, which outcome this archive records:
 - **superseded** — another feature replaced it.
 - **umbrella** — a container for other features rather than shippable work of its own.
 
-Stamp the answer into the feature's CONTEXT.md frontmatter **before** the move, while the directory is still at `.planning/features/{feature-name}/`. Stamping after the `mv` would target a path that no longer exists — in a worktree-isolated session it would silently do nothing.
+Stamp the answer into the feature's CONTEXT.md frontmatter **before** the move, while the directory is still at `.planning/features/{feature-name}/`. Stamping after the move would target a path that no longer exists.
 
-This skill has `allowed-tools: Read, Bash, Glob, AskUserQuestion` and **no Write or Edit**, so the stamp goes through Bash. Replace an existing `outcome:` line if there is one, otherwise insert one directly after the `status:` line inside the leading frontmatter block, and leave every other byte alone:
+This skill has `allowed-tools: Read, Bash, Glob, AskUserQuestion` and **no Write or Edit**, so the stamp goes through the record helper, as one plain command:
 
 ```bash
-CTX=".planning/features/{feature-name}/CONTEXT.md"
-OUTCOME={shipped|abandoned|superseded|umbrella}
-node -e '
-  const fs = require("fs"), [p, v] = process.argv.slice(1);
-  const s = fs.readFileSync(p, "utf8");
-  const m = s.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!m) process.exit(1);
-  let fm = m[1];
-  fm = /^outcome:/m.test(fm)
-    ? fm.replace(/^outcome:.*$/m, "outcome: " + v)
-    : fm.replace(/^status:.*$/m, (line) => line + "\noutcome: " + v);
-  if (!/^outcome:/m.test(fm)) fm += "\noutcome: " + v;
-  fs.writeFileSync(p, s.slice(0, m.index) + "---\n" + fm + "\n---" + s.slice(m.index + m[0].length));
-' "$CTX" "$OUTCOME" && grep -n '^outcome:' "$CTX"
+node "${CLAUDE_PLUGIN_ROOT}/ship/finish-record.cjs" stamp {feature-name} outcome {shipped|abandoned|superseded|umbrella}
 ```
+
+It replaces an existing `outcome:` line, otherwise inserts one directly after the `status:` line inside the leading frontmatter block, and leaves every other byte alone. Any other outcome value is refused and nothing is written.
 
 A failed stamp is **not fatal** — the archive still proceeds. CONTEXT.md then carries no `outcome:`, which is a visible gap rather than a false `shipped`. Report the failure and move on; never block the archive on it.
 
 ### Move the directory
 
-Move the feature directory to the **main worktree's** archive. Resolve the main worktree root first:
+One command archives the feature and closes its ledger row (see `## Close the Ledger Row` below). Run it from the checkout that holds the feature:
 
 ```bash
-MAIN_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-mkdir -p "$MAIN_ROOT/.planning/archive"
-mv .planning/features/{feature-name} "$MAIN_ROOT/.planning/archive/{feature-name}"
+node "${CLAUDE_PLUGIN_ROOT}/ship/finish-record.cjs" archive {feature-name}
 ```
 
-In the main worktree, `MAIN_ROOT` resolves to the current root — behavior unchanged. From a linked worktree, this moves the record to the main worktree so the audit trail (CONTEXT.md, PLAN.md, VERIFY.md) survives `git worktree remove`. If `git rev-parse` fails (not a git repo), fall back to the local `.planning/archive/` exactly as before.
+It prints one JSON line: `{ ok, mode, archived, ledger, commit, warning? }`. The helper picks the mode from git, never from a flag:
 
-**The move relocates the record for everyone, out of band.** Once it lands on `main`, every open branch still carries `.planning/features/{feature-name}/`, so a branch that later amends that record — a follow-up fix PR marking a carried finding resolved in VERIFY.md, say — is editing a path `main` no longer has. Local git resolves this as the rename it is, but GitHub has been observed to report `mergeable: CONFLICTING` with no file named even for an isolated, near-pure-rename archive commit, so rename detection is not something to rely on. Two consequences worth stating when you archive:
+- **`tracked`** — `.planning/features/{feature-name}/` is in git (the repository commits its planning records). The archive happens **inside the current branch**: `git mv` to `.planning/archive/{feature-name}/`, the row moves in this checkout's tracked `.planning/LEDGER.md`, and one commit, `chore({feature-name}): archive the feature record`, records both. After Option 1, run `git push` so the pull request carries that commit; the merge then lands the archive and the ledger move on the base branch, and nothing has to be reconciled by hand afterwards. Two open branches that both move a row to the top of `## Shipped` touch the same lines; that is a mechanical conflict (keep both rows) for whoever merges second.
+- **`untracked`** — the record is not in git. The directory moves to the **main worktree's** archive (`$MAIN_ROOT/.planning/archive/{feature-name}/`, where `MAIN_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")`), so the audit trail survives `git worktree remove`, and the row moves in `$MAIN_ROOT/.planning/LEDGER.md`, the one ledger at the main root. Not a git repository → the local `.planning/archive/` and `.planning/LEDGER.md`.
 
-- **Commit the move on its own**, touching nothing else. It does not guarantee clean rename detection, but it is the shape most likely to get it, and it keeps the resolution obvious when detection fails.
-- **A branch that will amend the archived record must sync `main` first.** Merge `main` into the PR branch locally, confirm the resolution leaves exactly one copy of the record — at the archive path, carrying the branch's edits — and push that merge. GitHub then reports `MERGEABLE`. Say this in the report below whenever you archive a feature that has open follow-up branches.
+Either way the helper deletes `AUTO.json` first, and in tracked mode removes it from the index too, so a `/ship:auto` run record is never archived. `ok: false` means nothing was moved: report the `warning` and do not claim an archive in the report.
+
+**In untracked mode the move relocates the record for everyone, out of band.** Once it lands on `main`, every open branch still carries `.planning/features/{feature-name}/`, so a branch that later amends that record is editing a path `main` no longer has. GitHub has been observed to report `mergeable: CONFLICTING` with no file named even for a near-pure-rename archive commit. **A branch that will amend the archived record must sync `main` first**: merge `main` into it locally, confirm exactly one copy of the record remains — at the archive path, carrying the branch's edits — and push that merge. Say this in the report whenever you archive a feature that has open follow-up branches.
 
 Anything outside `.planning/` that hard-codes a feature path (an E2E script writing to `.planning/features/{name}/shots`, for instance) breaks at the same moment, for the same reason. Archiving moves the directory; it does not update references to it.
 
 ## Close the Ledger Row
 
-The ledger lives at the **main worktree root** — `$MAIN_ROOT/.planning/LEDGER.md` — never in a linked worktree. Read `${CLAUDE_PLUGIN_ROOT}/skills/ledger/SKILL.md` for the format.
+The archive command above does this; there is no separate step. Read `${CLAUDE_PLUGIN_ROOT}/skills/ledger/SKILL.md` for the format. It removes the feature's row from `## Now` / `## Next` / `## Someday` and inserts `- [x] {feature-name} → .planning/archive/{feature-name}/` at the **top of `## Shipped`**, which is ordered by recency, so the newest row goes first. The ledger it edits is the tracked `.planning/LEDGER.md` of the current checkout in tracked mode, and `$MAIN_ROOT/.planning/LEDGER.md` otherwise.
 
-Move the feature's row out of `## Now` / `## Next` / `## Someday` and insert `- [x] {feature-name} → .planning/archive/{feature-name}/` at the **top of `## Shipped`**. This skill has no Write or Edit tool, so it goes through Bash:
+If no row for the feature exists in any section, the `## Shipped` row is still added — a feature that shipped without ever sitting in the ledger still belongs in its history. An absent `.planning/LEDGER.md` is skipped silently (`ledger: "absent"`): a project that never made a ledger is not in an error state. A `ledger: "failed"` with `ok: true` is **not fatal** — the archive happened; report the warning and move on, the same as a failed `outcome:` stamp.
 
-```bash
-node -e '
-  const fs = require("fs"), [p, name] = process.argv.slice(1);
-  if (!fs.existsSync(p)) process.exit(0);
-  const row = "- [x] " + name + " \u2192 .planning/archive/" + name + "/";
-  const lines = fs.readFileSync(p, "utf8").split("\n");
-  const slug = new RegExp("^- \\[[ x]\\] \\*{0,2}" + name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\*{0,2}(\\s|$|—|→)");
-  const kept = lines.filter((l) => !slug.test(l.trim()));
-  const i = kept.findIndex((l) => /^##\s+Shipped\s*$/.test(l));
-  if (i === -1) { kept.push("", "## Shipped", row); }
-  else {
-    let j = i + 1;
-    while (j < kept.length && (kept[j].trim() === "" || kept[j].trim() === "_(empty)_")) {
-      if (kept[j].trim() === "_(empty)_") kept.splice(j, 1); else j++;
-    }
-    kept.splice(j, 0, row);
-  }
-  fs.writeFileSync(p, kept.join("\n"));
-' "$MAIN_ROOT/.planning/LEDGER.md" "{feature-name}" && grep -n "{feature-name}" "$MAIN_ROOT/.planning/LEDGER.md"
-```
-
-`## Shipped` is ordered by recency, so the newest row goes first. If no row for the feature exists in any section, the `## Shipped` row is still added — a feature that shipped without ever sitting in the ledger still belongs in its history. A failed ledger edit is **not fatal**: report it and move on, the same as a failed `outcome:` stamp.
-
-On **Option 3 (keep as-is)** the feature is not archived, so do not touch the ledger: the row stays where it is and the work is still in flight.
-
-If `.planning/LEDGER.md` is absent, skip this silently. A project that never made a ledger is not in an error state.
+On **Option 3 (keep as-is)** the feature is not archived, so do not run the helper and do not touch the ledger: the row stays where it is and the work is still in flight.
 
 ## Report
 
@@ -271,8 +225,8 @@ Feature: {name}
 Action: {PR created / Merged to main / Kept as-is}
 {If PR:} PR: {url}
 {If merged:} Branch merged and tests passing
-Archived: .planning/archive/{name} — a branch that will amend this record must merge main first
-Ledger: moved to ## Shipped{, or "unchanged — feature kept in flight" on Option 3}
+Archived: .planning/archive/{name} ({tracked: "committed on the branch as {commit}" | untracked: "in the main checkout — a branch that will amend this record must merge main first"})
+Ledger: moved to ## Shipped{, "no ledger" when absent, or "unchanged — feature kept in flight" on Option 3}
 ```
 
 $ARGUMENTS
