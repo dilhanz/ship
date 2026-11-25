@@ -28,6 +28,11 @@ const GIT_ENV = {
 delete GIT_ENV.GIT_DIR;
 delete GIT_ENV.GIT_WORK_TREE;
 delete GIT_ENV.GIT_INDEX_FILE;
+// The helper runs in this process and commits with process.env: a CI runner
+// has no git identity, so give it the same one the fixture commits use.
+for (const k of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']) {
+  process.env[k] = GIT_ENV[k];
+}
 
 function git(cwd, args) {
   return execFileSync('git', args, { cwd, env: GIT_ENV, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
